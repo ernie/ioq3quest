@@ -2736,27 +2736,38 @@ void CG_DrawTimedMenus( void ) {
 /*
 ==============
 CG_DrawWeapReticle
+
+Draws the railgun scope reticle overlay.
 ==============
 */
 static void CG_DrawWeapReticle( void )
 {
-	vec4_t light_color = {0.7, 0.7, 0.7, 1};
-	vec4_t black = {0.0, 0.0, 0.0, 1};
+	vec4_t light_color = {0.7f, 0.7f, 0.7f, 0.5f};
+	vec4_t black = {0.0f, 0.0f, 0.0f, 1.0f};
+	vec4_t red = {0.8f, 0.0f, 0.0f, 0.5f};
 
-	float indent = 0.16;
-	float X_WIDTH=640;
-	float Y_HEIGHT=480;
+	float indentX = 0.16f;
+	float indentY = 0.21f;  // larger Y indent to make scope circular (compensates for 4:3 aspect)
+	float X_WIDTH = 640;
+	float Y_HEIGHT = 480;
 
-	float x = (X_WIDTH * indent), y = (Y_HEIGHT * indent), w = (X_WIDTH * (1-(2*indent))) / 2.0f, h = (Y_HEIGHT * (1-(2*indent))) / 2;
+	// VrApi uses symmetric FOV, so projection center is at geometric center
+	float centerX = 320.0f;
+	float centerY = 240.0f;
+
+	float x = (X_WIDTH * indentX);
+	float y = (Y_HEIGHT * indentY);
+	float w = (X_WIDTH * (1-(2*indentX))) / 2.0f;
+	float h = (Y_HEIGHT * (1-(2*indentY))) / 2;
 
 	CG_AdjustFrom640( &x, &y, &w, &h );
 
 	// sides
-	CG_FillRect( 0, 0, (X_WIDTH * indent), Y_HEIGHT, black );
-	CG_FillRect( X_WIDTH * (1 - indent), 0, (X_WIDTH * indent), Y_HEIGHT, black );
+	CG_FillRect( 0, 0, (X_WIDTH * indentX), Y_HEIGHT, black );
+	CG_FillRect( X_WIDTH * (1 - indentX), 0, (X_WIDTH * indentX), Y_HEIGHT, black );
 	// top/bottom
-	CG_FillRect( X_WIDTH * indent, 0, X_WIDTH * (1-indent), Y_HEIGHT * indent, black );
-	CG_FillRect( X_WIDTH * indent, Y_HEIGHT * (1-indent), X_WIDTH * (1-indent), Y_HEIGHT * indent, black );
+	CG_FillRect( X_WIDTH * indentX, 0, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
+	CG_FillRect( X_WIDTH * indentX, Y_HEIGHT * (1-indentY), X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
 
 	{
 		// center
@@ -2767,11 +2778,22 @@ static void CG_DrawWeapReticle( void )
 			trap_R_DrawStretchPic( x + w, y + h, w, h, 1, 1, 0, 0, cgs.media.reticleShader );  // br
 		}
 
-		// hairs
-		CG_FillRect( 84, 239, 177, 2, light_color );   // left
-		CG_FillRect( 320, 242, 1, 58, light_color );   // center top
-		CG_FillRect( 319, 300, 2, 178, light_color );  // center bot
-		CG_FillRect( 380, 239, 177, 2, light_color );  // right
+		// crosshairs - coming from scope edges toward center
+		float hairThick = 1.0f;
+		float hairLength = 160.0f;
+
+		// Scope edges
+		float leftEdge = X_WIDTH * indentX;
+		float rightEdge = X_WIDTH * (1.0f - indentX);
+		float topEdge = Y_HEIGHT * indentY;
+		float bottomEdge = Y_HEIGHT * (1.0f - indentY);
+
+		CG_FillRect( leftEdge, centerY - hairThick/2.66f, hairLength, hairThick * 0.75f, light_color );                 // left
+		CG_FillRect( rightEdge - hairLength, centerY - hairThick/2.66f, hairLength, hairThick * 0.75f, light_color );   // right
+		CG_FillRect( centerX - hairThick/2, topEdge, hairThick, hairLength * 0.65f, light_color );                  // top
+		CG_FillRect( centerX - hairThick/2, bottomEdge - (hairLength * 0.65f), hairThick, hairLength * 0.75f, light_color );  // bottom
+		CG_FillRect( centerX - hairThick/2, centerY - 6, hairThick, 12, red ); // Vertical center
+		CG_FillRect( centerX - 8, centerY - hairThick/2.66f, 16, hairThick * 0.75f, red ); // Horizontal center
 	}
 }
 
