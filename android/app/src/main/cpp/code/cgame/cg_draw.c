@@ -1418,7 +1418,7 @@ static int CG_DrawPickupItem( int y ) {
 		return y;
 	}
 
-	y -= ICON_SIZE;
+	y -= ICON_SIZE + 12;
 
 	value = cg.itemPickup;
 	if ( value ) {

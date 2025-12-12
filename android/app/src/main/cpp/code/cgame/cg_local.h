@@ -182,8 +182,6 @@ typedef struct centity_s {
 	int				trailTime;		// so missile trails can handle dropped initial packets
 	int				dustTrailTime;
 	int				miscTime;
-	int				delaySpawn;
-	qboolean		delaySpawnPlayed;
 
 	int				snapShotTime;	// last time this entity was found in a snapshot
 
@@ -465,8 +463,6 @@ typedef struct {
 // occurs, and they will have visible effects for #define STEP_TIME or whatever msec after
 
 #define MAX_PREDICTED_EVENTS	16
-#define PICKUP_PREDICTION_DELAY 200
-#define NUM_SAVED_STATES ( CMD_BACKUP + 2 )
 
 typedef struct {
 	int			clientFrame;		// incremented each frame
@@ -683,14 +679,7 @@ typedef struct {
 	float		xyspeed;
 	int     nextOrbitTime;
 
-	int				lastPredictedCommand;
-	int				lastServerTime;
-	playerState_t	savedPmoveStates[ NUM_SAVED_STATES ];
-	int				stateHead, stateTail;
-
 	int				meanPing;
-	int				timeResidual;
-	int				allowPickupPrediction;
 
 	qboolean		skipDFshaders;
 
@@ -1451,7 +1440,7 @@ void CG_LoadDeferredPlayers( void );
 //
 void CG_CheckEvents( centity_t *cent );
 const char	*CG_PlaceString( int rank );
-void CG_EntityEvent( centity_t *cent, vec3_t position, int entityNum );
+void CG_EntityEvent( centity_t *cent, vec3_t position );
 void CG_PainEvent( centity_t *cent, int health );
 
 
@@ -1604,7 +1593,6 @@ void CG_PlayBufferedVoiceChats( void );
 void CG_Respawn( void );
 void CG_TransitionPlayerState( playerState_t *ps, playerState_t *ops );
 void CG_CheckChangedPredictableEvents( playerState_t *ps );
-void CG_PlayDroppedEvents( playerState_t *ps, playerState_t *ops );
 
 
 //===============================================
