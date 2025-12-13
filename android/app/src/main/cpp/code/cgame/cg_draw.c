@@ -2965,6 +2965,61 @@ static void CG_DrawHUD2D()
 
 /*
 =================
+CG_DrawHUD2DMinimal - Draws minimal 2D HUD elements for weapon zoomed state
+There are some checks here that are overkill for current use case, given
+the current usage for specifically vr->weapon_zoomed, but keeping the checks
+more or less identical to non-minimal HUD, just in case.
+=================
+*/
+static void CG_DrawHUD2DMinimal(void)
+{
+	// If the HUD is disabled, we don't want this content
+	if ( trap_Cvar_VariableValue( "vr_currentHudDrawStatus" ) == 0.0f ) {
+		return;
+	}
+
+	if ( cg.snap->ps.pm_type == PM_INTERMISSION ) {
+		return;
+	}
+
+	// Skip if spectator - no minimal HUD needed
+	if ( cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR ) {
+		CG_DrawCrosshairNames();
+		return;
+	}
+
+	// don't draw any status if dead or the scoreboard is being explicitly shown
+	if ( !cg.showScores && cg.snap->ps.stats[STAT_HEALTH] > 0 ) {
+		CG_DrawAmmoWarning();
+		CG_DrawCrosshairNames();
+		CG_DrawReward();
+	}
+
+	CG_DrawLagometer();
+
+#ifdef MISSIONPACK
+	if (!cg_paused.integer) {
+		CG_DrawUpperRight();
+	}
+#else
+	CG_DrawUpperRight();
+#endif
+
+#ifndef MISSIONPACK
+	CG_DrawLowerRight();
+	CG_DrawLowerLeft();
+#endif
+
+	CG_DrawWarmup();
+
+	// don't draw center string if scoreboard is up
+	if ( !cg.scoreBoardShowing ) {
+		CG_DrawCenterString();
+	}
+}
+
+/*
+=================
 CG_DrawScreen2D - Draws 2D elements always intended for the screen
 =================
 */
@@ -3361,9 +3416,28 @@ void CG_DrawActive( void ) {
         //Now draw the screen 2D stuff
         CG_DrawScreen2D();
 
-        if (!vr->weapon_zoomed && (!vr->virtual_screen || vr->first_person_following))
+        if (!vr->virtual_screen || vr->first_person_following)
 		{
-			if (trap_Cvar_VariableValue( "vr_currentHudDrawStatus" ) != 0)
+			float hudStatus = trap_Cvar_VariableValue( "vr_currentHudDrawStatus" );
+
+			if (vr->weapon_zoomed)
+			{
+				// Weapon zoomed: render minimal HUD with scaled coordinates
+				cg.drawingHUD = qtrue;
+				cg.drawingZoomedHUD = qtrue;
+
+				//Tell renderer we want to draw to the HUD buffer
+				trap_R_HUDBufferStart(qtrue);
+
+				CG_WarmupEvents();
+				CG_DrawHUD2DMinimal();
+
+				trap_R_HUDBufferEnd();
+
+				cg.drawingZoomedHUD = qfalse;
+				cg.drawingHUD = qfalse;
+			}
+			else if (hudStatus != 0)
 			{
 				cg.drawingHUD = qtrue;
 

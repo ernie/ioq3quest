@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 extern vr_clientinfo_t vr;
 extern cvar_t *vr_hudDrawStatus;
+extern cvar_t *vr_currentHudDrawStatus;
 
 qboolean	scr_initialized;		// ready to draw
 
@@ -77,7 +78,74 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 	xscale = cls.glconfig.vidWidth / 640.0;
 	yscale = cls.glconfig.vidHeight / 480.0;
 
-	if (vr.virtual_screen || vr_hudDrawStatus->integer != 2) {
+	if (vr.virtual_screen) {
+		// In virtual screen mode, scale to 4:3 viewable area and center vertically
+		float viewableHeight = cls.glconfig.vidWidth * 0.75f;
+		float viewableYScale = viewableHeight / 480.0f;
+		float yoffset = (cls.glconfig.vidHeight - viewableHeight) / 2.0f;
+
+		if (x) {
+			*x *= xscale;
+		}
+		if (y) {
+			*y *= viewableYScale;
+			*y += yoffset;
+		}
+		if (w) {
+			*w *= xscale;
+		}
+		if (h) {
+			*h *= viewableYScale;
+		}
+	} else if (vr.weapon_zoomed) {
+		// Weapon zoomed: scaled down with 1:1 square layout (640x640)
+		// Use xscale for both to match cg_drawtools.c HUD rendering
+		// Scale is slightly smaller (2.4 vs 2.25) and Y offset approximates optical centering
+		float zoomedHudScale = 2.4f;
+		float zoomedHudYOffset = 50.0f;  // Virtual coords offset
+		float screenXScale = xscale / zoomedHudScale;
+		float screenYScale = xscale / zoomedHudScale;
+
+		// Remap Y from 480 range to 640 range, apply offset in virtual coords before scaling
+		if (y) {
+			*y = (*y / 480.0f) * 640.0f + zoomedHudYOffset;
+		}
+
+		if (x) {
+			*x *= screenXScale;
+			*x += (cls.glconfig.vidWidth - (640 * screenXScale)) / 2.0f;
+		}
+		if (y) {
+			*y *= screenYScale;
+			*y += (cls.glconfig.vidHeight - (640 * screenYScale)) / 2.0f;
+		}
+		if (w) {
+			*w *= screenXScale;
+		}
+		if (h) {
+			*h *= screenYScale;
+		}
+	} else if (vr_currentHudDrawStatus->integer == 2) {
+		// HUD mode 2: scaled down for in-world display
+		// Use xscale for both to match cg_drawtools.c HUD rendering
+		float screenXScale = xscale / 2.25f;
+		float screenYScale = xscale / 2.25f;
+
+		if (x) {
+			*x *= screenXScale;
+			*x += (cls.glconfig.vidWidth - (640 * screenXScale)) / 2.0f;
+		}
+		if (y) {
+			*y *= screenYScale;
+			*y += (cls.glconfig.vidHeight - (480 * screenYScale)) / 2.0f;
+		}
+		if (w) {
+			*w *= screenXScale;
+		}
+		if (h) {
+			*h *= screenYScale;
+		}
+	} else {
 		if (x) {
 			*x *= xscale;
 		}
@@ -89,24 +157,6 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 		}
 		if (h) {
 			*h *= yscale;
-		}
-	} else {
-		float screenXScale = xscale / 2.75f;
-		float screenYScale = yscale / 2.25f;
-
-		if (x) {
-			*x *= screenXScale;
-            *x += (cls.glconfig.vidWidth - (640 * screenXScale)) / 2.0f;
-		}
-		if (y) {
-			*y *= screenYScale;
-            *y += (cls.glconfig.vidHeight - (480 * screenYScale)) / 2.0f;
-		}
-		if (w) {
-			*w *= screenXScale;
-		}
-		if (h) {
-			*h *= screenYScale;
 		}
 	}
 }
@@ -710,10 +760,6 @@ void SCR_UpdateScreen( void ) {
 	// that case.
 	if( uivm || com_dedicated->integer )
 	{
-		// During loading states, set up VR framebuffer BEFORE rendering so loading screen
-		// gets drawn to the correct buffer for VR submission
-		VR_PrepareLoadingFrame( VR_GetEngine() );
-
 		// XXX
 		int in_anaglyphMode = Cvar_VariableIntegerValue("r_anaglyphMode");
 		// if running in stereo, we need to draw the frame twice

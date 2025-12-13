@@ -1780,7 +1780,8 @@ static GLuint GLSL_CalculateProjection() {
     {
         if (glState.isDrawingHUD)
         {
-            if (vr_currentHudDrawStatus->integer != 2)
+            // When weapon zoomed, use stereo ortho projection like HUD mode 2
+            if (vr_currentHudDrawStatus->integer != 2 && !vr.weapon_zoomed)
             {
                 result = HUDBUFFER_ORTHO_PROJECTION;
             }

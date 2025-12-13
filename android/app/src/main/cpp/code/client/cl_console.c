@@ -298,12 +298,10 @@ void Con_CheckResize (void)
 {
 	int		i, j, width, oldwidth, oldtotallines, numlines, numchars;
 	short	tbuf[CON_TEXTSIZE];
-	int		scale = con_scale ? con_scale->integer : 2;
+	float	scale = con_scale ? con_scale->value : 2.0f;
 
-	if (scale < 1) scale = 1;
-	if (scale > 4) scale = 4;
-
-	width = (SCREEN_WIDTH / (SMALLCHAR_WIDTH * scale)) - 2;
+	// Always use actual video width for line wrapping
+	width = (int)(cls.glconfig.vidWidth / (SMALLCHAR_WIDTH * scale)) - 2;
 
 	if (width == con.linewidth)
 		return;
@@ -380,6 +378,7 @@ void Con_Init (void) {
 	con_conspeed = Cvar_Get ("scr_conspeed", "3", 0);
 	con_autoclear = Cvar_Get("con_autoclear", "1", CVAR_ARCHIVE);
 	con_scale = Cvar_Get("con_scale", "2", CVAR_ARCHIVE);  // Default 2x for VR readability
+	Cvar_CheckRange(con_scale, 1, 4, qtrue);
 
 	Field_Clear( &g_consoleField );
 	g_consoleField.widthInChars = g_console_field_width;
@@ -550,7 +549,7 @@ DRAWING
 */
 
 // Forward declarations
-static void Con_DrawChar_Scaled(int x, int y, int scale, int ch);
+static void Con_DrawChar_Scaled(float x, float y, float scale, int ch);
 void Field_Draw_Scaled( field_t *edit, int x, int y, int width, qboolean showCursor, qboolean noColorEscape, int scale );
 
 /*
@@ -562,14 +561,11 @@ Draw the editline after a ] prompt
 */
 void Con_DrawInput (void) {
 	int		y;
-	int		scale = con_scale ? con_scale->integer : 2;
+	float	scale = con_scale ? con_scale->value : 2.0f;
 	int		charW, charH;
 
-	if (scale < 1) scale = 1;
-	if (scale > 4) scale = 4;
-
-	charW = SMALLCHAR_WIDTH * scale;
-	charH = SMALLCHAR_HEIGHT * scale;
+	charW = (int)(SMALLCHAR_WIDTH * scale);
+	charH = (int)(SMALLCHAR_HEIGHT * scale);
 
 	if ( clc.state != CA_DISCONNECTED && !(Key_GetCatcher( ) & KEYCATCH_CONSOLE ) ) {
 		return;
@@ -593,10 +589,11 @@ Con_DrawChar_Scaled
 Helper to draw a character with optional scaling for HUD buffer
 ================
 */
-static void Con_DrawChar_Scaled(int x, int y, int scale, int ch) {
+static void Con_DrawChar_Scaled(float x, float y, float scale, int ch) {
 	int row, col;
 	float frow, fcol;
 	float size;
+	float fw, fh;
 
 	ch &= 255;
 
@@ -611,7 +608,10 @@ static void Con_DrawChar_Scaled(int x, int y, int scale, int ch) {
 	fcol = col * 0.0625f;
 	size = 0.0625f;
 
-	re.DrawStretchPic(x, y, SMALLCHAR_WIDTH * scale, SMALLCHAR_HEIGHT * scale,
+	fw = SMALLCHAR_WIDTH * scale;
+	fh = SMALLCHAR_HEIGHT * scale;
+
+	re.DrawStretchPic((int)x, (int)y, (int)fw, (int)fh,
 		fcol, frow, fcol + size, frow + size, cls.charSetShader);
 }
 
@@ -636,14 +636,35 @@ void Con_DrawNotify (void)
 
 	re.HUDBufferStart(qfalse);
 
-	// Adjust scale based on HUD mode
-	int charScale = (vr_currentHudDrawStatus->integer == 1) ? 2 : 1;
-	// Use floating HUD positioning for mode 1, or for mode 2 when in VRFM_FIRSTPERSON (viewing on virtual screen)
-	int xadjust = (vr_currentHudDrawStatus->integer == 1 || vr.first_person_following) ? 10 : 500;
-	int yadjust = (vr_currentHudDrawStatus->integer == 1 || vr.first_person_following) ? 10 : 600;
+	// Use console scale setting for notify messages
+	float charScale = con_scale ? con_scale->value : 2.0f;
+	float xadjust = 10.0f;
+	float yadjust = 10.0f;
 
-	v = 0;
-	for (i= con.current-NUM_CON_TIMES+1 ; i<=con.current ; i++)
+	// For HUD mode 2, or when weapon zoomed, transform the base position to screen
+	// coordinates and scale character size to try to match floating HUD scaling
+	if (vr_currentHudDrawStatus->integer == 2 || vr.weapon_zoomed) {
+		if (!vr.virtual_screen) {
+			charScale /= 1.5f;
+		}
+		SCR_AdjustFrom640(&xadjust, &yadjust, NULL, NULL);
+	}
+
+	// We'll wrap to leave room for upper-right HUD elements (speed meter is widest at ~112px)
+	int maxVirtualWidth = 510; // in 640x480 virtual space
+	int maxCharsPerLine = maxVirtualWidth / SMALLCHAR_WIDTH;
+
+	// Build array of wrapped line segments
+	typedef struct {
+		short *text;
+		int start;
+		int end;
+	} lineSegment_t;
+
+	lineSegment_t segments[NUM_CON_TIMES * 10]; // Max 10 wrapped lines per console message
+	int segmentCount = 0;
+
+	for (i = con.current - NUM_CON_TIMES + 1; i <= con.current; i++)
 	{
 		if (i < 0)
 			continue;
@@ -659,7 +680,78 @@ void Con_DrawNotify (void)
 			continue;
 		}
 
-		for (x = 0 ; x < con.linewidth ; x++) {
+		// Find the actual end of text (not including trailing spaces/nulls)
+		int textEnd = con.linewidth - 1;
+		while (textEnd >= 0 && ((text[textEnd] & 0xff) == ' ' || (text[textEnd] & 0xff) == 0)) {
+			textEnd--;
+		}
+		textEnd++; // Move back to one past last char
+
+		// Build wrapped segments for this console line
+		int lineStart = 0;
+		while (lineStart < textEnd && segmentCount < NUM_CON_TIMES * 10) {
+			int lineEnd = lineStart + maxCharsPerLine;
+			if (lineEnd >= textEnd) {
+				lineEnd = textEnd;
+			} else {
+				// Try to break at a space
+				int spacePos = lineEnd;
+				while (spacePos > lineStart && (text[spacePos] & 0xff) != ' ' && (text[spacePos] & 0xff) != 0) {
+					spacePos--;
+				}
+				if (spacePos > lineStart) {
+					lineEnd = spacePos + 1;
+				}
+			}
+
+			segments[segmentCount].text = text;
+			segments[segmentCount].start = lineStart;
+			segments[segmentCount].end = lineEnd;
+			segmentCount++;
+
+			lineStart = lineEnd;
+		}
+	}
+
+	// Draw only the last NUM_CON_TIMES segments
+	int startSegment = (segmentCount > NUM_CON_TIMES) ? (segmentCount - NUM_CON_TIMES) : 0;
+	v = 0;
+
+	// cl_conXOffset is in virtual 640x480 coordinates
+	// Scale it to match HUD buffer coordinates for each mode
+	// Skip offset when weapon zoomed since we don't show the voice chat head
+	float effectiveConXOffset = 0.0f;
+	if (cl_conXOffset->integer > 0 && !vr.weapon_zoomed) {
+		if (vr_currentHudDrawStatus->integer == 1) {
+			// HUD mode 1: fixed 1280x960 buffer = 2x virtual coordinates
+			effectiveConXOffset = cl_conXOffset->integer * 2.0f;
+		} else if (vr_currentHudDrawStatus->integer == 2) {
+			if (vr.virtual_screen) {
+				// Virtual screen mode: scale to full screen width
+				float xscale = cls.glconfig.vidWidth / 640.0f;
+				effectiveConXOffset = cl_conXOffset->integer * xscale;
+			} else {
+				// HUD mode 2 in-world: scale by screenXScale / 2.25
+				// This matches how CG_AdjustFrom640 scales HUD content
+				float xscale = cls.glconfig.vidWidth / 640.0f;
+				float screenXScale = xscale / 2.25f;
+				effectiveConXOffset = cl_conXOffset->integer * screenXScale;
+				// Note: The xadjust local variable (calculated via SCR_AdjustFrom640)
+				// provides the centering offset that matches what CG_AdjustFrom640 adds
+			}
+		} else {
+			// HUD mode 0 or non-HUD: scale to full screen
+			float xscale = cls.glconfig.vidWidth / 640.0f;
+			effectiveConXOffset = cl_conXOffset->integer * xscale;
+		}
+	}
+
+	for (i = startSegment; i < segmentCount; i++) {
+		text = segments[i].text;
+		int lineStart = segments[i].start;
+		int lineEnd = segments[i].end;
+
+		for (x = lineStart; x < lineEnd; x++) {
 			if ( ( text[x] & 0xff ) == ' ' ) {
 				continue;
 			}
@@ -671,8 +763,8 @@ void Con_DrawNotify (void)
 			if (vr_showConsoleMessages->integer)
 			{
 				Con_DrawChar_Scaled(
-						cl_conXOffset->integer + con.xadjust + (x + 1) * SMALLCHAR_WIDTH * charScale + xadjust,
-						v + yadjust, charScale, text[x] & 0xff);
+					effectiveConXOffset + con.xadjust + (x - lineStart + 1) * SMALLCHAR_WIDTH * charScale + xadjust,
+					v + yadjust, charScale, text[x] & 0xff);
 			}
 		}
 
@@ -723,14 +815,11 @@ void Con_DrawSolidConsole( float frac ) {
 //	qhandle_t		conShader;
 	int				currentColor;
 	vec4_t			color;
-	int				scale = con_scale ? con_scale->integer : 2;
+	float			scale = con_scale ? con_scale->value : 2.0f;
 	int				charW, charH;
 
-	if (scale < 1) scale = 1;
-	if (scale > 4) scale = 4;
-
-	charW = SMALLCHAR_WIDTH * scale;
-	charH = SMALLCHAR_HEIGHT * scale;
+	charW = (int)(SMALLCHAR_WIDTH * scale);
+	charH = (int)(SMALLCHAR_HEIGHT * scale);
 
 	lines = cls.glconfig.vidHeight * frac;
 	if (lines <= 0)

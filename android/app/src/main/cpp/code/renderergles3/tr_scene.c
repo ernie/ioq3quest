@@ -541,7 +541,8 @@ void RE_RenderScene( const refdef_t *fd ) {
 	//
 	Com_Memset( &parms, 0, sizeof( parms ) );
 
-	if (vr_currentHudDrawStatus->integer != 2 && tr.refdef.isHUD)
+	// When weapon zoomed, use screen viewport like HUD mode 2
+	if (vr_currentHudDrawStatus->integer != 2 && !vr.weapon_zoomed && tr.refdef.isHUD)
     {
         parms.viewportX = tr.refdef.x;
         parms.viewportY = tr.hudImage->height - (tr.refdef.y + tr.refdef.height);

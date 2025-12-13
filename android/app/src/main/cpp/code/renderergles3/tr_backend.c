@@ -609,7 +609,8 @@ void	RB_SetGL2D (void) {
 	}
 
 	// set 2D virtual screen size
-	if (glState.isDrawingHUD && vr_currentHudDrawStatus->integer != 2)
+	// When weapon zoomed, render directly to screen like HUD mode 2
+	if (glState.isDrawingHUD && vr_currentHudDrawStatus->integer != 2 && !vr.weapon_zoomed)
     {
         qglViewport(0, 0, tr.hudImage->width, tr.hudImage->height);
         qglScissor(0, 0, tr.hudImage->width, tr.hudImage->height);
@@ -1772,7 +1773,8 @@ const void* RB_HUDBuffer( const void* data ) {
     {
         glState.isDrawingHUD = qtrue;
 
-        if (vr_currentHudDrawStatus->integer != 2)
+        // When weapon zoomed, render directly to screen like HUD mode 2
+        if (vr_currentHudDrawStatus->integer != 2 && !vr.weapon_zoomed)
 		{
 			//keep record of current render fbo and switch to the hud buffer
 			tr.backupFrameBuffer = tr.renderFbo->frameBuffer;
@@ -1803,7 +1805,8 @@ const void* RB_HUDBuffer( const void* data ) {
     {
         glState.isDrawingHUD = qfalse;
 
-		if (vr_currentHudDrawStatus->integer != 2)
+        // When weapon zoomed, we rendered directly to screen like HUD mode 2
+		if (vr_currentHudDrawStatus->integer != 2 && !vr.weapon_zoomed)
 		{
 			//restore the true render fbo
 			tr.renderFbo->frameBuffer = tr.backupFrameBuffer;
