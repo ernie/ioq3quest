@@ -76,6 +76,8 @@ static float triggerReleasedThreshold = 0.5f;
 static float thumbstickPressedThreshold = 0.5f;
 static float thumbstickReleasedThreshold = 0.4f;
 
+static float heightAdjust = 0.0f;
+
 extern cvar_t *cl_sensitivity;
 extern cvar_t *m_pitch;
 extern cvar_t *m_yaw;
@@ -139,12 +141,23 @@ static float length(float x, float y)
 
 void NormalizeAngles(vec3_t angles)
 {
-    while (angles[0] >= 90) angles[0] -= 180;
-    while (angles[1] >= 180) angles[1] -= 360;
-    while (angles[2] >= 180) angles[2] -= 360;
-    while (angles[0] < -90) angles[0] += 180;
-    while (angles[1] < -180) angles[1] += 360;
-    while (angles[2] < -180) angles[2] += 360;
+    while (angles[PITCH] >= 90)
+    {
+        angles[PITCH] -= 180;
+        angles[YAW] -= 180;
+        angles[ROLL] -= 180;
+    }
+    while (angles[PITCH] < -90)
+    {
+        angles[PITCH] += 180;
+        angles[YAW] += 180;
+        angles[ROLL] += 180;
+    }
+
+    while (angles[YAW] >= 180) angles[YAW] -= 360;
+    while (angles[YAW] < -180) angles[YAW] += 360;
+    while (angles[ROLL] >= 180) angles[ROLL] -= 360;
+    while (angles[ROLL] < -180) angles[ROLL] += 360;
 }
 
 void GetAnglesFromVectors(const XrVector3f forward, const XrVector3f right, const XrVector3f up, vec3_t angles)
@@ -511,7 +524,13 @@ XrSpace CreateActionSpace(XrAction poseAction, XrPath subactionPath) {
     XrActionSpaceCreateInfo asci = {};
     asci.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
     asci.action = poseAction;
-    asci.poseInActionSpace.orientation.w = 1.0f;
+    // Apply 180 degree rotation around Z axis (the aim/forward axis) to correct for
+    // Meta Quest aim pose roll orientation compared to what our code expects
+    // Quaternion for 180° rotation around Z: (x=0, y=0, z=1, w=0)
+    asci.poseInActionSpace.orientation.x = 0.0f;
+    asci.poseInActionSpace.orientation.y = 0.0f;
+    asci.poseInActionSpace.orientation.z = 1.0f;
+    asci.poseInActionSpace.orientation.w = 0.0f;
     asci.subactionPath = subactionPath;
     XrSpace actionSpace = XR_NULL_HANDLE;
     OXR(xrCreateActionSpace(VR_GetEngine()->appState.Session, &asci, &actionSpace));
@@ -827,7 +846,6 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
     vec3_t rotation = {0};
     if (isRightController == (vr_righthanded->integer != 0))
     {
-        //Set gun angles - We need to calculate all those we might need (including adjustments) for the client to then take its pick
         rotation[PITCH] = vr_weaponPitch->value;
         QuatToYawPitchRoll(pose.orientation, rotation, vr.weaponangles);
 
@@ -1413,11 +1431,11 @@ void IN_VRSyncActions( void )
     getInfo.subactionPath = XR_NULL_PATH;
 }
 
-void IN_VRUpdateControllers( XrPosef xfStageFromHead, float predictedDisplayTime )
+void IN_VRUpdateControllers( float predictedDisplayTime )
 {
     engine_t* engine = VR_GetEngine();
 
-    //get controller poses
+    //get controller poses - locate directly in CurrentSpace (STAGE/LOCAL), not HeadSpace
     XrAction controller[] = {handPoseLeftAction, handPoseRightAction};
     XrPath subactionPath[] = {leftHandPath, rightHandPath};
     XrSpace controllerSpace[] = {leftControllerAimSpace, rightControllerAimSpace};
@@ -1425,10 +1443,10 @@ void IN_VRUpdateControllers( XrPosef xfStageFromHead, float predictedDisplayTime
         if (ActionPoseIsActive(controller[i], subactionPath[i])) {
             XrSpaceLocation loc = {};
             loc.type = XR_TYPE_SPACE_LOCATION;
-            OXR(xrLocateSpace(controllerSpace[i], engine->appState.HeadSpace, predictedDisplayTime, &loc));
+            OXR(xrLocateSpace(controllerSpace[i], engine->appState.CurrentSpace, predictedDisplayTime, &loc));
 
             engine->appState.TrackedController[i].Active = (loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0;
-            engine->appState.TrackedController[i].Pose = XrPosef_Multiply(xfStageFromHead, loc.pose);
+            engine->appState.TrackedController[i].Pose = loc.pose;
         } else {
             ovrTrackedController_Clear(&engine->appState.TrackedController[i]);
         }

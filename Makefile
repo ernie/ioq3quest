@@ -458,7 +458,7 @@ ifeq ($(PLATFORM),android)
   SHLIBLDFLAGS = -shared -lm $(LDFLAGS)
 
   THREAD_LIBS =
-  LIBS = -ldl -lm -Wl,--no-undefined -shared
+  LIBS = -ldl -llog -lm -Wl,--no-undefined -shared
 
   CLIENT_LIBS = -lGLESv3 -lOpenSLES
   RENDERER_LIBS = -lGLESv3 -lEGL
@@ -469,11 +469,11 @@ ifeq ($(PLATFORM),android)
   RENDERER_LIBS += $(LIBSDIR)/android/arm64-v8a/libSDL2.so
   CLIENT_EXTRA_FILES += $(LIBSDIR)/android/arm64-v8a/libSDL2.so
 
-  # OpenXR
+  # OpenXR - Khronos loader from Maven (org.khronos.openxr:openxr_loader_for_android:1.1.51)
   BASE_CFLAGS += -I$(OPENXRDIR)/Include -I$(OPENXRSDKDIR)/include
-  CLIENT_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/Release/libopenxr_loader.so
-  RENDERER_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/Release/libopenxr_loader.so
-  CLIENT_EXTRA_FILES += $(OPENXRDIR)/Libs/Android/arm64-v8a/Release/libopenxr_loader.so
+  CLIENT_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
+  RENDERER_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
+  CLIENT_EXTRA_FILES += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
 else # ifeq Android
 
 #############################################################################

@@ -85,8 +85,11 @@ int main(int argc, char* argv[]) {
     Com_Init(args);
     NET_Init( );
 
+	LOGI("Calling VR_EnterVR");
 	VR_EnterVR(engine, java);
+	LOGI("Calling VR_InitRenderer");
 	VR_InitRenderer(engine);
+	LOGI("VR initialization complete, entering main loop");
 
 	qboolean hasFocus = qtrue;
 	qboolean paused = qfalse;

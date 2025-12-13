@@ -14,6 +14,7 @@ qboolean vr_initialized = qfalse;
 extern vr_clientinfo_t vr;
 
 const char* const requiredExtensionNames[] = {
+        XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
         XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
         XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME,
         XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME,
@@ -56,6 +57,11 @@ engine_t* VR_Init( ovrJava java )
 
     ovrApp_Clear(&vr_engine.appState);
 
+    // Set up Android-specific instance creation info
+    XrInstanceCreateInfoAndroidKHR instanceCreateInfoAndroid = {XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
+    instanceCreateInfoAndroid.applicationVM = java.Vm;
+    instanceCreateInfoAndroid.applicationActivity = java.ActivityObject;
+
     PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR;
     xrGetInstanceProcAddr(
             XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*)&xrInitializeLoaderKHR);
@@ -81,7 +87,7 @@ engine_t* VR_Init( ovrJava java )
     XrInstanceCreateInfo instanceCreateInfo;
     memset(&instanceCreateInfo, 0, sizeof(instanceCreateInfo));
     instanceCreateInfo.type = XR_TYPE_INSTANCE_CREATE_INFO;
-    instanceCreateInfo.next = NULL;
+    instanceCreateInfo.next = (XrBaseInStructure*)&instanceCreateInfoAndroid;
     instanceCreateInfo.createFlags = 0;
     instanceCreateInfo.applicationInfo = appInfo;
     instanceCreateInfo.enabledApiLayerCount = 0;
@@ -132,7 +138,14 @@ engine_t* VR_Init( ovrJava java )
     OXR(pfnGetOpenGLESGraphicsRequirementsKHR(vr_engine.appState.Instance, systemId, &graphicsRequirements));
 
     vr_engine.appState.MainThreadTid = gettid();
+    vr_engine.appState.RenderThreadTid = gettid();  // Same thread - this app is single-threaded
     vr_engine.appState.SystemId = systemId;
+
+    // Set the ViewportConfig type to stereo BEFORE the session is created
+    // This is critical because xrBeginSession needs this value in the session state callback
+    vr_engine.appState.ViewportConfig.type = XR_TYPE_VIEW_CONFIGURATION_PROPERTIES;
+    vr_engine.appState.ViewportConfig.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    ALOGV("VR_Init: ViewportConfig.viewConfigurationType set to %d", vr_engine.appState.ViewportConfig.viewConfigurationType);
 
     vr_engine.java = java;
     vr_initialized = qtrue;
@@ -296,7 +309,7 @@ void VR_EnterVR( engine_t* engine, ovrJava java ) {
     graphicsBindingAndroidGLES.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR;
     graphicsBindingAndroidGLES.next = NULL;
     graphicsBindingAndroidGLES.display = eglGetCurrentDisplay();
-    graphicsBindingAndroidGLES.config = eglGetCurrentSurface(EGL_DRAW);
+    graphicsBindingAndroidGLES.config = NULL;
     graphicsBindingAndroidGLES.context = eglGetCurrentContext();
 
     XrSessionCreateInfo sessionCreateInfo = {};
@@ -324,6 +337,10 @@ void VR_EnterVR( engine_t* engine, ovrJava java ) {
 void VR_LeaveVR( engine_t* engine ) {
     if (engine->appState.Session) {
         OXR(xrDestroySpace(engine->appState.HeadSpace));
+        // LocalFloorSpace is optional (requires OpenXR 1.1 or extension).
+        if (engine->appState.LocalFloorSpace != XR_NULL_HANDLE) {
+            OXR(xrDestroySpace(engine->appState.LocalFloorSpace));
+        }
         // StageSpace is optional.
         if (engine->appState.StageSpace != XR_NULL_HANDLE) {
             OXR(xrDestroySpace(engine->appState.StageSpace));

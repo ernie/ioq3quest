@@ -26,20 +26,21 @@ extern cvar_t *vr_heightAdjust;
 
 XrView* projections;
 GLboolean stageSupported = GL_FALSE;
+GLboolean localFloorSupported = GL_FALSE;
 qboolean fullscreenMode = qfalse;
 qboolean needRecenter = qtrue;
 
 void VR_UpdateStageBounds(ovrApp* pappState) {
     XrExtent2Df stageBounds = {};
 
+    // Try LOCAL_FLOOR bounds first (preferred space on Meta Quest)
     XrResult result;
     OXR(result = xrGetReferenceSpaceBoundsRect(
-            pappState->Session, XR_REFERENCE_SPACE_TYPE_STAGE, &stageBounds));
+            pappState->Session, XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR, &stageBounds));
     if (result != XR_SUCCESS) {
-        ALOGV("Stage bounds query failed: using small defaults");
+        ALOGV("LOCAL_FLOOR bounds query failed: using small defaults and FakeStageSpace");
         stageBounds.width = 1.0f;
         stageBounds.height = 1.0f;
-
         pappState->CurrentSpace = pappState->FakeStageSpace;
     }
 
@@ -182,12 +183,14 @@ void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
 }
 
 void VR_Recenter(engine_t* engine) {
-
     // Calculate recenter reference
     XrReferenceSpaceCreateInfo spaceCreateInfo = {};
     spaceCreateInfo.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
     spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0f;
-    if (engine->appState.CurrentSpace != XR_NULL_HANDLE) {
+
+    // Only try to get current head position if we have a valid time
+    // (predictedDisplayTime is only set after xrWaitFrame returns)
+    if (engine->appState.CurrentSpace != XR_NULL_HANDLE && engine->predictedDisplayTime != 0) {
         vec3_t rotation = {0, 0, 0};
         XrSpaceLocation loc = {};
         loc.type = XR_TYPE_SPACE_LOCATION;
@@ -202,34 +205,68 @@ void VR_Recenter(engine_t* engine) {
     }
 
     // Delete previous space instances
+    if (engine->appState.LocalFloorSpace != XR_NULL_HANDLE) {
+        OXR(xrDestroySpace(engine->appState.LocalFloorSpace));
+        engine->appState.LocalFloorSpace = XR_NULL_HANDLE;
+    }
     if (engine->appState.StageSpace != XR_NULL_HANDLE) {
         OXR(xrDestroySpace(engine->appState.StageSpace));
+        engine->appState.StageSpace = XR_NULL_HANDLE;
     }
     if (engine->appState.FakeStageSpace != XR_NULL_HANDLE) {
         OXR(xrDestroySpace(engine->appState.FakeStageSpace));
+        engine->appState.FakeStageSpace = XR_NULL_HANDLE;
     }
 
-    // Create a default stage space to use if SPACE_TYPE_STAGE is not
-    // supported, or calls to xrGetReferenceSpaceBoundsRect fail.
-    spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    spaceCreateInfo.poseInReferenceSpace.position.y = -1.6750f;
-    OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.FakeStageSpace));
-    ALOGV("Created fake stage space from local space with offset");
-    engine->appState.CurrentSpace = engine->appState.FakeStageSpace;
+    // Create reference spaces in order of preference:
+    // 1. LOCAL_FLOOR - Preferred, recenterable floor-relative space (like VrApi's LOCAL_FLOOR)
+    // 2. LOCAL with offset - Fallback for systems that don't support LOCAL_FLOOR
+    // Note: STAGE is NOT used as CurrentSpace on Meta Quest because it's anchored to play area
+    // center rather than user position, causing offset issues with stationary boundary.
 
+    // Always create a fallback space using LOCAL with floor offset
+    spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    spaceCreateInfo.poseInReferenceSpace.position.y = -1.6750f;  // Approximate floor offset for Meta Quest
+    OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.FakeStageSpace));
+    engine->appState.CurrentSpace = engine->appState.FakeStageSpace;
+    ALOGV("VR_Recenter: Created FakeStageSpace (LOCAL with floor offset) as fallback");
+
+    // Create STAGE space for bounds queries only (not used as CurrentSpace)
     if (stageSupported) {
         spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
         spaceCreateInfo.poseInReferenceSpace.position.y = 0.0f;
         OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.StageSpace));
-        ALOGV("Created stage space");
-        engine->appState.CurrentSpace = engine->appState.StageSpace;
+        ALOGV("VR_Recenter: Created StageSpace (STAGE) for bounds queries only");
     }
+
+    // Prefer LOCAL_FLOOR if supported - this is the closest equivalent to VrApi's LOCAL_FLOOR
+    // It provides floor-relative vertical position with recenterable horizontal position
+    if (localFloorSupported) {
+        spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+        spaceCreateInfo.poseInReferenceSpace.position.y = 0.0f;
+        OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.LocalFloorSpace));
+        engine->appState.CurrentSpace = engine->appState.LocalFloorSpace;
+        ALOGV("VR_Recenter: Created LocalFloorSpace (LOCAL_FLOOR) - PREFERRED");
+    }
+
+    ALOGV("VR_Recenter: CurrentSpace set to %s",
+          engine->appState.CurrentSpace == engine->appState.LocalFloorSpace ? "LOCAL_FLOOR" :
+          "FAKE_STAGE (LOCAL)");
 
     // Update menu orientation
     vr.menuYaw = 0;
 }
 
 void VR_InitRenderer( engine_t* engine ) {
+	ALOGV("VR_InitRenderer: starting");
+
+	// Check if session exists - if not, skip initialization
+	// (will be called again after VR_EnterVR creates the session)
+	if (engine->appState.Session == XR_NULL_HANDLE) {
+		ALOGV("VR_InitRenderer: no session yet, skipping");
+		return;
+	}
+
 #if ENABLE_GL_DEBUG
 	glEnable(GL_DEBUG_OUTPUT);
 	glDebugMessageCallback(VR_GLDebugLog, 0);
@@ -237,12 +274,14 @@ void VR_InitRenderer( engine_t* engine ) {
 
 	int eyeW, eyeH;
     VR_GetResolution(engine, &eyeW, &eyeH);
+    ALOGV("VR_InitRenderer: resolution %dx%d", eyeW, eyeH);
 
     // Get the viewport configuration info for the chosen viewport configuration type.
     engine->appState.ViewportConfig.type = XR_TYPE_VIEW_CONFIGURATION_PROPERTIES;
 
     OXR(xrGetViewConfigurationProperties(
             engine->appState.Instance, engine->appState.SystemId, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, &engine->appState.ViewportConfig));
+    ALOGV("VR_InitRenderer: ViewportConfig.viewConfigurationType=%d", engine->appState.ViewportConfig.viewConfigurationType);
 
     // Get the supported display refresh rates for the system.
     {
@@ -295,12 +334,28 @@ void VR_InitRenderer( engine_t* engine ) {
     OXR(xrEnumerateReferenceSpaces(
             engine->appState.Session, numOutputSpaces, &numOutputSpaces, referenceSpaces));
 
+    ALOGV("Supported reference spaces (%d total):", numOutputSpaces);
     for (uint32_t i = 0; i < numOutputSpaces; i++) {
+        const char* spaceName = "UNKNOWN";
+        switch (referenceSpaces[i]) {
+            case XR_REFERENCE_SPACE_TYPE_VIEW: spaceName = "VIEW"; break;
+            case XR_REFERENCE_SPACE_TYPE_LOCAL: spaceName = "LOCAL"; break;
+            case XR_REFERENCE_SPACE_TYPE_STAGE: spaceName = "STAGE"; break;
+            case XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR: spaceName = "LOCAL_FLOOR"; break;
+            default: break;
+        }
+        ALOGV("  [%d] %s (%d)", i, spaceName, referenceSpaces[i]);
+
         if (referenceSpaces[i] == XR_REFERENCE_SPACE_TYPE_STAGE) {
             stageSupported = qtrue;
-            break;
+        }
+        if (referenceSpaces[i] == XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR) {
+            localFloorSupported = qtrue;
         }
     }
+    ALOGV("Reference space support: LOCAL_FLOOR=%s, STAGE=%s",
+          localFloorSupported ? "yes" : "no",
+          stageSupported ? "yes" : "no");
 
     free(referenceSpaces);
 
@@ -309,12 +364,18 @@ void VR_InitRenderer( engine_t* engine ) {
     }
 
     projections = (XrView*)(malloc(ovrMaxNumEyes * sizeof(XrView)));
+    for (int eye = 0; eye < ovrMaxNumEyes; eye++) {
+        memset(&projections[eye], 0, sizeof(XrView));
+        projections[eye].type = XR_TYPE_VIEW;
+    }
 
+    ALOGV("VR_InitRenderer: creating renderer framebuffers");
     ovrRenderer_Create(
             engine->appState.Session,
             &engine->appState.Renderer,
             eyeW,
             eyeH);
+    ALOGV("VR_InitRenderer: complete");
 }
 
 void VR_DestroyRenderer( engine_t* engine )
@@ -346,13 +407,17 @@ void VR_ClearFrameBuffer( int width, int height)
     }
 
     glScissor( 0, 0, width, height );
-    glClear( GL_COLOR_BUFFER_BIT );
+    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+    glDisable( GL_FRAMEBUFFER_SRGB );
 
     glScissor( 0, 0, 0, 0 );
     glDisable( GL_SCISSOR_TEST );
 }
 
 void VR_DrawFrame( engine_t* engine ) {
+	static int frameCount = 0;
+	frameCount++;
+
 	if (vr.weapon_zoomed) {
 		vr.weapon_zoomLevel += 0.05;
 		if (vr.weapon_zoomLevel > 2.5f)
@@ -365,7 +430,7 @@ void VR_DrawFrame( engine_t* engine ) {
 			vr.weapon_zoomLevel = 1.0f;
 	}
 
-    GLboolean stageBoundsDirty = GL_TRUE;
+    static GLboolean stageBoundsDirty = GL_TRUE;
     if (ovrApp_HandleXrEvents(&engine->appState)) {
         VR_Recenter(engine);
     }
@@ -390,9 +455,6 @@ void VR_DrawFrame( engine_t* engine ) {
 
     OXR(xrWaitFrame(engine->appState.Session, &waitFrameInfo, &frameState));
     engine->predictedDisplayTime = frameState.predictedDisplayTime;
-    if (!frameState.shouldRender) {
-        return;
-    }
 
     // Get the HMD pose, predicted for the middle of the time period during which
     // the new eye images will be displayed. The number of frames predicted ahead
@@ -438,7 +500,7 @@ void VR_DrawFrame( engine_t* engine ) {
 
     // Update HMD and controllers
     IN_VRUpdateHMD( invViewTransform[0] );
-    IN_VRUpdateControllers( invViewTransform[0], frameState.predictedDisplayTime );
+    IN_VRUpdateControllers( frameState.predictedDisplayTime );
     IN_VRSyncActions();
 
     //Projection used for drawing HUD models etc
@@ -456,11 +518,15 @@ void VR_DrawFrame( engine_t* engine ) {
     memset(engine->appState.Layers, 0, sizeof(ovrCompositorLayer_Union) * ovrMaxLayerCount);
 
     ovrFramebuffer* frameBuffer = &engine->appState.Renderer.FrameBuffer;
-    int swapchainIndex = engine->appState.Renderer.FrameBuffer.TextureSwapChainIndex;
-    int glFramebuffer = engine->appState.Renderer.FrameBuffer.FrameBuffers[swapchainIndex];
+
+    // Acquire swapchain image FIRST to get the correct index
+    ovrFramebuffer_Acquire(frameBuffer);
+
+    // Get the swapchain index (set by xrAcquireSwapchainImage in Acquire)
+    int swapchainIndex = frameBuffer->TextureSwapChainIndex;
+    int glFramebuffer = frameBuffer->FrameBuffers[swapchainIndex];
     re.SetVRHeadsetParms(projectionMatrix.M, monoVRMatrix.M, glFramebuffer);
 
-    ovrFramebuffer_Acquire(frameBuffer);
     ovrFramebuffer_SetCurrent(frameBuffer);
     VR_ClearFrameBuffer(frameBuffer->ColorSwapChain.Width, frameBuffer->ColorSwapChain.Height);
     Com_Frame();
@@ -477,7 +543,7 @@ void VR_DrawFrame( engine_t* engine ) {
 
     XrCompositionLayerProjectionView projection_layer_elements[2] = {};
     if (!VR_useScreenLayer() && !(cl.snap.ps.pm_flags & PMF_FOLLOW && vr.follow_mode == VRFM_FIRSTPERSON)) {
-        vr.menuYaw = vr.hmdorientation[YAW];
+        // Note: menuYaw is now captured on transition to virtual screen mode, not here
 
         if (fullscreenMode) {
             VR_ReInitRenderer();
@@ -511,7 +577,10 @@ void VR_DrawFrame( engine_t* engine ) {
 
         engine->appState.Layers[engine->appState.LayerCount++].Projection = projection_layer;
     } else {
-
+        // Capture menuYaw on FIRST FRAME of virtual screen mode (not during gameplay)
+        if (!fullscreenMode) {
+            vr.menuYaw = vr.hmdorientation[YAW];
+        }
         fullscreenMode = qtrue;
 
         // Build the cylinder layer
@@ -532,7 +601,7 @@ void VR_DrawFrame( engine_t* engine ) {
         const XrVector3f axis = {0.0f, 1.0f, 0.0f};
         XrVector3f pos = {
                 invViewTransform[0].position.x - sin(radians(vr.menuYaw)) * 6.0f,
-                invViewTransform[0].position.y,
+                -0.25f,
                 invViewTransform[0].position.z - cos(radians(vr.menuYaw)) * 6.0f
         };
         cylinder_layer.pose.orientation = XrQuaternionf_CreateFromVectorAngle(axis, radians(vr.menuYaw));
@@ -558,8 +627,8 @@ void VR_DrawFrame( engine_t* engine ) {
     endFrameInfo.layers = layers;
 
     OXR(xrEndFrame(engine->appState.Session, &endFrameInfo));
-    frameBuffer->TextureSwapChainIndex++;
-    frameBuffer->TextureSwapChainIndex %= frameBuffer->TextureSwapChainLength;
+    // Note: Do NOT manually increment TextureSwapChainIndex here
+    // OpenXR manages the swapchain index via xrAcquireSwapchainImage in ovrFramebuffer_Acquire
 
     if (needRecenter)
     {

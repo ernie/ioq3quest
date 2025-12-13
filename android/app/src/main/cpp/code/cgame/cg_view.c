@@ -231,7 +231,7 @@ static void CG_OffsetVRThirdPersonView( void ) {
  	if ( cg.demoPlayback || CG_IsThirdPersonFollowMode(VRFM_THIRDPERSON_1))
 	{
 		scale *= SPECTATOR_WORLDSCALE_MULTIPLIER;
-		
+
 		//Check to see if the followed player has moved far enough away to mean we should update our location
 		vec3_t current;
 		VectorSubtract(cg.refdef.vieworg, cg.vr_vieworigin, current);
