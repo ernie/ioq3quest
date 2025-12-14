@@ -443,6 +443,14 @@ void VR_DrawFrame( engine_t* engine ) {
         stageBoundsDirty = GL_FALSE;
     }
 
+    // During loading states, let VR_PrepareLoadingFrame/VR_SubmitLoadingFrame handle
+    // the frame lifecycle. This allows each SCR_UpdateScreen() call during loading
+    // to submit its own VR frame, showing loading progress.
+    if (clc.state == CA_LOADING || clc.state == CA_PRIMED) {
+        Com_Frame();
+        return;
+    }
+
     // NOTE: OpenXR does not use the concept of frame indices. Instead,
     // XrWaitFrame returns the predicted display time.
     XrFrameWaitInfo waitFrameInfo = {};

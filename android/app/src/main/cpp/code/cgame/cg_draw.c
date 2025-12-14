@@ -594,7 +594,7 @@ static void CG_DrawStatusBar( void ) {
 		{ 0.5f, 0.5f, 0.5f, 1.0f },     // weapon firing
 		{ 1.0f, 1.0f, 1.0f, 1.0f } };   // health > 100
 
-	if ( trap_Cvar_VariableValue( "vr_hudDrawStatus" ) == 0 ) {
+	if ( trap_Cvar_VariableValue( "vr_currentHudDrawStatus" ) == 0 ) {
 		return;
 	}
 
@@ -2811,7 +2811,7 @@ static void CG_DrawHUD2D()
 			}
 
 #ifdef MISSIONPACK
-			if ( trap_Cvar_VariableValue( "vr_hudDrawStatus" ) != 0.0f ) {
+			if ( trap_Cvar_VariableValue( "vr_currentHudDrawStatus" ) != 0.0f ) {
 				Menu_PaintAll();
 				CG_DrawTimedMenus();
 			}
@@ -3139,7 +3139,7 @@ void CG_DrawActive( void ) {
 
 	float heightOffset = 0.0f;
 	float worldscale = cg.worldscale;
-    if ( cg.demoPlayback || CG_IsThirdPersonFollowMode(VRFM_THIRDPERSON_1))
+    if ( CG_IsThirdPersonFollowMode(VRFM_THIRDPERSON_1) )
     {
         worldscale *= SPECTATOR_WORLDSCALE_MULTIPLIER;
 		trap_Cvar_SetValue("vr_worldscaleScaler", SPECTATOR_WORLDSCALE_MULTIPLIER);
@@ -3159,11 +3159,14 @@ void CG_DrawActive( void ) {
 		trap_Cvar_SetValue("vr_worldscaleScaler", zoomCoeff);
 	}
 
-
-	if (cg.snap->ps.pm_flags & PMF_FOLLOW && vr->follow_mode == VRFM_FIRSTPERSON)
-    {
-	    //Do nothing to view height if we are following in first person
-    }
+	if (vr->first_person_following)
+	{
+		//Do nothing to view height if we are following in first person
+	}
+	else if (CG_IsDeathCam() || CG_IsThirdPersonFollowMode(VRFM_QUERY))
+	{
+		//Do nothing to view height - CG_OffsetVRThirdPersonView already positioned the camera
+	}
     else
     {
         cg.refdef.vieworg[2] -= PLAYER_HEIGHT;
@@ -3198,7 +3201,7 @@ void CG_DrawActive( void ) {
 	}
 
 	//Now draw the HUD shader in the world
-    if (trap_Cvar_VariableValue("vr_hudDrawStatus") != 2.0f && !vr->weapon_zoomed && !vr->virtual_screen)
+    if (trap_Cvar_VariableValue("vr_currentHudDrawStatus") != 2.0f && !vr->weapon_zoomed && !vr->virtual_screen)
 	{
 		refEntity_t ent;
 		trace_t trace;
@@ -3207,11 +3210,12 @@ void CG_DrawActive( void ) {
         vec3_t forward, right, up;
 
 		float scale = trap_Cvar_VariableValue("vr_worldscaleScaler");
-        float dist = (trap_Cvar_VariableValue("vr_hudDepth")+3) * 3 * scale;
-        float radius = dist / 3.0f;
+        float dist = (trap_Cvar_VariableValue("vr_currentHudDepth")+3) * 3 * scale;
+        float radius = (dist / 3.0f) * trap_Cvar_VariableValue("vr_hudScale");
 
         if (cg.snap->ps.stats[STAT_HEALTH] > 0 &&
-                cg.snap->ps.pm_type != PM_INTERMISSION)
+                cg.snap->ps.pm_type != PM_INTERMISSION &&
+		        !(cg.demoPlayback || (cg.snap->ps.pm_flags & PMF_FOLLOW)))
         {
             static float hmd_yaw_x = 0.0f;
             static float hmd_yaw_y = 1.0f;
@@ -3269,7 +3273,7 @@ void CG_DrawActive( void ) {
         //Now draw the screen 2D stuff
         CG_DrawScreen2D();
 
-        if (!vr->weapon_zoomed && !vr->virtual_screen)
+        if (!vr->weapon_zoomed && (!vr->virtual_screen || vr->first_person_following))
 		{
 			cg.drawingHUD = qtrue;
 

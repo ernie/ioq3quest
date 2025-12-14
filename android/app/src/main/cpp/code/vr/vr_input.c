@@ -1362,7 +1362,19 @@ static void IN_VRButtons( qboolean isRightController, uint32_t buttons, uint32_t
     }
 
     if (buttons & ovrButton_B) {
-        IN_HandleActiveInput(&controller->buttons, ovrButton_B, "B", 0, qfalse);
+        if ((cl.snap.ps.pm_flags & PMF_FOLLOW || clc.demoplaying) &&
+            (vr.follow_mode == VRFM_THIRDPERSON_1 || vr.follow_mode == VRFM_THIRDPERSON_2))
+        {
+            // Recenter camera when in third-person follow mode
+            if (!IN_InputActivated(&controller->buttons, ovrButton_B)) {
+                IN_ActivateInput(&controller->buttons, ovrButton_B);
+                vr.recenter_follow_camera = qtrue;
+            }
+        }
+        else
+        {
+            IN_HandleActiveInput(&controller->buttons, ovrButton_B, "B", 0, qfalse);
+        }
     } else {
         IN_HandleInactiveInput(&controller->buttons, ovrButton_B, "B", 0, qfalse);
     }
@@ -1427,7 +1439,9 @@ void IN_VRInputFrame( void )
         OXR(engine->appState.pfnRequestDisplayRefreshRate(engine->appState.Session, (float)vr_refreshrate->integer));
 	}
 
+	vr.right_handed = vr_righthanded->integer != 0;
 	vr.virtual_screen = VR_useScreenLayer();
+	vr.first_person_following = (((cl.snap.ps.pm_flags & PMF_FOLLOW) || clc.demoplaying)) && (vr.follow_mode == VRFM_FIRSTPERSON);
 
     VR_processHaptics();
 

@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 extern cvar_t *vr_hudDepth;
 extern cvar_t *vr_hudDrawStatus;
+extern cvar_t *vr_currentHudDrawStatus;
 extern vr_clientinfo_t vr;
 
 #define GLE(ret, name, ...) extern name##proc * qgl##name;

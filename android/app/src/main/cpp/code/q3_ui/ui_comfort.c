@@ -42,11 +42,13 @@ COMFORT OPTIONS MENU
 #define ID_COMFORTVIGNETTE		127
 #define ID_HEIGHTADJUST			128
 #define ID_ROLLHIT			    129
-#define ID_HAPTICINTENSITY	    130
-#define ID_HUDDEPTH			    131
-#define ID_HUDYOFFSET		    132
+#define ID_SMOOTHFOLLOW		    130
+#define ID_HAPTICINTENSITY	    131
+#define ID_HUDDEPTH			    132
+#define ID_HUDYOFFSET		    133
+#define ID_HUDSCALE			    134
 
-#define ID_BACK					133
+#define ID_BACK					135
 
 #define	NUM_HUDDEPTH			6
 
@@ -58,12 +60,14 @@ typedef struct {
 	menubitmap_s		framel;
 	menubitmap_s		framer;
 
-    menuslider_s 		comfortvignette;
-    menuslider_s 		heightadjust;
-    menuradiobutton_s	rollhit;
+	menuslider_s 		comfortvignette;
+	menuslider_s 		heightadjust;
+	menuradiobutton_s	rollhit;
+	menuradiobutton_s	smoothfollow;
 	menuslider_s 		hapticintensity;
 	menuslider_s        huddepth;
 	menuslider_s 		hudyoffset;
+	menuslider_s 		hudscale;
 
 	menubitmap_s		back;
 } comfort_t;
@@ -72,12 +76,14 @@ static comfort_t s_comfort;
 
 
 static void Comfort_SetMenuItems( void ) {
-    s_comfort.comfortvignette.curvalue		= trap_Cvar_VariableValue( "vr_comfortVignette" );
-    s_comfort.heightadjust.curvalue		= trap_Cvar_VariableValue( "vr_heightAdjust" );
-    s_comfort.rollhit.curvalue		    = trap_Cvar_VariableValue( "vr_rollWhenHit" ) != 0;
+	s_comfort.comfortvignette.curvalue		= trap_Cvar_VariableValue( "vr_comfortVignette" );
+	s_comfort.heightadjust.curvalue			= trap_Cvar_VariableValue( "vr_heightAdjust" );
+	s_comfort.rollhit.curvalue				= trap_Cvar_VariableValue( "vr_rollWhenHit" ) != 0;
+	s_comfort.smoothfollow.curvalue			= trap_Cvar_VariableValue( "cg_smoothFollow" ) != 0;
 	s_comfort.hapticintensity.curvalue		= trap_Cvar_VariableValue( "vr_hapticIntensity" );
-	s_comfort.huddepth.curvalue		= (int)trap_Cvar_VariableValue( "vr_hudDepth" ) % NUM_HUDDEPTH;
-    s_comfort.hudyoffset.curvalue		    = trap_Cvar_VariableValue( "vr_hudYOffset" ) + 200;
+	s_comfort.huddepth.curvalue				= (int)trap_Cvar_VariableValue( "vr_hudDepth" ) % NUM_HUDDEPTH;
+	s_comfort.hudyoffset.curvalue			= trap_Cvar_VariableValue( "vr_hudYOffset" ) + 200;
+	s_comfort.hudscale.curvalue				= trap_Cvar_VariableValue( "vr_hudScale" );
 }
 
 
@@ -87,33 +93,41 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 	}
 
 	switch( ((menucommon_s*)ptr)->id ) {
-    case ID_COMFORTVIGNETTE:
-        trap_Cvar_SetValue( "vr_comfortVignette", s_comfort.comfortvignette.curvalue );
-        break;
+		case ID_COMFORTVIGNETTE:
+			trap_Cvar_SetValue( "vr_comfortVignette", s_comfort.comfortvignette.curvalue );
+			break;
 
-    case ID_HEIGHTADJUST:
-        trap_Cvar_SetValue( "vr_heightAdjust", s_comfort.heightadjust.curvalue );
-        break;
+		case ID_HEIGHTADJUST:
+			trap_Cvar_SetValue( "vr_heightAdjust", s_comfort.heightadjust.curvalue );
+			break;
 
-    case ID_ROLLHIT:
-        trap_Cvar_SetValue( "vr_rollWhenHit", s_comfort.rollhit.curvalue );
-        break;
+		case ID_ROLLHIT:
+			trap_Cvar_SetValue( "vr_rollWhenHit", s_comfort.rollhit.curvalue );
+			break;
 
-    case ID_HAPTICINTENSITY:
-        trap_Cvar_SetValue( "vr_hapticIntensity", s_comfort.hapticintensity.curvalue);
-        break;
+		case ID_SMOOTHFOLLOW:
+			trap_Cvar_SetValue( "cg_smoothFollow", s_comfort.smoothfollow.curvalue );
+			break;
 
-	case ID_HUDDEPTH:
-		trap_Cvar_SetValue( "vr_hudDepth", ((int)s_comfort.huddepth.curvalue % NUM_HUDDEPTH));
-		break;
+		case ID_HAPTICINTENSITY:
+			trap_Cvar_SetValue( "vr_hapticIntensity", s_comfort.hapticintensity.curvalue);
+			break;
 
-    case ID_HUDYOFFSET:
-        trap_Cvar_SetValue( "vr_hudYOffset", s_comfort.hudyoffset.curvalue - 200);
-        break;
+		case ID_HUDDEPTH:
+			trap_Cvar_SetValue( "vr_hudDepth", ((int)s_comfort.huddepth.curvalue % NUM_HUDDEPTH));
+			break;
 
-	case ID_BACK:
-		UI_PopMenu();
-		break;
+		case ID_HUDYOFFSET:
+			trap_Cvar_SetValue( "vr_hudYOffset", s_comfort.hudyoffset.curvalue - 200);
+			break;
+
+		case ID_HUDSCALE:
+			trap_Cvar_SetValue( "vr_hudScale", s_comfort.hudscale.curvalue);
+			break;
+
+		case ID_BACK:
+			UI_PopMenu();
+			break;
 	}
 }
 
@@ -172,14 +186,23 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.heightadjust.minvalue		     = 0.0f;
 	s_comfort.heightadjust.maxvalue		     = 1.0f;
 
-    y += BIGCHAR_HEIGHT+2;
-    s_comfort.rollhit.generic.type        = MTYPE_RADIOBUTTON;
-    s_comfort.rollhit.generic.name	      = "Roll When Hit:";
-    s_comfort.rollhit.generic.flags	      = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
-    s_comfort.rollhit.generic.callback    = Comfort_MenuEvent;
-    s_comfort.rollhit.generic.id          = ID_ROLLHIT;
-    s_comfort.rollhit.generic.x	          = VR_X_POS;
-    s_comfort.rollhit.generic.y	          = y;
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.rollhit.generic.type        = MTYPE_RADIOBUTTON;
+	s_comfort.rollhit.generic.name	      = "Roll When Hit:";
+	s_comfort.rollhit.generic.flags	      = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.rollhit.generic.callback    = Comfort_MenuEvent;
+	s_comfort.rollhit.generic.id          = ID_ROLLHIT;
+	s_comfort.rollhit.generic.x	          = VR_X_POS;
+	s_comfort.rollhit.generic.y	          = y;
+
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.smoothfollow.generic.type        = MTYPE_RADIOBUTTON;
+	s_comfort.smoothfollow.generic.name	       = "Smooth Follow:";
+	s_comfort.smoothfollow.generic.flags	   = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.smoothfollow.generic.callback    = Comfort_MenuEvent;
+	s_comfort.smoothfollow.generic.id          = ID_SMOOTHFOLLOW;
+	s_comfort.smoothfollow.generic.x	       = VR_X_POS;
+	s_comfort.smoothfollow.generic.y	       = y;
 
 	y += BIGCHAR_HEIGHT+2;
 	s_comfort.hapticintensity.generic.type	     = MTYPE_SLIDER;
@@ -214,6 +237,17 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.hudyoffset.minvalue		     = 0;
 	s_comfort.hudyoffset.maxvalue		     = 400;
 
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.hudscale.generic.type	     = MTYPE_SLIDER;
+	s_comfort.hudscale.generic.x		 = VR_X_POS;
+	s_comfort.hudscale.generic.y		 = y;
+	s_comfort.hudscale.generic.flags	 = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.hudscale.generic.name	     = "HUD Scale:";
+	s_comfort.hudscale.generic.id 	     = ID_HUDSCALE;
+	s_comfort.hudscale.generic.callback  = Comfort_MenuEvent;
+	s_comfort.hudscale.minvalue		     = 0.5f;
+	s_comfort.hudscale.maxvalue		     = 2.0f;
+
 	s_comfort.back.generic.type	    = MTYPE_BITMAP;
 	s_comfort.back.generic.name     = ART_BACK0;
 	s_comfort.back.generic.flags    = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -232,9 +266,11 @@ static void Comfort_MenuInit( void ) {
 	Menu_AddItem( &s_comfort.menu, &s_comfort.comfortvignette );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.heightadjust );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.rollhit );
+	Menu_AddItem( &s_comfort.menu, &s_comfort.smoothfollow );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hapticintensity );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.huddepth );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hudyoffset );
+	Menu_AddItem( &s_comfort.menu, &s_comfort.hudscale );
 
 	Menu_AddItem( &s_comfort.menu, &s_comfort.back );
 

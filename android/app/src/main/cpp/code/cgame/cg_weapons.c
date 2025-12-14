@@ -236,15 +236,17 @@ void CG_ConvertFromVR(vec3_t in, vec3_t offset, vec3_t out)
 		//We are running multiplayer, so make the appropriate adjustment to the view
 		//angles as we send orientation to the server that includes the weapon angles
 		float deltaYaw = SHORT2ANGLE(cg.predictedPlayerState.delta_angles[YAW]);
-		if (cg.snap->ps.pm_flags & PMF_FOLLOW)
+		if (cg.demoPlayback || (cg.snap->ps.pm_flags & PMF_FOLLOW))
 		{
-			//Don't include delta if following another player
+			// Don't include delta if following another player, or playing back a demo
+			// In these cases, we're a floating camera, not the player.
 			deltaYaw = 0.0f;
 		}
 		float angleYaw = deltaYaw + (vr->clientviewangles[YAW] - vr->hmdorientation[YAW]);
 		rotateAboutOrigin(vrSpace[0], vrSpace[1], angleYaw, r);
 	} else {
-		rotateAboutOrigin(vrSpace[0], vrSpace[1], cg.refdefViewAngles[YAW] - vr->hmdorientation[YAW], r);
+		float angleYaw = cg.refdefViewAngles[YAW] - vr->hmdorientation[YAW];
+		rotateAboutOrigin(vrSpace[0], vrSpace[1], angleYaw, r);
 	}
 
 	vrSpace[0] = -r[0];
@@ -1728,7 +1730,7 @@ void CG_AddViewWeapon( playerState_t *ps ) {
         return;
     }
 
-    if (vr->weapon_zoomed || vr->virtual_screen) {
+    if (vr->weapon_zoomed || (vr->virtual_screen && !(vr->first_person_following))) {
         return; // do not draw weapon model with enabled weapon scope or when in menu
     }
 
@@ -1741,7 +1743,11 @@ void CG_AddViewWeapon( playerState_t *ps ) {
 	// set up gun position
 	CG_CalculateVRWeaponPosition( hand.origin, angles );
 
-	if (trap_Cvar_VariableValue("vr_lasersight") != 0.0f && !vr->no_crosshair)
+	if (trap_Cvar_VariableValue("vr_lasersight") != 0.0f && !vr->no_crosshair &&
+		// The laser sight looks terrible in first-person follow mode, and shouldn't render
+		// in deathcam either.
+		!(CG_IsDeathCam() ||
+			(cg.snap->ps.pm_flags & PMF_FOLLOW && vr->follow_mode == VRFM_FIRSTPERSON)))
 	{
 		vec3_t forward, end;
 		AngleVectors(angles, forward, NULL, NULL);
@@ -1761,7 +1767,7 @@ void CG_AddViewWeapon( playerState_t *ps ) {
 
 		//Scale / Move gun etc
 	float scale = 1.0f;
-    if (!(cg.snap->ps.pm_flags & PMF_FOLLOW && vr->follow_mode == VRFM_FIRSTPERSON))
+    if (!(((cg.snap->ps.pm_flags & PMF_FOLLOW) || cg.demoPlayback) && vr->follow_mode == VRFM_FIRSTPERSON))
 	{
 		char cvar_name[64];
 		Com_sprintf(cvar_name, sizeof(cvar_name), "vr_weapon_adjustment_%i", ps->weapon);

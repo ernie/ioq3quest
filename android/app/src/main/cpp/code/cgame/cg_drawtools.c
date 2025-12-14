@@ -46,15 +46,19 @@ Adjusted for resolution and screen aspect ratio
 */
 void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 {
-	int hudDrawStatus = (int)trap_Cvar_VariableValue("vr_hudDrawStatus");
-    //If using floating HUD and we are drawing it, then no need to scale as the HUD
-    //buffer is 640x480
-    if ( hudDrawStatus == 1 && cg.drawingHUD)
-    {
-        return;
-    }
+	int hudDrawStatus = (int)trap_Cvar_VariableValue("vr_currentHudDrawStatus");
+	//If using floating HUD and we are drawing it, double coordinates since the HUD
+	//buffer is now 1280x960 instead of 640x480
+	if ( hudDrawStatus == 1 && cg.drawingHUD)
+	{
+		*x *= 2.0f;
+		*y *= 2.0f;
+		*w *= 2.0f;
+		*h *= 2.0f;
+		return;
+	}
 
-   if (!cg.drawingHUD)
+	if (!cg.drawingHUD)
 	{
 		*x *= cgs.screenXScale;
 		*y *= cgs.screenYScale;
@@ -63,27 +67,42 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 	}
 	else  // scale to clearly visible portion of VR screen
 	{
-		float screenXScale = cgs.screenXScale / 2.8f;
-		float screenYScale = cgs.screenYScale / 2.3f;
+		float screenXScale, screenYScale;
+		float yOffset = 0.0f;
+		int effectiveHeight = cg.refdef.height;
+
+		if (vr->virtual_screen) {
+			screenXScale = cgs.screenXScale;
+			screenYScale = cgs.screenYScale;
+
+			// For VRFM_FIRSTPERSON gameplay, we're rendering to full framebuffer
+			// but only displaying the centered 4:3 portion, so adjust scale and offset
+			if (vr->first_person_following) {
+				// Calculate the 4:3 safe area height
+				int safeHeight = (cgs.glconfig.vidWidth * 3) / 4;
+				int yMargin = (cgs.glconfig.vidHeight - safeHeight) / 2;
+
+				// Recalculate Y scale based on the visible 4:3 area, not full height
+				screenYScale = safeHeight / 480.0f;
+
+				// Use safe height for centering calculation
+				effectiveHeight = safeHeight;
+
+				// Adjust Y coordinate to account for the cropped top margin
+				yOffset = yMargin;
+			}
+		} else {
+			screenXScale = cgs.screenXScale / 2.8f;
+			screenYScale = cgs.screenYScale / 2.3f;
+		}
 
 		*x *= screenXScale;
 		*y *= screenYScale;
-		if (hudflags & HUD_FLAGS_DRAWMODEL)
-		{
-			*w *= (screenXScale * 2.0f);
-			*x -= (*w / 3);
-			*h *= (screenYScale * 2.0f);
-			*y -= (*h / 3);
-		}
-		else
-		{
-			*w *= screenXScale;
-			*h *= screenYScale;
-		}
+		*w *= screenXScale;
+		*h *= screenYScale;
 
 		*x += (cg.refdef.width - (640 * screenXScale)) / 2.0f;
-		*y += (cg.refdef.height - (480 * screenYScale)) / 2.0f -
-			  trap_Cvar_VariableValue("vr_hudYOffset");
+		*y += (effectiveHeight - (480 * screenYScale)) / 2.0f - trap_Cvar_VariableValue("vr_hudYOffset") + yOffset;
 	}
 }
 

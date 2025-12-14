@@ -1710,7 +1710,7 @@ void GLSL_PrepareUniformBuffers(void)
             orthoProjectionMatrix);
 
     float hudOrthoProjectionMatrix[16];
-    Mat4Ortho(0, 640, 480, 0, 0, 1, hudOrthoProjectionMatrix);
+    Mat4Ortho(0, 1280, 960, 0, 0, 1, hudOrthoProjectionMatrix);
     GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[HUDBUFFER_ORTHO_PROJECTION],
             hudOrthoProjectionMatrix);
 
@@ -1757,7 +1757,7 @@ static GLuint GLSL_CalculateProjection() {
     {
         if (glState.isDrawingHUD)
         {
-            if (vr_hudDrawStatus->integer != 2)
+            if (vr_currentHudDrawStatus->integer != 2)
             {
                 result = HUDBUFFER_ORTHO_PROJECTION;
             }

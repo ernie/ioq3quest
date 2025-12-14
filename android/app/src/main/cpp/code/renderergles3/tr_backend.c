@@ -599,7 +599,7 @@ void	RB_SetGL2D (void) {
 	}
 
 	// set 2D virtual screen size
-	if (glState.isDrawingHUD && vr_hudDrawStatus->integer != 2)
+	if (glState.isDrawingHUD && vr_currentHudDrawStatus->integer != 2)
     {
         qglViewport(0, 0, tr.hudImage->width, tr.hudImage->height);
         qglScissor(0, 0, tr.hudImage->width, tr.hudImage->height);
@@ -1762,7 +1762,7 @@ const void* RB_HUDBuffer( const void* data ) {
     {
         glState.isDrawingHUD = qtrue;
 
-        if (vr_hudDrawStatus->integer != 2)
+        if (vr_currentHudDrawStatus->integer != 2)
 		{
 			//keep record of current render fbo and switch to the hud buffer
 			tr.backupFrameBuffer = tr.renderFbo->frameBuffer;
@@ -1793,7 +1793,7 @@ const void* RB_HUDBuffer( const void* data ) {
     {
         glState.isDrawingHUD = qfalse;
 
-		if (vr_hudDrawStatus->integer != 2)
+		if (vr_currentHudDrawStatus->integer != 2)
 		{
 			//restore the true render fbo
 			tr.renderFbo->frameBuffer = tr.backupFrameBuffer;

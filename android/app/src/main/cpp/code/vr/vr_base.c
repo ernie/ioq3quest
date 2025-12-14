@@ -49,6 +49,7 @@ cvar_t *vr_weaponSelectorWithHud = NULL;
 cvar_t *vr_goreLevel = NULL;
 cvar_t *vr_hudDrawStatus = NULL;
 cvar_t *vr_currentHudDrawStatus = NULL;
+cvar_t *vr_currentHudDepth = NULL;
 cvar_t *vr_showConsoleMessages = NULL;
 cvar_t *vr_hudScale = NULL;
 cvar_t *vr_thumbstickDeadzone = NULL;
@@ -186,6 +187,7 @@ void VR_InitCvars( void )
 	vr_goreLevel = Cvar_Get ("vr_goreLevel", "2", CVAR_ARCHIVE);
 	vr_hudDrawStatus = Cvar_Get ("vr_hudDrawStatus", "1", CVAR_ARCHIVE); // 0 - no hud, 1 - in-world hud, 2 - performance (static HUD)
 	vr_currentHudDrawStatus = Cvar_Get ("vr_currentHudDrawStatus", "1", CVAR_ARCHIVE); // Runtime HUD mode (set dynamically based on follow mode)
+	vr_currentHudDepth = Cvar_Get ("vr_currentHudDepth", "3", CVAR_ARCHIVE); // Runtime HUD depth (set dynamically based on follow mode)
 	vr_showConsoleMessages = Cvar_Get ("vr_showConsoleMessages", "1", CVAR_ARCHIVE);
 	vr_hudScale = Cvar_Get ("vr_hudScale", "1.0", CVAR_ARCHIVE);
 	vr_thumbstickDeadzone = Cvar_Get ("vr_thumbstickDeadzone", "0.15", CVAR_ARCHIVE);
@@ -377,6 +379,8 @@ int VR_isPauseable( void )
 
 int VR_useScreenLayer( void )
 {
+	extern vr_clientinfo_t vr;
+
 	//intermission is never full screen
     if ( cl.snap.ps.pm_type == PM_INTERMISSION )
     {

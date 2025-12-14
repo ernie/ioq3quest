@@ -1354,7 +1354,7 @@ void CG_NewClientInfo( int clientNum ) {
 		}
 	}
 
-	// head model
+	// head model (use same model/skin as body for now)
 	v = Info_ValueForKey( configstring, "hmodel" );
 	CG_SetSkinAndModel( &newInfo, ci, v, allowNativeModel, clientNum, myClientNum,
 		myTeam, qfalse, newInfo.headModelName, sizeof(newInfo.headModelName),
