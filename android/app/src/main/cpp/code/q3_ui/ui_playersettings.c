@@ -108,7 +108,7 @@ PlayerSettings_DrawName
 */
 static void PlayerSettings_DrawName( void *self ) {
 	menufield_s		*f;
-	//qboolean		focus;
+	qboolean		focus;
 	int				style;
 	char			*txt;
 	char			c;
@@ -120,14 +120,14 @@ static void PlayerSettings_DrawName( void *self ) {
 	f = (menufield_s*)self;
 	basex = f->generic.x;
 	y = f->generic.y;
-	//focus = (f->generic.parent->cursor == f->generic.menuPosition);
+	focus = (f->generic.parent->cursor == f->generic.menuPosition);
 
 	style = UI_LEFT|UI_SMALLFONT;
 	color = text_color_normal;
-	//if( focus ) {
-	//	style |= UI_PULSE;
-	//	color = text_color_highlight;
-	//}
+	if( focus ) {
+		style |= UI_PULSE;
+		color = text_color_highlight;
+	}
 
 	UI_DrawProportionalString( basex, y, "Name", style, color );
 
@@ -137,41 +137,53 @@ static void PlayerSettings_DrawName( void *self ) {
 	txt = f->field.buffer;
 	color = g_color_table[ColorIndex(COLOR_WHITE)];
 	x = basex;
-	while ( (c = *txt) != 0 ) {
-		//if ( !focus && Q_IsColorString( txt ) ) {
-		if ( Q_IsColorString( txt ) ) {
-			n = ColorIndex( *(txt+1) );
-			if( n == 0 ) {
-				n = 7;
-			}
-			color = g_color_table[n];
-			txt += 2;
-			continue;
+
+	// When keyboard is active, draw characters literally (show color codes)
+	if ( VirtualKeyboard_IsActive() && focus ) {
+		int i;
+		for ( i = 0; f->field.buffer[i]; i++ ) {
+			UI_DrawChar( x, y, f->field.buffer[i], UI_LEFT|UI_SMALLFONT, color );
+			x += SMALLCHAR_WIDTH;
 		}
-		UI_DrawChar( x, y, c, style, color );
-		txt++;
-		x += SMALLCHAR_WIDTH;
+	} else {
+		// Normal drawing with color code interpretation
+		while ( (c = *txt) != 0 ) {
+			if ( Q_IsColorString( txt ) ) {
+				n = ColorIndex( *(txt+1) );
+				if( n == 0 ) {
+					n = 7;
+				}
+				color = g_color_table[n];
+				txt += 2;
+				continue;
+			}
+			UI_DrawChar( x, y, c, UI_LEFT|UI_SMALLFONT, color );
+			txt++;
+			x += SMALLCHAR_WIDTH;
+		}
 	}
 
 	// draw cursor if we have focus
-	//if( focus ) {
-	//	if ( trap_Key_GetOverstrikeMode() ) {
-	//		c = 11;
-	//	} else {
-	//		c = 10;
-	//	}
-	//
-	//	style &= ~UI_PULSE;
-	//	style |= UI_BLINK;
-	//
-	//	UI_DrawChar( basex + f->field.cursor * SMALLCHAR_WIDTH, y, c, style, color_white );
-	//}
+	if( focus ) {
+		if ( trap_Key_GetOverstrikeMode() ) {
+			c = 11;
+		} else {
+			c = 10;
+		}
+
+		style = UI_LEFT|UI_SMALLFONT;
+		// When keyboard is active, show solid cursor; otherwise blink
+		if ( !VirtualKeyboard_IsActive() ) {
+			style |= UI_BLINK;
+		}
+
+		UI_DrawChar( basex + f->field.cursor * SMALLCHAR_WIDTH, y, c, style, color_white );
+	}
 
 	// draw at bottom also using proportional font
 	Q_strncpyz( name, f->field.buffer, sizeof(name) );
 	Q_CleanStr( name );
-	UI_DrawProportionalString( 320, 430, name, UI_CENTER|UI_BIGFONT, text_color_normal );
-	UI_DrawString( 320, 460, "To change player name use the companion app.", UI_CENTER|UI_SMALLFONT, text_color_normal );
+	UI_DrawProportionalString( 320, 440, name, UI_CENTER|UI_BIGFONT, text_color_normal );
 }
 
 
@@ -399,19 +411,17 @@ static void PlayerSettings_MenuInit( void ) {
 	s_playersettings.framer.height        = 334;
 
 	y = 112;
-	//s_playersettings.name.generic.type			= MTYPE_FIELD;
-	//s_playersettings.name.generic.flags			= QMF_NODEFAULTINIT;
-	s_playersettings.name.generic.type			= MTYPE_BTEXT;
-	s_playersettings.name.generic.flags			= QMF_INACTIVE;
+	s_playersettings.name.generic.type			= MTYPE_FIELD;
+	s_playersettings.name.generic.flags			= QMF_NODEFAULTINIT;
 	s_playersettings.name.generic.ownerdraw		= PlayerSettings_DrawName;
-	s_playersettings.name.field.widthInChars	= MAX_NAMELENGTH;
-	s_playersettings.name.field.maxchars		= MAX_NAMELENGTH;
 	s_playersettings.name.generic.x				= 192;
 	s_playersettings.name.generic.y				= y;
 	s_playersettings.name.generic.left			= 192 - 8;
 	s_playersettings.name.generic.top			= y - 8;
 	s_playersettings.name.generic.right			= 192 + 200;
 	s_playersettings.name.generic.bottom		= y + 2 * PROP_HEIGHT;
+	s_playersettings.name.field.widthInChars	= MAX_NAMELENGTH;
+	s_playersettings.name.field.maxchars		= MAX_NAMELENGTH;
 
 	y += 3 * PROP_HEIGHT;
 	s_playersettings.handicap.generic.type		= MTYPE_SPINCONTROL;

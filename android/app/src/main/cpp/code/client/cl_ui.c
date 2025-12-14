@@ -1073,7 +1073,22 @@ intptr_t CL_UISystemCalls( intptr_t *args ) {
 
 	case UI_VERIFY_CDKEY:
 		return CL_CDKeyValidate(VMA(1), VMA(2));
-		
+
+	// Virtual keyboard traps
+	case UI_VKEYBOARD_SHOW:
+		VKeyboard_Show();
+		return 0;
+
+	case UI_VKEYBOARD_HIDE:
+		VKeyboard_Hide();
+		return 0;
+
+	case UI_VKEYBOARD_ISACTIVE:
+		return VKeyboard_IsActive();
+
+	case UI_VKEYBOARD_HANDLEKEY:
+		return VKeyboard_HandleKey( args[1] );
+
 	default:
 		Com_Error( ERR_DROP, "Bad UI system trap: %ld", (long int) args[0] );
 
@@ -1090,6 +1105,7 @@ CL_ShutdownUI
 void CL_ShutdownUI( void ) {
 	Key_SetCatcher( Key_GetCatcher( ) & ~KEYCATCH_UI );
 	cls.uiStarted = qfalse;
+	VKeyboard_Hide();
 	if ( !uivm ) {
 		return;
 	}

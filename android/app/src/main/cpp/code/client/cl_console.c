@@ -63,6 +63,7 @@ console_t	con;
 cvar_t		*con_conspeed;
 cvar_t		*con_autoclear;
 cvar_t		*con_notifytime;
+cvar_t		*con_scale;
 
 #define	DEFAULT_CONSOLE_WIDTH	78
 
@@ -85,6 +86,16 @@ void Con_ToggleConsole_f (void) {
 	g_consoleField.widthInChars = g_console_field_width;
 
 	Con_ClearNotify ();
+
+	// Toggle keyboard along with console
+	if ( Key_GetCatcher( ) & KEYCATCH_CONSOLE ) {
+		// Console is being closed
+		VKeyboard_Hide();
+	} else {
+		// Console is being opened
+		VKeyboard_Show();
+	}
+
 	Key_SetCatcher( Key_GetCatcher( ) ^ KEYCATCH_CONSOLE );
 }
 
@@ -287,8 +298,12 @@ void Con_CheckResize (void)
 {
 	int		i, j, width, oldwidth, oldtotallines, numlines, numchars;
 	short	tbuf[CON_TEXTSIZE];
+	int		scale = con_scale ? con_scale->integer : 2;
 
-	width = (SCREEN_WIDTH / SMALLCHAR_WIDTH) - 2;
+	if (scale < 1) scale = 1;
+	if (scale > 4) scale = 4;
+
+	width = (SCREEN_WIDTH / (SMALLCHAR_WIDTH * scale)) - 2;
 
 	if (width == con.linewidth)
 		return;
@@ -364,6 +379,7 @@ void Con_Init (void) {
 	con_notifytime = Cvar_Get ("con_notifytime", "3", 0);
 	con_conspeed = Cvar_Get ("scr_conspeed", "3", 0);
 	con_autoclear = Cvar_Get("con_autoclear", "1", CVAR_ARCHIVE);
+	con_scale = Cvar_Get("con_scale", "2", CVAR_ARCHIVE);  // Default 2x for VR readability
 
 	Field_Clear( &g_consoleField );
 	g_consoleField.widthInChars = g_console_field_width;
@@ -533,6 +549,9 @@ DRAWING
 ==============================================================================
 */
 
+// Forward declarations
+static void Con_DrawChar_Scaled(int x, int y, int scale, int ch);
+void Field_Draw_Scaled( field_t *edit, int x, int y, int width, qboolean showCursor, qboolean noColorEscape, int scale );
 
 /*
 ================
@@ -543,19 +562,27 @@ Draw the editline after a ] prompt
 */
 void Con_DrawInput (void) {
 	int		y;
+	int		scale = con_scale ? con_scale->integer : 2;
+	int		charW, charH;
+
+	if (scale < 1) scale = 1;
+	if (scale > 4) scale = 4;
+
+	charW = SMALLCHAR_WIDTH * scale;
+	charH = SMALLCHAR_HEIGHT * scale;
 
 	if ( clc.state != CA_DISCONNECTED && !(Key_GetCatcher( ) & KEYCATCH_CONSOLE ) ) {
 		return;
 	}
 
-	y = con.vislines - ( SMALLCHAR_HEIGHT * 2 );
+	y = con.vislines - ( charH * 2 );
 
 	re.SetColor( con.color );
 
-	SCR_DrawSmallChar( con.xadjust + 1 * SMALLCHAR_WIDTH, y, ']' );
+	Con_DrawChar_Scaled( con.xadjust + 1 * charW, y, scale, ']' );
 
-	Field_Draw( &g_consoleField, con.xadjust + 2 * SMALLCHAR_WIDTH, y,
-		SCREEN_WIDTH - 3 * SMALLCHAR_WIDTH, qtrue, qtrue );
+	Field_Draw_Scaled( &g_consoleField, con.xadjust + 2 * charW, y,
+		SCREEN_WIDTH - 3 * charW, qtrue, qtrue, scale );
 }
 
 
@@ -706,6 +733,14 @@ void Con_DrawSolidConsole( float frac ) {
 //	qhandle_t		conShader;
 	int				currentColor;
 	vec4_t			color;
+	int				scale = con_scale ? con_scale->integer : 2;
+	int				charW, charH;
+
+	if (scale < 1) scale = 1;
+	if (scale > 4) scale = 4;
+
+	charW = SMALLCHAR_WIDTH * scale;
+	charH = SMALLCHAR_HEIGHT * scale;
 
 	lines = cls.glconfig.vidHeight * frac;
 	if (lines <= 0)
@@ -741,16 +776,16 @@ void Con_DrawSolidConsole( float frac ) {
 	i = strlen( Q3_VERSION );
 
 	for (x=0 ; x<i ; x++) {
-		SCR_DrawSmallChar( cls.glconfig.vidWidth - ( i - x + 1 ) * SMALLCHAR_WIDTH,
-			lines - SMALLCHAR_HEIGHT, Q3_VERSION[x] );
+		Con_DrawChar_Scaled( cls.glconfig.vidWidth - ( i - x + 1 ) * charW,
+			lines - charH, scale, Q3_VERSION[x] );
 	}
 
 
 	// draw the text
 	con.vislines = lines;
-	rows = (lines-SMALLCHAR_HEIGHT)/SMALLCHAR_HEIGHT;		// rows of text to draw
+	rows = (lines-charH)/charH;		// rows of text to draw
 
-	y = lines - (SMALLCHAR_HEIGHT*3);
+	y = lines - (charH*3);
 
 	// draw from the bottom up
 	if (con.display != con.current)
@@ -758,11 +793,11 @@ void Con_DrawSolidConsole( float frac ) {
 	// draw arrows to show the buffer is backscrolled
 		re.SetColor( g_color_table[ColorIndex(COLOR_RED)] );
 		for (x=0 ; x<con.linewidth ; x+=4)
-			SCR_DrawSmallChar( con.xadjust + (x+1)*SMALLCHAR_WIDTH, y, '^' );
-		y -= SMALLCHAR_HEIGHT;
+			Con_DrawChar_Scaled( con.xadjust + (x+1)*charW, y, scale, '^' );
+		y -= charH;
 		rows--;
 	}
-	
+
 	row = con.display;
 
 	if ( con.x == 0 ) {
@@ -772,13 +807,13 @@ void Con_DrawSolidConsole( float frac ) {
 	currentColor = 7;
 	re.SetColor( g_color_table[currentColor] );
 
-	for (i=0 ; i<rows ; i++, y -= SMALLCHAR_HEIGHT, row--)
+	for (i=0 ; i<rows ; i++, y -= charH, row--)
 	{
 		if (row < 0)
 			break;
 		if (con.current - row >= con.totallines) {
 			// past scrollback wrap point
-			continue;	
+			continue;
 		}
 
 		text = con.text + (row % con.totallines)*con.linewidth;
@@ -792,7 +827,7 @@ void Con_DrawSolidConsole( float frac ) {
 				currentColor = ColorIndexForNumber( text[x]>>8 );
 				re.SetColor( g_color_table[currentColor] );
 			}
-			SCR_DrawSmallChar(  con.xadjust + (x+1)*SMALLCHAR_WIDTH, y, text[x] & 0xff );
+			Con_DrawChar_Scaled( con.xadjust + (x+1)*charW, y, scale, text[x] & 0xff );
 		}
 	}
 

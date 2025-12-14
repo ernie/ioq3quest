@@ -67,6 +67,7 @@ extern vmCvar_t	ui_browserGameType;
 extern vmCvar_t	ui_browserSortKey;
 extern vmCvar_t	ui_browserShowFull;
 extern vmCvar_t	ui_browserShowEmpty;
+extern vmCvar_t	ui_browserExcludeBots;
 
 extern vmCvar_t	ui_brassTime;
 extern vmCvar_t	ui_drawCrosshair;
@@ -310,6 +311,14 @@ extern void			MField_Draw( mfield_t *edit, int x, int y, int style, vec4_t color
 extern void			MenuField_Init( menufield_s* m );
 extern void			MenuField_Draw( menufield_s *f );
 extern sfxHandle_t	MenuField_Key( menufield_s* m, int* key );
+
+//
+// ui_mfield.c - virtual keyboard wrappers (calls client keyboard)
+//
+void			VirtualKeyboard_Show( menufield_s *field );
+void			VirtualKeyboard_Hide( void );
+qboolean		VirtualKeyboard_IsActive( void );
+qboolean		VirtualKeyboard_Key( int key );
 
 //
 // ui_menu.c
@@ -701,6 +710,12 @@ void			trap_SetCDKey( char *buf );
 qboolean               trap_VerifyCDKey( const char *key, const char *chksum);
 
 void			trap_SetPbClStatus( int status );
+
+// Virtual keyboard traps
+void			trap_VKeyboard_Show( void );
+void			trap_VKeyboard_Hide( void );
+qboolean		trap_VKeyboard_IsActive( void );
+qboolean		trap_VKeyboard_HandleKey( int key );
 
 //
 // ui_addbots.c

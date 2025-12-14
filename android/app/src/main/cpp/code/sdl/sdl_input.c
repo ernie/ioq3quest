@@ -1246,8 +1246,6 @@ void IN_Init( void *windowData )
 	in_joystick = Cvar_Get( "in_joystick", "1", CVAR_ARCHIVE|CVAR_LATCH );
 	in_joystickThreshold = Cvar_Get( "joy_threshold", "0.15", CVAR_ARCHIVE );
 
-	SDL_StartTextInput( );
-
 	mouseAvailable = ( in_mouse->value != 0 );
 	IN_DeactivateMouse( Cvar_VariableIntegerValue( "r_fullscreen" ) != 0 );
 
@@ -1285,4 +1283,18 @@ void IN_Restart( void )
 {
 	IN_ShutdownJoystick( );
 	IN_Init( SDL_window );
+}
+
+/*
+===============
+IN_ShowKeyboard
+===============
+*/
+void IN_ShowKeyboard( qboolean show )
+{
+	if ( show ) {
+		SDL_StartTextInput( );
+	} else {
+		SDL_StopTextInput( );
+	}
 }

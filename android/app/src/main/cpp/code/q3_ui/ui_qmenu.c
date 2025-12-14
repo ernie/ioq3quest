@@ -1658,7 +1658,7 @@ sfxHandle_t Menu_DefaultKey( menuframework_s *m, int key )
 
 		if (sound) {
 			// key was handled
-			return sound;		
+			return sound;
 		}
 	}
 

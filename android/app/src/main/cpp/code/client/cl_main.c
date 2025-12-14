@@ -162,6 +162,8 @@ static int noGameRestart = qfalse;
 extern void SV_BotFrame( int time );
 void CL_CheckForResend( void );
 void CL_ShowIP_f(void);
+void CL_ShowKeyboard_f(void);
+void CL_HideKeyboard_f(void);
 void CL_ServerStatus_f(void);
 void CL_ServerStatusResponse( netadr_t from, msg_t *msg );
 
@@ -3694,6 +3696,8 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("ping", CL_Ping_f );
 	Cmd_AddCommand ("serverstatus", CL_ServerStatus_f );
 	Cmd_AddCommand ("showip", CL_ShowIP_f );
+	Cmd_AddCommand ("showkeyboard", CL_ShowKeyboard_f );
+	Cmd_AddCommand ("hidekeyboard", CL_HideKeyboard_f );
 	Cmd_AddCommand ("fs_openedList", CL_OpenedPK3List_f );
 	Cmd_AddCommand ("fs_referencedList", CL_ReferencedPK3List_f );
 	Cmd_AddCommand ("model", CL_SetModel_f );
@@ -4648,6 +4652,24 @@ CL_ShowIP_f
 */
 void CL_ShowIP_f(void) {
 	Sys_ShowIP();
+}
+
+/*
+=================
+CL_ShowKeyboard_f
+=================
+*/
+void CL_ShowKeyboard_f(void) {
+	VKeyboard_Show();
+}
+
+/*
+=================
+CL_HideKeyboard_f
+=================
+*/
+void CL_HideKeyboard_f(void) {
+	VKeyboard_Hide();
 }
 
 /*

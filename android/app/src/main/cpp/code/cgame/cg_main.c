@@ -1867,6 +1867,7 @@ void CG_LoadHudMenu( void ) {
 	cgDC.getCVarString = trap_Cvar_VariableStringBuffer;
 	cgDC.getCVarValue = CG_Cvar_Get;
 	cgDC.drawTextWithCursor = &CG_Text_PaintWithCursor;
+	cgDC.drawTextWithCursor_NoColorEscape = NULL; // Not needed in cgame context
 	//cgDC.setOverstrikeMode = &trap_Key_SetOverstrikeMode;
 	//cgDC.getOverstrikeMode = &trap_Key_GetOverstrikeMode;
 	cgDC.startLocalSound = &trap_S_StartLocalSound;
@@ -1890,7 +1891,12 @@ void CG_LoadHudMenu( void ) {
 	cgDC.stopCinematic = &CG_StopCinematic;
 	cgDC.drawCinematic = &CG_DrawCinematic;
 	cgDC.runCinematicFrame = &CG_RunCinematicFrame;
-	
+	// Virtual keyboard not available in cgame context
+	cgDC.vkeyboardShow = NULL;
+	cgDC.vkeyboardHide = NULL;
+	cgDC.vkeyboardIsActive = NULL;
+	cgDC.vkeyboardHandleKey = NULL;
+
 	Init_Display(&cgDC);
 
 	Menu_Reset();

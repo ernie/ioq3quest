@@ -399,6 +399,14 @@ CL_MouseEvent
 =================
 */
 void CL_MouseEvent( int dx, int dy, int time ) {
+	// Track cursor position for virtual keyboard
+	cls.cursorX += dx;
+	if (cls.cursorX < 0) cls.cursorX = 0;
+	else if (cls.cursorX > SCREEN_WIDTH) cls.cursorX = SCREEN_WIDTH;
+	cls.cursorY += dy;
+	if (cls.cursorY < 0) cls.cursorY = 0;
+	else if (cls.cursorY > SCREEN_HEIGHT) cls.cursorY = SCREEN_HEIGHT;
+
 	if ( Key_GetCatcher( ) & KEYCATCH_UI ) {
 		VM_Call( uivm, UI_MOUSE_EVENT, dx, dy );
 	} else if (Key_GetCatcher( ) & KEYCATCH_CGAME) {

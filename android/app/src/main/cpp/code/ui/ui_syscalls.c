@@ -402,3 +402,20 @@ qboolean trap_VerifyCDKey( const char *key, const char *chksum) {
 void trap_SetPbClStatus( int status ) {
 	syscall( UI_SET_PBCLSTATUS, status );
 }
+
+// Virtual keyboard traps
+void trap_VKeyboard_Show( void ) {
+	syscall( UI_VKEYBOARD_SHOW );
+}
+
+void trap_VKeyboard_Hide( void ) {
+	syscall( UI_VKEYBOARD_HIDE );
+}
+
+qboolean trap_VKeyboard_IsActive( void ) {
+	return syscall( UI_VKEYBOARD_ISACTIVE );
+}
+
+qboolean trap_VKeyboard_HandleKey( int key ) {
+	return syscall( UI_VKEYBOARD_HANDLEKEY, key );
+}
