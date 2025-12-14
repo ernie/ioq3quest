@@ -383,8 +383,11 @@ int VR_useScreenLayer( void )
 
     int keyCatcher = Key_GetCatcher( );
 
-	// Always use screen layer for UI/console, even during intermission
-	if ( keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE) )
+	// Use screen layer for UI/console, EXCEPT during single-player intermission
+	// where we want the in-world podium view even with the postgame menu active
+	qboolean isSPIntermission = (cl.snap.ps.pm_type == PM_INTERMISSION) &&
+	                            (Cvar_VariableValue("g_gametype") == GT_SINGLE_PLAYER);
+	if ( (keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE)) && !isSPIntermission )
 	{
 		return qtrue;
 	}

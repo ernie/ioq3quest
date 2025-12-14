@@ -3902,12 +3902,23 @@ void Item_ListBox_Paint(itemDef_t *item) {
 				// fit++;
 			}
 		} else {
+			int currentClient = (DC->getCurrentClientNum) ? DC->getCurrentClientNum() : -1;
+
 			x = item->window.rect.x + 1;
 			y = item->window.rect.y + 1;
 			for (i = listPtr->startPos; i < count; i++) {
 				const char *text;
 				// always draw at least one
 				// which may overdraw the box if it is too small for the element
+
+				// Highlight current client row (for scoreboard)
+				if (currentClient >= 0 && DC->feederItemClientNum) {
+					int clientNum = DC->feederItemClientNum(item->special, i);
+					if (clientNum == currentClient) {
+						vec4_t highlightColor = {1.0f, 0.9f, 0.5f, 0.5f};  // light yellow
+						DC->fillRect(x + 2, y + 6, item->window.rect.w - SCROLLBAR_SIZE - 4, listPtr->elementHeight - 3, highlightColor);
+					}
+				}
 
 				if (listPtr->numColumns > 0) {
 					int j;
@@ -4312,7 +4323,6 @@ void Item_Init(itemDef_t *item) {
 void Menu_HandleMouseMove(menuDef_t *menu, float x, float y) {
   int i, pass;
   qboolean focusSet = qfalse;
-
   itemDef_t *overItem;
   if (menu == NULL) {
     return;
@@ -4331,7 +4341,7 @@ void Menu_HandleMouseMove(menuDef_t *menu, float x, float y) {
 		return;
 	}
 
-  // FIXME: this is the whole issue of focus vs. mouse over.. 
+  // FIXME: this is the whole issue of focus vs. mouse over..
   // need a better overall solution as i don't like going through everything twice
   for (pass = 0; pass < 2; pass++) {
     for (i = 0; i < menu->itemCount; i++) {
@@ -6035,7 +6045,7 @@ int Display_CursorType(int x, int y) {
 
 void Display_HandleKey(int key, qboolean down, int x, int y) {
 	menuDef_t *menu = Display_CaptureItem(x, y);
-	if (menu == NULL) {  
+	if (menu == NULL) {
 		menu = Menu_GetFocused();
 	}
 	if (menu) {

@@ -188,7 +188,6 @@ Sets the coordinates of the rendered window
 */
 static void CG_CalcVrect (void) {
 	int		size;
-	int		viewWidth, viewHeight;
 
 	// the intermission should allways be full screen
 	if ( cg.snap->ps.pm_type == PM_INTERMISSION ) {
@@ -207,20 +206,10 @@ static void CG_CalcVrect (void) {
 
 	}
 
-	// In virtual screen mode, constrain to 4:3 aspect ratio centered in framebuffer
-	// The projection matrix will be adjusted in the renderer to match this aspect ratio
-	if (vr && vr->virtual_screen) {
-		viewWidth = cgs.glconfig.vidWidth;
-		viewHeight = (cgs.glconfig.vidWidth * 3) / 4;
-	} else {
-		viewWidth = cgs.glconfig.vidWidth;
-		viewHeight = cgs.glconfig.vidHeight;
-	}
-
-	cg.refdef.width = viewWidth*size/100;
+	cg.refdef.width = cgs.glconfig.vidWidth*size/100;
 	cg.refdef.width &= ~1;
 
-	cg.refdef.height = viewHeight*size/100;
+	cg.refdef.height = cgs.glconfig.vidHeight*size/100;
 	cg.refdef.height &= ~1;
 
 	cg.refdef.x = (cgs.glconfig.vidWidth - cg.refdef.width)/2;

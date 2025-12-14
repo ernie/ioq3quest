@@ -1060,6 +1060,9 @@ typedef struct {
 
 	// comfort vignette
 	qhandle_t	vignetteShader;
+
+	// scoreboard cursor
+	qhandle_t	scoreboardCursor;
 } cgMedia_t;
 
 
@@ -1149,6 +1152,11 @@ typedef struct {
 
 	// media
 	cgMedia_t		media;
+
+	// scoreboard click-to-follow
+	qboolean	score_catched;
+	int			score_key;
+	qboolean	filterKeyUpEvent;
 
 } cgs_t;
 
@@ -1565,6 +1573,8 @@ void CG_DrawInformation( void );
 //
 qboolean CG_DrawOldScoreboard( void );
 void CG_DrawTourneyScoreboard( void );
+void CG_ScoreboardClick( void );
+void CG_SetScoreCatcher( qboolean value );
 
 //
 // cg_consolecmds.c

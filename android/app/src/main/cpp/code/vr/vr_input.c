@@ -900,25 +900,36 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
         VectorSubtract(vr.offhandposition, vr.hmdposition, vr.offhandoffset);
     }
 
-	if (vr.virtual_screen || cl.snap.ps.pm_type == PM_INTERMISSION)
+	// Update cursor for virtual screen, intermission, or scoreboard
+	if (vr.virtual_screen || cl.snap.ps.pm_type == PM_INTERMISSION || (vr.scoreboardCursorX && vr.scoreboardCursorY))
     {
         vr.weapon_zoomed = qfalse;
+        float yaw;
+        float pitch;
+        if (vr.menuLeftHanded) {
+            yaw = (vr_righthanded->integer != 0) ? vr.offhandangles[YAW] : vr.weaponangles[YAW];
+            pitch = (vr_righthanded->integer != 0) ? vr.offhandangles[PITCH] : vr.weaponangles[PITCH];
+        } else {
+            yaw = (vr_righthanded->integer != 0) ? vr.weaponangles[YAW] : vr.offhandangles[YAW];
+            pitch = (vr_righthanded->integer != 0) ? vr.weaponangles[PITCH] : vr.offhandangles[PITCH];
+        }
+        int x = 320 - tan((yaw - vr.menuYaw) * (M_PI*2 / 360)) * 400;
+        int y = 240 + tan((pitch + vr_weaponPitch->value) * (M_PI*2 / 360)) * 400;
         if (vr.menuCursorX && vr.menuCursorY)
         {
-            float yaw;
-            float pitch;
-            if (vr.menuLeftHanded) {
-                yaw = (vr_righthanded->integer != 0) ? vr.offhandangles[YAW] : vr.weaponangles[YAW];
-                pitch = (vr_righthanded->integer != 0) ? vr.offhandangles[PITCH] : vr.weaponangles[PITCH];
-            } else {
-                yaw = (vr_righthanded->integer != 0) ? vr.weaponangles[YAW] : vr.offhandangles[YAW];
-                pitch = (vr_righthanded->integer != 0) ? vr.weaponangles[PITCH] : vr.offhandangles[PITCH];
-            }
-            int x = 320 - tan((yaw - vr.menuYaw) * (M_PI*2 / 360)) * 400;
-            int y = 240 + tan((pitch + vr_weaponPitch->value) * (M_PI*2 / 360)) * 400;
             *vr.menuCursorX = x;
             *vr.menuCursorY = y;
             Com_QueueEvent(in_vrEventTime, SE_MOUSE, 0, 0, 0, NULL);
+        }
+        if (vr.scoreboardCursorX && vr.scoreboardCursorY)
+        {
+            // Clamp cursor to HUD bounds (640x480 virtual screen)
+            if (x < 0) x = 0;
+            if (x > 640) x = 640;
+            if (y < 0) y = 0;
+            if (y > 480) y = 480;
+            *vr.scoreboardCursorX = x;
+            *vr.scoreboardCursorY = y;
         }
     }
     else
@@ -1093,7 +1104,8 @@ static void IN_VRJoystick( qboolean isRightController, float joystickX, float jo
 	float curvedX = IN_ApplyThumbstickCurve(joystickX, vr_thumbstickDeadzone->value);
 	float curvedY = IN_ApplyThumbstickCurve(joystickY, vr_thumbstickDeadzone->value);
 
-	if (vr.virtual_screen || cl.snap.ps.pm_type == PM_INTERMISSION)
+	// Allow thumbstick menu navigation for virtual screen, intermission, or when scoreboard is active
+	if (vr.virtual_screen || cl.snap.ps.pm_type == PM_INTERMISSION || (vr.scoreboardCursorX && vr.scoreboardCursorY))
 	{
 
 	    // Use thumbstick UP/DOWN as PAGEUP/PAGEDOWN in menus
@@ -1174,12 +1186,22 @@ static void IN_VRJoystick( qboolean isRightController, float joystickX, float jo
 				else if (joystick[1] <= -snapThreshold) joystick[1] = -1.0f;
             }
 
-            // Snap joystick values close to ±1.0 after rotation to ensure full speed
-            const float snapThreshold = 0.96f;
-            if (joystick[0] >= snapThreshold) joystick[0] = 1.0f;
-            else if (joystick[0] <= -snapThreshold) joystick[0] = -1.0f;
-            if (joystick[1] >= snapThreshold) joystick[1] = 1.0f;
-            else if (joystick[1] <= -snapThreshold) joystick[1] = -1.0f;
+            // After rotation, ensure something close to maximum deflection is scaled to full
+            // deflection on the high axis. Otherwise, we end up running slower max speed when
+            // use_fake_6dof is true (in multiplayer, in other words), and this gets us fragged
+            // by our KBM-using friends.
+            float magnitude = sqrtf(joystick[0] * joystick[0] + joystick[1] * joystick[1]);
+            if (magnitude >= vr_thumbstickFullDeflection->value) {
+                // Input is at or near full deflection - scale so max component is 1.0
+                float absX = fabsf(joystick[0]);
+                float absY = fabsf(joystick[1]);
+                float maxComponent = (absX > absY) ? absX : absY;
+                if (maxComponent > 0.0f) {
+                    float scaleFactor = 1.0f / maxComponent;
+                    joystick[0] *= scaleFactor;
+                    joystick[1] *= scaleFactor;
+                }
+            }
 
             //sideways
             Com_QueueEvent(in_vrEventTime, SE_JOYSTICK_AXIS, 0, joystick[0] * 127.0f + positional[0] * 127.0f, 0, NULL);
@@ -1228,9 +1250,9 @@ static void IN_VRJoystick( qboolean isRightController, float joystickX, float jo
 static void IN_VRTriggers( qboolean isRightController, float triggerValue ) {
 	vrController_t* controller = isRightController == qtrue ? &rightController : &leftController;
 
-	if (VR_useScreenLayer() || cl.snap.ps.pm_type == PM_INTERMISSION) {
+	// Triggers are used for menu navigation in screen mode, intermission, or scoreboard
+	if (VR_useScreenLayer() || cl.snap.ps.pm_type == PM_INTERMISSION || (vr.scoreboardCursorX && vr.scoreboardCursorY)) {
 
-    	// Triggers are used for menu navigation in screen mode or in intermission
         if (triggerValue > triggerPressedThreshold && !IN_InputActivated(&controller->axisButtons, VR_TOUCH_AXIS_TRIGGER_INDEX))
         {
             IN_ActivateInput(&controller->axisButtons, VR_TOUCH_AXIS_TRIGGER_INDEX);
