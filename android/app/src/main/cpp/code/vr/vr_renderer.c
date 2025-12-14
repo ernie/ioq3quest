@@ -23,6 +23,7 @@
 
 extern vr_clientinfo_t vr;
 extern cvar_t *vr_heightAdjust;
+extern cvar_t *vr_screenCurvature;
 
 XrView* projections;
 GLboolean stageSupported = GL_FALSE;
@@ -613,9 +614,26 @@ void VR_DrawFrame( engine_t* engine ) {
                 invViewTransform[0].position.z - cos(radians(vr.menuYaw)) * 6.0f
         };
         cylinder_layer.pose.orientation = XrQuaternionf_CreateFromVectorAngle(axis, radians(vr.menuYaw));
+
+        // Screen curvature: 1.0 = very curved, 0.0 = nearly flat
+        float curvature = vr_screenCurvature ? vr_screenCurvature->value : 0.5f;
+        const float refRadius = 8.0f;
+        const float refCentralAngle = MATH_PI * 0.5f;
+        const float arcLength = refRadius * refCentralAngle;
+        const float refDistance = 4.0f;
+
+        // Vary radius, adjust centralAngle to keep arc length constant,
+        // and adjust distance to keep surface at same position
+        float radius = 4.0f + (1.0f - curvature) * 12.0f;
+        float centralAngle = arcLength / radius;
+        float axisDistance = refDistance + (refRadius - radius);
+
+        pos.x = invViewTransform[0].position.x - sin(radians(vr.menuYaw)) * axisDistance;
+        pos.z = invViewTransform[0].position.z - cos(radians(vr.menuYaw)) * axisDistance;
         cylinder_layer.pose.position = pos;
-        cylinder_layer.radius = 8.0f;
-        cylinder_layer.centralAngle = MATH_PI * 0.5f;
+
+        cylinder_layer.radius = radius;
+        cylinder_layer.centralAngle = centralAngle;
         cylinder_layer.aspectRatio = width / (float)height / 0.75f;
 
         engine->appState.Layers[engine->appState.LayerCount++].Cylinder = cylinder_layer;
@@ -754,9 +772,21 @@ int VR_SubmitLoadingFrame( engine_t* engine )
 	cylinder_layer.subImage.imageRect.extent.height = height;
 	const XrVector3f axis = {0.0f, 1.0f, 0.0f};
 	cylinder_layer.pose.orientation = XrQuaternionf_CreateFromVectorAngle(axis, radians(vr.menuYaw));
-	cylinder_layer.pose.position = (XrVector3f){-sin(radians(vr.menuYaw)) * 6.0f, -0.25f, -cos(radians(vr.menuYaw)) * 6.0f};
-	cylinder_layer.radius = 8.0f;
-	cylinder_layer.centralAngle = MATH_PI * 0.5f;
+
+	// Screen curvature: 1.0 = very curved, 0.0 = nearly flat
+	float curvature = vr_screenCurvature ? vr_screenCurvature->value : 0.5f;
+	const float refRadius = 8.0f;
+	const float refCentralAngle = MATH_PI * 0.5f;
+	const float arcLength = refRadius * refCentralAngle;
+	const float refDistance = 4.0f;
+
+	float loadingRadius = 4.0f + (1.0f - curvature) * 12.0f;
+	float loadingCentralAngle = arcLength / loadingRadius;
+	float loadingDistance = refDistance + (refRadius - loadingRadius);
+
+	cylinder_layer.pose.position = (XrVector3f){-sin(radians(vr.menuYaw)) * loadingDistance, -0.25f, -cos(radians(vr.menuYaw)) * loadingDistance};
+	cylinder_layer.radius = loadingRadius;
+	cylinder_layer.centralAngle = loadingCentralAngle;
 	cylinder_layer.aspectRatio = width / (float)height / 0.75f;
 
 	const XrCompositionLayerBaseHeader* layers[] = {(const XrCompositionLayerBaseHeader*)&cylinder_layer};

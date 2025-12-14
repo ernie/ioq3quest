@@ -381,17 +381,23 @@ int VR_useScreenLayer( void )
 {
 	extern vr_clientinfo_t vr;
 
-	//intermission is never full screen
+    int keyCatcher = Key_GetCatcher( );
+
+	// Always use screen layer for UI/console, even during intermission
+	if ( keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE) )
+	{
+		return qtrue;
+	}
+
+	// Intermission without menu is rendered in-world
     if ( cl.snap.ps.pm_type == PM_INTERMISSION )
     {
-        return 0;
+        return qfalse;
     }
 
-    int keyCatcher = Key_GetCatcher( );
 	qboolean isFollowingInFirstPerson = (((cl.snap.ps.pm_flags & PMF_FOLLOW) || clc.demoplaying)) && (vr.follow_mode == VRFM_FIRSTPERSON);
 	return (qboolean)( clc.state == CA_CINEMATIC ||
 			clc.state != CA_ACTIVE ||
-			( keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE) ) ||
 			isFollowingInFirstPerson);
 }
 //#endif

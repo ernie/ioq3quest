@@ -47,8 +47,9 @@ COMFORT OPTIONS MENU
 #define ID_HUDDEPTH			    132
 #define ID_HUDYOFFSET		    133
 #define ID_HUDSCALE			    134
+#define ID_SCREENCURVATURE	    135
 
-#define ID_BACK					135
+#define ID_BACK					136
 
 #define	NUM_HUDDEPTH			6
 
@@ -68,6 +69,7 @@ typedef struct {
 	menuslider_s        huddepth;
 	menuslider_s 		hudyoffset;
 	menuslider_s 		hudscale;
+	menuslider_s 		screencurvature;
 
 	menubitmap_s		back;
 } comfort_t;
@@ -84,6 +86,7 @@ static void Comfort_SetMenuItems( void ) {
 	s_comfort.huddepth.curvalue				= (int)trap_Cvar_VariableValue( "vr_hudDepth" ) % NUM_HUDDEPTH;
 	s_comfort.hudyoffset.curvalue			= trap_Cvar_VariableValue( "vr_hudYOffset" ) + 200;
 	s_comfort.hudscale.curvalue				= trap_Cvar_VariableValue( "vr_hudScale" );
+	s_comfort.screencurvature.curvalue		= trap_Cvar_VariableValue( "vr_screenCurvature" );
 }
 
 
@@ -123,6 +126,10 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 
 		case ID_HUDSCALE:
 			trap_Cvar_SetValue( "vr_hudScale", s_comfort.hudscale.curvalue);
+			break;
+
+		case ID_SCREENCURVATURE:
+			trap_Cvar_SetValue( "vr_screenCurvature", s_comfort.screencurvature.curvalue);
 			break;
 
 		case ID_BACK:
@@ -248,6 +255,17 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.hudscale.minvalue		     = 0.5f;
 	s_comfort.hudscale.maxvalue		     = 2.0f;
 
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.screencurvature.generic.type	     = MTYPE_SLIDER;
+	s_comfort.screencurvature.generic.x			 = VR_X_POS;
+	s_comfort.screencurvature.generic.y			 = y;
+	s_comfort.screencurvature.generic.flags	 	= QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.screencurvature.generic.name	     = "Screen Curvature:";
+	s_comfort.screencurvature.generic.id 	     	= ID_SCREENCURVATURE;
+	s_comfort.screencurvature.generic.callback  	= Comfort_MenuEvent;
+	s_comfort.screencurvature.minvalue		     = 0.0f;
+	s_comfort.screencurvature.maxvalue		     = 1.0f;
+
 	s_comfort.back.generic.type	    = MTYPE_BITMAP;
 	s_comfort.back.generic.name     = ART_BACK0;
 	s_comfort.back.generic.flags    = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -271,6 +289,7 @@ static void Comfort_MenuInit( void ) {
 	Menu_AddItem( &s_comfort.menu, &s_comfort.huddepth );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hudyoffset );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hudscale );
+	Menu_AddItem( &s_comfort.menu, &s_comfort.screencurvature );
 
 	Menu_AddItem( &s_comfort.menu, &s_comfort.back );
 

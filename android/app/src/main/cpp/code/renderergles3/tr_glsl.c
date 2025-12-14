@@ -169,6 +169,7 @@ static uniformInfo_t uniformsInfo[] =
 	{ "u_AlphaTest", GLSL_INT },
 	{ "u_IsDrawingHUD", GLSL_INT },
 	{ "u_Is2DDraw", GLSL_INT },
+	{ "u_IsBlending", GLSL_INT },
 
 	{ "u_BoneMatrix", GLSL_MAT16_BONEMATRIX },
 };
@@ -1714,9 +1715,31 @@ void GLSL_PrepareUniformBuffers(void)
     GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[HUDBUFFER_ORTHO_PROJECTION],
             hudOrthoProjectionMatrix);
 
-    //VR projection matrix
-    GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[VR_PROJECTION],
-            tr.vrParms.projection);
+    //VR projection matrix - apply aspect correction for virtual screen mode
+    if (vr.virtual_screen)
+    {
+        // In virtual screen mode, viewport is constrained to 4:3 aspect ratio.
+        // The projection matrix was designed for the full (roughly square) framebuffer,
+        // so we need to adjust Y scale to prevent vertical squishing.
+        float adjustedProjection[16];
+        memcpy(adjustedProjection, tr.vrParms.projection, sizeof(adjustedProjection));
+
+        // Calculate aspect correction: viewport is 4:3, framebuffer is ~1:1
+        float viewportAspect = 4.0f / 3.0f;
+        float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+        float aspectCorrection = viewportAspect / nativeAspect;
+
+        // Adjust M[1][1] (Y scale) - element [5] in column-major order
+        adjustedProjection[5] *= aspectCorrection;
+
+        GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[VR_PROJECTION],
+                adjustedProjection);
+    }
+    else
+    {
+        GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[VR_PROJECTION],
+                tr.vrParms.projection);
+    }
 
     //Mirror VR projection matrix
 	GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[MIRROR_VR_PROJECTION],

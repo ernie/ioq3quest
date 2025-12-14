@@ -188,6 +188,7 @@ Sets the coordinates of the rendered window
 */
 static void CG_CalcVrect (void) {
 	int		size;
+	int		viewWidth, viewHeight;
 
 	// the intermission should allways be full screen
 	if ( cg.snap->ps.pm_type == PM_INTERMISSION ) {
@@ -205,10 +206,21 @@ static void CG_CalcVrect (void) {
 		}
 
 	}
-	cg.refdef.width = cgs.glconfig.vidWidth*size/100;
+
+	// In virtual screen mode, constrain to 4:3 aspect ratio centered in framebuffer
+	// The projection matrix will be adjusted in the renderer to match this aspect ratio
+	if (vr && vr->virtual_screen) {
+		viewWidth = cgs.glconfig.vidWidth;
+		viewHeight = (cgs.glconfig.vidWidth * 3) / 4;
+	} else {
+		viewWidth = cgs.glconfig.vidWidth;
+		viewHeight = cgs.glconfig.vidHeight;
+	}
+
+	cg.refdef.width = viewWidth*size/100;
 	cg.refdef.width &= ~1;
 
-	cg.refdef.height = cgs.glconfig.vidHeight*size/100;
+	cg.refdef.height = viewHeight*size/100;
 	cg.refdef.height &= ~1;
 
 	cg.refdef.x = (cgs.glconfig.vidWidth - cg.refdef.width)/2;
@@ -848,28 +860,31 @@ void CG_DamageBorderVignette( void ) {
 	int topBorder = (int)(percentY * topWeight);
 	int bottomBorder = (int)(percentY * bottomWeight);
 
+	// Account for vertical offset when viewport is centered (e.g., virtual screen mode)
+	int yOffset = cg.refdef.y;
+
 	// Red color with fading alpha
 	vec4_t red = {1.0f, 0.0f, 0.0f, alpha * 0.8f};
 
 	trap_R_SetColor( red );
 
 	// Left
-	trap_R_DrawStretchPic( 0, 0, leftBorder, cg.refdef.height,
+	trap_R_DrawStretchPic( 0, yOffset, leftBorder, cg.refdef.height,
 		0, 0, 1, 1, cgs.media.whiteShader );
 	// Right
-	trap_R_DrawStretchPic( cg.refdef.width - rightBorder, 0, rightBorder, cg.refdef.height,
+	trap_R_DrawStretchPic( cg.refdef.width - rightBorder, yOffset, rightBorder, cg.refdef.height,
 		0, 0, 1, 1, cgs.media.whiteShader );
 	// Top
-	trap_R_DrawStretchPic( leftBorder, 0, cg.refdef.width - leftBorder - rightBorder, topBorder,
+	trap_R_DrawStretchPic( leftBorder, yOffset, cg.refdef.width - leftBorder - rightBorder, topBorder,
 		0, 0, 1, 1, cgs.media.whiteShader );
 	// Bottom
-	trap_R_DrawStretchPic( leftBorder, cg.refdef.height - bottomBorder,
+	trap_R_DrawStretchPic( leftBorder, yOffset + cg.refdef.height - bottomBorder,
 		cg.refdef.width - leftBorder - rightBorder, bottomBorder,
 		0, 0, 1, 1, cgs.media.whiteShader );
 
 	// Draw vignette shader in the center for fade effect
 	x = leftBorder;
-	y = topBorder;
+	y = yOffset + topBorder;
 	w = cg.refdef.width - leftBorder - rightBorder;
 	h = cg.refdef.height - topBorder - bottomBorder;
 
@@ -894,16 +909,13 @@ static int CG_CalcViewValues( ) {
 	// the "virtual theater" and in-game view projected on the screen are
 	// both rotating based on the HMD movement.
 	if (vr->virtual_screen && !vr->first_person_following) {
+		CG_CalcVrect();
 		return CG_CalcFov();
 	}
 
 	memset( &cg.refdef, 0, sizeof( cg.refdef ) );
 
-	// strings for in game rendering
-	// Q_strncpyz( cg.refdef.text[0], "Park Ranger", sizeof(cg.refdef.text[0]) );
-	// Q_strncpyz( cg.refdef.text[1], "19", sizeof(cg.refdef.text[1]) );
-
-	// calculate size of 3D view
+	// Recalculate after memset cleared the values
 	CG_CalcVrect();
 
 	ps = &cg.predictedPlayerState;
@@ -961,7 +973,7 @@ static int CG_CalcViewValues( ) {
 		}
 	}
 
-	if (CG_IsDeathCam() || (cg.demoPlayback && !vr->first_person_following) || CG_IsThirdPersonFollowMode(VRFM_QUERY))
+	if ((CG_IsDeathCam() && !vr->first_person_following) || (cg.demoPlayback && !vr->first_person_following) || CG_IsThirdPersonFollowMode(VRFM_QUERY))
 	{
 	    //If dead, or spectating, view the map from above
         CG_OffsetVRThirdPersonView();
@@ -1223,7 +1235,10 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
     trap_Cvar_Set( "vr_thirdPersonSpectator", (CG_IsDeathCam() ||
                                                cg.demoPlayback ||
                                                CG_IsThirdPersonFollowMode(VRFM_QUERY) ? "1" : "0" ));
-	if (vr->first_person_following) {
+	// If user disabled HUD, respect that in all modes
+	if (trap_Cvar_VariableValue("vr_hudDrawStatus") == 0) {
+		trap_Cvar_SetValue( "vr_currentHudDrawStatus", 0 );
+	} else if (vr->first_person_following) {
 		// draw mode 1 won't work with virtual screen at the moment
 		trap_Cvar_SetValue( "vr_currentHudDrawStatus", 2 );
 	} else if (CG_IsDeathCam() ||
