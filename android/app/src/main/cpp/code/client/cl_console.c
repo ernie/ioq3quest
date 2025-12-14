@@ -610,7 +610,7 @@ void Con_DrawNotify (void)
 	re.HUDBufferStart(qfalse);
 
 	// Adjust scale based on HUD mode
-	int charScale = (vr_currentHudDrawStatus->integer == 1) ? 2 : 3;
+	int charScale = (vr_currentHudDrawStatus->integer == 1) ? 2 : 1;
 	// Use floating HUD positioning for mode 1, or for mode 2 when in VRFM_FIRSTPERSON (viewing on virtual screen)
 	int xadjust = (vr_currentHudDrawStatus->integer == 1 || vr.first_person_following) ? 10 : 500;
 	int yadjust;

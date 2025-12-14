@@ -1194,7 +1194,9 @@ static void IN_VRJoystick( qboolean isRightController, float joystickX, float jo
 			// Use joystick X axis for analog turning in smooth turn mode only
 			// This provides smooth analog turn speed control like gamepads
 			// Scale to match SDL joystick range (-32768 to +32767) since j_yaw is calibrated for that range
-			if (vr_snapturn->integer <= 0)
+			// Skip analog turning if weapon selector uses thumbstick (WS_HMD mode) to avoid
+			// turning while initiating weapon selection with a sideways thumbstick push
+			if (vr_snapturn->integer <= 0 && vr_weaponSelectorMode->integer != WS_HMD)
 			{
 				Com_QueueEvent(in_vrEventTime, SE_JOYSTICK_AXIS, 2, curvedX * 32767.0f, 0, NULL);
 			}
@@ -1380,9 +1382,9 @@ static void IN_VRButtons( qboolean isRightController, uint32_t buttons, uint32_t
     }
 
     if (buttons & ovrButton_X) {
-        if (cl.snap.ps.pm_flags & PMF_FOLLOW)
+        if ((cl.snap.ps.pm_flags & PMF_FOLLOW) || clc.demoplaying)
         {
-            // Switch follow mode
+            // Switch follow mode when following player or playing demo
             if (!IN_InputActivated(&controller->buttons, ovrButton_X)) {
                 IN_ActivateInput(&controller->buttons, ovrButton_X);
                 vr.follow_mode = (vr.follow_mode+1) % VRFM_NUM_FOLLOWMODES;
