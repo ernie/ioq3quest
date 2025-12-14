@@ -44,6 +44,27 @@ void ScorePlum( gentity_t *ent, vec3_t origin, int score ) {
 
 /*
 ============
+DamagePlum
+============
+*/
+void DamagePlum( gentity_t *attacker, vec3_t origin, int damage ) {
+	gentity_t *plum;
+
+	if ( !attacker || !attacker->client || !attacker->client->pers.damagePlums) {
+		return;
+	}
+
+	plum = G_TempEntity( origin, EV_DAMAGEPLUM );
+	// only send this temp entity to the attacker
+	plum->r.svFlags |= SVF_SINGLECLIENT;
+	plum->r.singleClient = attacker->s.number;
+	//
+	plum->s.otherEntityNum = attacker->s.number;
+	plum->s.time = damage;
+}
+
+/*
+============
 AddScore
 
 Adds score to both the client and his team
@@ -601,7 +622,13 @@ void player_die( gentity_t *self, gentity_t *inflictor, gentity_t *attacker, int
 
 	self->s.loopSound = 0;
 
-	self->r.maxs[2] = -8;
+	// The below line has been commented out in
+	// https://github.com/ec-/baseq3a/pull/49.
+	// Executing this line causes a bug where the shotgun doesn't gib
+	// unless you aim at the feet.
+	// See https://github.com/ioquake/ioq3/issues/794.
+	//
+	// self->r.maxs[2] = -8;
 
 	// don't allow respawn until the death anim is done
 	// g_forcerespawn may force spawning at some later time
@@ -818,6 +845,18 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	// the intermission has already been qualified for, so don't
 	// allow any extra scoring
 	if ( level.intermissionQueued ) {
+
+		// With a special exception for gibbing bodies.
+		// This was introduced in https://github.com/ec-/baseq3a/pull/50.
+		if (targ->die == body_die) {
+			targ->health = targ->health - damage;
+			if ( targ->health <= 0 ) {
+				// `body_die` doesn't use any of its arguments (except `targ`),
+				// so it's fine if they're `NULL`.
+				targ->die (targ, inflictor, attacker, damage, mod);
+			}
+		}
+
 		return;
 	}
 #ifdef MISSIONPACK
@@ -954,19 +993,6 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 		damage *= 0.5;
 	}
 
-	// add to the attacker's hit counter (if the target isn't a general entity like a prox mine)
-	if ( attacker->client && client
-			&& targ != attacker && targ->health > 0
-			&& targ->s.eType != ET_MISSILE
-			&& targ->s.eType != ET_GENERAL) {
-		if ( OnSameTeam( targ, attacker ) ) {
-			attacker->client->ps.persistant[PERS_HITS]--;
-		} else {
-			attacker->client->ps.persistant[PERS_HITS]++;
-		}
-		attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = (targ->health<<8)|(client->ps.stats[STAT_ARMOR]);
-	}
-
 	// always give half damage if hurting self
 	// calculated after knockback, so rocket jumping works
 	if ( targ == attacker) {
@@ -982,9 +1008,60 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	asave = CheckArmor (targ, take, dflags);
 	take -= asave;
 
+	// add to the attacker's hit counter (if the target isn't a general entity like a prox mine)
+	if ( attacker->client && client
+			&& targ != attacker && targ->health > 0
+			&& targ->s.eType != ET_MISSILE
+			&& targ->s.eType != ET_GENERAL) {
+		// we may hit multiple targets from different teams
+		// so usual PERS_HITS increments/decrements could result in ZERO delta
+		if ( OnSameTeam( targ, attacker ) ) {
+			attacker->client->damage.team++;
+		} else {
+			attacker->client->damage.enemy++;
+			// accumulate damage during server frame
+			attacker->client->damage.amount += take + asave;
+		}
+		if ( !OnSameTeam( targ, attacker ) ) {
+			// accumulate damage per target for damage plums
+			qboolean found = qfalse;
+			int i;
+			for ( i = 0; i < attacker->client->damagePlumCount; i++ ) {
+				if ( attacker->client->damagePlums[i].clientNum == targ->s.number ) {
+					attacker->client->damagePlums[i].damage += take + asave;
+					found = qtrue;
+					break;
+				}
+			}
+			if ( !found && attacker->client->damagePlumCount < MAX_CLIENTS ) {
+				attacker->client->damagePlums[attacker->client->damagePlumCount].clientNum = targ->s.number;
+				attacker->client->damagePlums[attacker->client->damagePlumCount].damage = take + asave;
+				VectorCopy( targ->r.currentOrigin, attacker->client->damagePlums[attacker->client->damagePlumCount].origin );
+				attacker->client->damagePlums[attacker->client->damagePlumCount].origin[2] += 48;
+				attacker->client->damagePlumCount++;
+			}
+		}
+	}
+
 	if ( g_debugDamage.integer ) {
 		G_Printf( "%i: client:%i health:%i damage:%i armor:%i\n", level.time, targ->s.number,
 			targ->health, take, asave );
+	}
+
+	// add to the attacker's hit counter (if the target isn't a general entity like a prox mine)
+	if ( attacker->client && client
+			&& targ != attacker && targ->health > 0
+			&& targ->s.eType != ET_MISSILE
+			&& targ->s.eType != ET_GENERAL) {
+		// we may hit multiple targets from different teams
+		// so usual PERS_HITS increments/decrements could result in ZERO delta
+		if ( OnSameTeam( targ, attacker ) ) {
+			attacker->client->damage.team++;
+		} else {
+			attacker->client->damage.enemy++;
+			// accumulate damage during server frame
+			attacker->client->damage.amount += take + asave;
+		}
 	}
 
 	// add to the damage inflicted on a player this frame

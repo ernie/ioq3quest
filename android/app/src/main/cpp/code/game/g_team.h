@@ -77,6 +77,7 @@ void Team_FragBonuses(gentity_t *targ, gentity_t *inflictor, gentity_t *attacker
 void Team_CheckHurtCarrier(gentity_t *targ, gentity_t *attacker);
 void Team_InitGame(void);
 void Team_ReturnFlag(int team);
+void Team_ResetFlags(void);
 void Team_FreeEntity(gentity_t *ent);
 gentity_t *SelectCTFSpawnPoint ( team_t team, int teamstate, vec3_t origin, vec3_t angles, qboolean isbot );
 gentity_t *Team_GetLocation(gentity_t *ent);

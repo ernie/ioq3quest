@@ -31,6 +31,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	GIB_HEALTH			-40
 #define	ARMOR_PROTECTION	0.66
 
+#define	HEALTH_SOFT_LIMIT	100
+#define	AMMO_HARD_LIMIT		200
+
 #define	MAX_ITEMS			256
 
 #define	RANK_TIED_FLAG		0x4000
@@ -263,6 +266,11 @@ typedef enum {
 #define EF_AWARD_DENIED		0x00040000		// denied
 #define EF_TEAMVOTED		0x00080000		// already cast a team vote
 
+#define EF_PERSISTANT ( EF_CONNECTION | EF_VOTED | EF_TEAMVOTED )
+#define EF_AWARDS ( EF_AWARD_IMPRESSIVE | EF_AWARD_EXCELLENT | EF_AWARD_GAUNTLET | EF_AWARD_ASSIST | EF_AWARD_DEFEND | EF_AWARD_CAP )
+
+#define EF_NOPREDICT ( EF_AWARDS | EF_PERSISTANT | EF_TALK )
+
 // NOTE: may not have more than 16
 typedef enum {
 	PW_NONE,
@@ -447,10 +455,16 @@ typedef enum {
 	EV_TAUNT_FOLLOWME,
 	EV_TAUNT_GETFLAG,
 	EV_TAUNT_GUARDBASE,
-	EV_TAUNT_PATROL
+	EV_TAUNT_PATROL,
+
+	EV_DAMAGEPLUM
 
 } entity_event_t;
 
+typedef enum {
+	TAG_NONE = 0,
+	TAG_DONTSPAWN,
+} tag_t;
 
 typedef enum {
 	GTS_RED_CAPTURE,
@@ -696,7 +710,7 @@ typedef enum {
 void	BG_EvaluateTrajectory( const trajectory_t *tr, int atTime, vec3_t result );
 void	BG_EvaluateTrajectoryDelta( const trajectory_t *tr, int atTime, vec3_t result );
 
-void	BG_AddPredictableEventToPlayerstate( int newEvent, int eventParm, playerState_t *ps );
+void	BG_AddPredictableEventToPlayerstate( int newEvent, int eventParm, playerState_t *ps, int entityNum );
 
 void	BG_TouchJumpPad( playerState_t *ps, entityState_t *jumppad );
 

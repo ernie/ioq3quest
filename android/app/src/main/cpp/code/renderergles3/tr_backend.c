@@ -1752,8 +1752,11 @@ const void* RB_HUDBuffer( const void* data ) {
     const hudBufferCommand_t *cmd = data;
 
     // finish any 2D drawing if needed
-    if(tess.numIndexes)
-        RB_EndSurface();
+    if(tess.numIndexes) {
+		RB_EndSurface();
+		// Ensure that next draw will call BeginSurface()
+		tess.shader = NULL;
+	}
 
     if (cmd->start && !glState.isDrawingHUD)
     {

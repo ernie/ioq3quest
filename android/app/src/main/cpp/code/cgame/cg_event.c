@@ -94,6 +94,7 @@ static void CG_Obituary( entityState_t *ent ) {
 	char		attackerName[32];
 	gender_t	gender;
 	clientInfo_t	*ci;
+	qboolean	following;
 
 	target = ent->otherEntityNum;
 	attacker = ent->otherEntityNum2;
@@ -117,6 +118,8 @@ static void CG_Obituary( entityState_t *ent ) {
 	}
 	Q_strncpyz( targetName, Info_ValueForKey( targetInfo, "n" ), sizeof(targetName) - 2);
 	strcat( targetName, S_COLOR_WHITE );
+
+	following = cg.snap->ps.pm_flags & PMF_FOLLOW;
 
 	message2 = "";
 
@@ -211,6 +214,13 @@ static void CG_Obituary( entityState_t *ent ) {
 
 	if (message) {
 		CG_Printf( "%s %s.\n", targetName, message);
+		// switch to first killer if not following anyone
+		if ( cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR && cg_followKiller.integer ) {
+			if ( !cg.followTime && attacker != cg.snap->ps.clientNum && attacker < MAX_CLIENTS ) {
+				cg.followClient = attacker;
+				cg.followTime = cg.time;
+			}
+		}
 		return;
 	}
 
@@ -247,6 +257,13 @@ static void CG_Obituary( entityState_t *ent ) {
 		// check for kill messages about the current clientNum
 		if ( target == cg.snap->ps.clientNum ) {
 			Q_strncpyz( cg.killerName, attackerName, sizeof( cg.killerName ) );
+			// follow killer
+			if ( following && cg_followKiller.integer ) {
+				if ( !cg.followTime && attacker != cg.snap->ps.clientNum && attacker < MAX_CLIENTS ) {
+					cg.followClient = attacker;
+					cg.followTime = cg.time + 1100;
+				}
+			}
 		}
 	}
 
@@ -329,8 +346,15 @@ static void CG_Obituary( entityState_t *ent ) {
 		}
 
 		if (message) {
-			CG_Printf( "%s %s %s%s\n", 
+			CG_Printf( "%s %s %s%s\n",
 				targetName, message, attackerName, message2);
+			// switch to first killer if not following anyone
+			if ( cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR && cg_followKiller.integer ) {
+				if ( !cg.followTime && attacker != cg.snap->ps.clientNum && attacker < MAX_CLIENTS ) {
+					cg.followClient = attacker;
+					cg.followTime = cg.time;
+				}
+			}
 			return;
 		}
 	}
@@ -524,13 +548,14 @@ also called by CG_CheckPlayerstateEvents
 ==============
 */
 #define	DEBUGNAME(x) if(cg_debugEvents.integer){CG_Printf(x"\n");}
-void CG_EntityEvent( centity_t *cent, vec3_t position ) {
+void CG_EntityEvent( centity_t *cent, vec3_t position, int entityNum ) {
 	entityState_t	*es;
 	int				event;
 	vec3_t			dir;
 	const char		*s;
 	int				clientNum;
 	clientInfo_t	*ci;
+	centity_t		*ce;
 
 	es = &cent->currentState;
 	event = es->event & ~EV_EVENT_BITS;
@@ -756,6 +781,17 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 			if ( index < 1 || index >= bg_numItems ) {
 				break;
 			}
+
+			if ( entityNum >= 0 ) {
+				// our predicted entity
+				ce = cg_entities + entityNum;
+				if ( ce->delaySpawn > cg.time && ce->delaySpawnPlayed ) {
+					break; // delay item pickup
+				}
+			} else {
+				ce = NULL;
+			}
+
 			item = &bg_itemlist[ index ];
 
 			// powerups and team items will have a separate global sound, this one
@@ -796,6 +832,10 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 			if ( es->number == cg.snap->ps.clientNum ) {
 				CG_ItemPickup( index );
 			}
+
+			if ( ce ) {
+				ce->delaySpawnPlayed = qtrue;
+			}
 		}
 		break;
 
@@ -810,6 +850,18 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 			if ( index < 1 || index >= bg_numItems ) {
 				break;
 			}
+
+			if ( entityNum >= 0 ) {
+				// our predicted entity
+				ce = cg_entities + entityNum;
+				if ( ce->delaySpawn > cg.time && ce->delaySpawnPlayed ) {
+					break;
+				}
+			} else {
+				ce = NULL;
+			}
+
+
 			item = &bg_itemlist[ index ];
 			// powerup pickups are global
 			if( item->pickup_sound ) {
@@ -819,6 +871,10 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 			// show icon and name on status bar
 			if ( es->number == cg.snap->ps.clientNum ) {
 				CG_ItemPickup( index );
+			}
+
+			if ( ce ) {
+				ce->delaySpawnPlayed = qtrue;
 			}
 		}
 		break;
@@ -837,7 +893,6 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 		DEBUGNAME("EV_CHANGE_WEAPON");
 		trap_S_StartSound (NULL, es->number, CHAN_AUTO, cgs.media.selectSound );
 		if ( clientNum == cg.predictedPlayerState.clientNum ) {
-			int position = vr->weapon_stabilised ? 4 : (vr->right_handed ? 1 : 2);
 			trap_HapticEvent("weapon_switch", 0, 0, 100, 0, 0);
 		}
 		break;
@@ -995,6 +1050,11 @@ void CG_EntityEvent( centity_t *cent, vec3_t position ) {
 	case EV_SCOREPLUM:
 		DEBUGNAME("EV_SCOREPLUM");
 		CG_ScorePlum( cent->currentState.otherEntityNum, cent->lerpOrigin, cent->currentState.time );
+		break;
+
+	case EV_DAMAGEPLUM:
+		DEBUGNAME("EV_DAMAGEPLUM");
+		CG_DamagePlum( cent->lerpOrigin, cent->currentState.time );
 		break;
 
 	//
@@ -1337,6 +1397,6 @@ void CG_CheckEvents( centity_t *cent ) {
 	BG_EvaluateTrajectory( &cent->currentState.pos, cg.snap->serverTime, cent->lerpOrigin );
 	CG_SetEntitySoundPosition( cent );
 
-	CG_EntityEvent( cent, cent->lerpOrigin );
+	CG_EntityEvent( cent, cent->lerpOrigin, -1 );
 }
 

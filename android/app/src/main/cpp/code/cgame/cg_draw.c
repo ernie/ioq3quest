@@ -313,6 +313,59 @@ void CG_Draw3DModel( float x, float y, float w, float h, qhandle_t model, qhandl
 
 /*
 ================
+CG_Draw3DModelColor
+
+================
+*/
+void CG_Draw3DModelColor( float x, float y, float w, float h, qhandle_t model, qhandle_t skin, vec3_t origin, vec3_t angles, vec3_t color ) {
+	refdef_t		refdef;
+	refEntity_t		ent;
+
+	if ( !cg_draw3dIcons.integer || !cg_drawIcons.integer ) {
+		return;
+	}
+
+	CG_SetHUDFlags(HUD_FLAGS_DRAWMODEL);
+	CG_AdjustFrom640( &x, &y, &w, &h );
+	CG_RemoveHUDFlags(HUD_FLAGS_DRAWMODEL);
+
+	memset( &refdef, 0, sizeof( refdef ) );
+
+	memset( &ent, 0, sizeof( ent ) );
+	AnglesToAxis( angles, ent.axis );
+	VectorCopy( origin, ent.origin );
+	ent.hModel = model;
+	ent.customSkin = skin;
+	ent.renderfx = RF_NOSHADOW;		// no stencil shadows
+
+	refdef.rdflags = RDF_NOWORLDMODEL;
+
+	AxisClear( refdef.viewaxis );
+
+	refdef.fov_x = 30;
+	refdef.fov_y = 30;
+
+	refdef.x = x;
+	refdef.y = y;
+	refdef.width = w;
+	refdef.height = h;
+
+	refdef.time = cg.time;
+
+	refdef.isHUD = qtrue;
+
+	ent.shaderRGBA[0] = color[0] * 255;
+	ent.shaderRGBA[1] = color[1] * 255;
+	ent.shaderRGBA[2] = color[2] * 255;
+	ent.shaderRGBA[3] = 255;
+
+	trap_R_ClearScene();
+	trap_R_AddRefEntityToScene( &ent );
+	trap_R_RenderScene( &refdef );
+}
+
+/*
+================
 CG_DrawHead
 
 Used for both the status bar and the scoreboard
@@ -347,7 +400,7 @@ void CG_DrawHead( float x, float y, float w, float h, int clientNum, vec3_t head
 		// allow per-model tweaking
 		VectorAdd( origin, ci->headOffset, origin );
 
-		CG_Draw3DModel( x, y, w, h, ci->headModel, ci->headSkin, origin, headAngles );
+		CG_Draw3DModelColor( x, y, w, h, ci->headModel, ci->headSkin, origin, headAngles, ci->headColor );
 	} else if ( cg_drawIcons.integer ) {
 		CG_DrawPic( x, y, w, h, ci->modelIcon );
 	}
@@ -503,13 +556,13 @@ void CG_DrawTeamBackground( int x, int y, int w, int h, float alpha, int team )
 
 	hcolor[3] = alpha;
 	if ( team == TEAM_RED ) {
-		hcolor[0] = 1;
-		hcolor[1] = 0;
-		hcolor[2] = 0;
+		hcolor[0] = 1.0f;
+		hcolor[1] = 0.0f;
+		hcolor[2] = 0.0f;
 	} else if ( team == TEAM_BLUE ) {
-		hcolor[0] = 0;
-		hcolor[1] = 0;
-		hcolor[2] = 1;
+		hcolor[0] = 0.0f;
+		hcolor[1] = 0.1f;
+		hcolor[2] = 1.0f;
 	} else {
 		return;
 	}
@@ -598,9 +651,14 @@ static void CG_DrawStatusBar( void ) {
 					color = 1;	// red
 				}
 			}
+#ifdef USE_NEW_FONT_RENDERER
+			CG_SelectFont( 1 );
+			CG_DrawString( CHAR_WIDTH*3, 432, va( "%i", value ), colors[ color ], CHAR_WIDTH, CHAR_HEIGHT, 0, DS_RIGHT | DS_PROPORTIONAL );
+			CG_SelectFont( 0 );
+#else
 			trap_R_SetColor( colors[color] );
-			
 			CG_DrawField (0, 432, 3, value);
+#endif
 			trap_R_SetColor( NULL );
 
 			// if we didn't draw a 3D icon, draw a 2D icon for ammo
@@ -620,18 +678,24 @@ static void CG_DrawStatusBar( void ) {
 	//
 	value = ps->stats[STAT_HEALTH];
 	if ( value > 100 ) {
-		trap_R_SetColor( colors[3] );		// white
+		color = 3;	// white
 	} else if (value > 25) {
-		trap_R_SetColor( colors[0] );	// green
+		color = 0;	// yellow
 	} else if (value > 0) {
-		color = (cg.time >> 8) & 1;	// flash
-		trap_R_SetColor( colors[color] );
+		color = (cg.time >> 8) & 1;	// red/yellow flashing
 	} else {
-		trap_R_SetColor( colors[1] );	// red
+		color = 1;	// red
 	}
 
+#ifdef USE_NEW_FONT_RENDERER
+	CG_SelectFont( 1 );
+	CG_DrawString( 185 + CHAR_WIDTH*3, 432, va( "%i", value ), colors[ color ], CHAR_WIDTH, CHAR_HEIGHT, 0, DS_RIGHT | DS_PROPORTIONAL );
+	CG_SelectFont( 0 );
+#else
+	trap_R_SetColor( colors[color] );
 	// stretch the health up when taking damage
 	CG_DrawField ( 185, 432, 3, value);
+#endif
 	CG_ColorForHealth( hcolor );
 	trap_R_SetColor( hcolor );
 
@@ -641,8 +705,14 @@ static void CG_DrawStatusBar( void ) {
 	//
 	value = ps->stats[STAT_ARMOR];
 	if (value > 0 ) {
+#ifdef USE_NEW_FONT_RENDERER
+		CG_SelectFont( 1 );
+		CG_DrawString( 370 + CHAR_WIDTH*3, 432, va( "%i", value ), colors[ color ], CHAR_WIDTH, CHAR_HEIGHT, 0, DS_RIGHT | DS_PROPORTIONAL );
+		CG_SelectFont( 0 );
+#else
 		trap_R_SetColor( colors[0] );
 		CG_DrawField (370, 432, 3, value);
+#endif
 		trap_R_SetColor( NULL );
 		// if we didn't draw a 3D icon, draw a 2D icon for armor
 		if ( !cg_draw3dIcons.integer && cg_drawIcons.integer ) {
@@ -774,6 +844,34 @@ static float CG_DrawFPS( float y ) {
 	}
 
 	return y + BIGCHAR_HEIGHT + 4;
+}
+
+/*
+=================
+CG_DrawSpeedMeter
+=================
+*/
+static float CG_DrawSpeedMeter( float y ) {
+	char		*s;
+	int			w;
+
+	/* speed meter can get in the way of the scoreboard */
+	if ( cg.scoreBoardShowing ) {
+		return y;
+	}
+
+	s = va( "%1.0fups", cg.xyspeed );
+	w = CG_DrawStrlen( s ) * BIGCHAR_WIDTH;
+
+	if ( cg_drawSpeed.integer == 1 ) {
+		/* top right corner of screen */
+		CG_DrawBigString( 635 - w, y + 2, s, 1.0F);
+		return y + BIGCHAR_HEIGHT + 4;
+	} else {
+		/* center of screen (under crosshair) */
+		CG_DrawBigString( 320 - w / 2, 300, s, 1.0F);
+		return y;
+	}
 }
 
 /*
@@ -998,6 +1096,9 @@ static void CG_DrawUpperRight()
 	}
 	if (cg_drawFPS.integer && (cg.stereoView == STEREO_CENTER || cg.stereoView == STEREO_RIGHT)) {
 		y = CG_DrawFPS( y );
+	}
+	if ( cg_drawSpeed.integer ) {
+		y = CG_DrawSpeedMeter( y );
 	}
 	if ( cg_drawTimer.integer ) {
 		y = CG_DrawTimer( y );
@@ -1751,6 +1852,10 @@ static void CG_DrawLagometer( void ) {
 		CG_DrawBigString( x, y, "snc", 1.0 );
 	}
 
+	if ( !cg.demoPlayback ) {
+		CG_DrawString( x+1, y, va( "%ims", cg.meanPing ), colorWhite, 5, 10, 0, DS_PROPORTIONAL );
+	}
+
 	CG_DrawDisconnect();
 }
 
@@ -1937,6 +2042,25 @@ static void CG_DrawCrosshair(void)
 
 /*
 =================
+CG_CrosshairColorFromInt
+=================
+*/
+static void CG_CrosshairColorFromInt( int val, byte *color ) {
+	if ( val < 1 || val > 7 ) {
+		// Default to white
+		color[0] = 255;
+		color[1] = 255;
+		color[2] = 255;
+	} else {
+		color[0] = (val & 1) ? 255 : 0;
+		color[1] = (val & 2) ? 255 : 0;
+		color[2] = (val & 4) ? 255 : 0;
+	}
+	color[3] = 255;
+}
+
+/*
+=================
 CG_DrawCrosshair3D
 =================
 */
@@ -1966,7 +2090,7 @@ static void CG_DrawCrosshair3D(void)
 		return;
 	}
 
-	if ( cg.renderingThirdPerson ) {
+	if ( cg.renderingThirdPerson || CG_IsDeathCam()) {
 		return;
 	}
 
@@ -2014,12 +2138,37 @@ static void CG_DrawCrosshair3D(void)
 	memset(&ent, 0, sizeof(ent));
 	ent.reType = RT_SPRITE;
 	ent.renderfx = RF_DEPTHHACK | RF_CROSSHAIR;
-	
+
 	VectorCopy(trace.endpos, ent.origin);
-	
+
 	// scale the crosshair so it appears the same size for all distances
-	ent.radius = w / 640 * xmax * trace.fraction * maxdist / zProj;
+	// Position is based on weapon aim, but size is based on distance from eyes
+	{
+		vec3_t delta;
+		float distance;
+		VectorSubtract(trace.endpos, cg.refdef.vieworg, delta);
+		distance = VectorLength(delta);
+
+		// Scale radius proportional to distance to maintain constant angular size
+		// radius = (normalized_size) * distance * tan(half_fov)
+		ent.radius = (w / 640.0f) * distance * tan(cg.refdef.fov_x * M_PI / 360.0f);
+	}
 	ent.customShader = hShader;
+
+	// set crosshair color
+	if ( cg_crosshairHealth.integer ) {
+		vec4_t hcolor;
+		CG_ColorForHealth( hcolor );
+		ent.shaderRGBA[0] = (byte)(hcolor[0] * 255);
+		ent.shaderRGBA[1] = (byte)(hcolor[1] * 255);
+		ent.shaderRGBA[2] = (byte)(hcolor[2] * 255);
+		ent.shaderRGBA[3] = (byte)(hcolor[3] * 255);
+	} else {
+		CG_CrosshairColorFromInt( cg_crosshairColor.integer, ent.shaderRGBA );
+	}
+
+	// ensure crosshair is aligned with world, not HMD/view
+	ent.rotation = vr->hmdorientation[ROLL];
 
 	trap_R_AddRefEntityToScene(&ent);
 }
@@ -2382,10 +2531,9 @@ static void CG_DrawWarmup( void ) {
 	int			i;
 #ifdef MISSIONPACK
 	float		scale;
-#else
-	int			cw;
 #endif
 	clientInfo_t	*ci1, *ci2;
+	int			cw;
 	const char	*s;
 
 	sec = cg.warmup;
@@ -2464,62 +2612,42 @@ static void CG_DrawWarmup( void ) {
 #endif
 	}
 
-	sec = ( sec - cg.time ) / 1000;
-	if ( sec < 0 ) {
-		cg.warmup = 0;
-		sec = 0;
-	}
-	s = va( "Starts in: %i", sec + 1 );
-	if ( sec != cg.warmupCount ) {
-		cg.warmupCount = sec;
-		switch ( sec ) {
-		case 0:
-			trap_S_StartLocalSound( cgs.media.count1Sound, CHAN_ANNOUNCER );
-			break;
-		case 1:
-			trap_S_StartLocalSound( cgs.media.count2Sound, CHAN_ANNOUNCER );
-			break;
-		case 2:
-			trap_S_StartLocalSound( cgs.media.count3Sound, CHAN_ANNOUNCER );
-			break;
-		default:
-			break;
-		}
-	}
+	if ( cg.warmupCount <= 0 )
+		return;
 
-#ifdef MISSIONPACK
+	s = va( "Starts in: %i", cg.warmupCount );
+
 	switch ( cg.warmupCount ) {
-	case 0:
-		scale = 0.54f;
-		break;
 	case 1:
-		scale = 0.51f;
-		break;
-	case 2:
-		scale = 0.48f;
-		break;
-	default:
-		scale = 0.45f;
-		break;
-	}
-
-	w = CG_Text_Width(s, scale, 0);
-	CG_Text_Paint(320 - w / 2, 125, scale, colorWhite, s, 0, 0, ITEM_TEXTSTYLE_SHADOWEDMORE);
-#else
-	switch ( cg.warmupCount ) {
-	case 0:
 		cw = 28;
-		break;
-	case 1:
-		cw = 24;
+#ifdef MISSIONPACK
+		scale = 0.54f;
+#endif
 		break;
 	case 2:
+		cw = 24;
+#ifdef MISSIONPACK
+		scale = 0.51f;
+#endif
+		break;
+	case 3:
 		cw = 20;
+#ifdef MISSIONPACK
+		scale = 0.48f;
+#endif
 		break;
 	default:
 		cw = 16;
+#ifdef MISSIONPACK
+		scale = 0.45f;
+#endif
 		break;
 	}
+
+#ifdef MISSIONPACK
+	w = CG_Text_Width(s, scale, 0);
+	CG_Text_Paint(320 - w / 2, 125, scale, colorWhite, s, 0, 0, ITEM_TEXTSTYLE_SHADOWEDMORE);
+#else
 
 	w = CG_DrawStrlen( s );
 	CG_DrawStringExt( 320 - w * cw/2, 70, s, colorWhite, 
@@ -2765,6 +2893,11 @@ static void CG_DrawScreen2D()
 
         CG_DrawVignette();
 
+        // Draw modern damage indicator if enabled
+        if ( cg_damageEffect.integer && !cg.renderingThirdPerson ) {
+            CG_DamageBorderVignette();
+        }
+
         if(vr->weapon_zoomed) {
             CG_DrawWeapReticle();
         }
@@ -2800,6 +2933,175 @@ static void CG_EmptySceneHackHackHack( void )
 	trap_R_RenderScene( &refdef );
 }
 
+static void CG_WarmupEvents( void ) {
+
+	int	count;
+
+	if ( !cg.warmup )
+		return;
+
+	if ( cg.warmup < 0 ) {
+		cg.warmupCount = -1;
+		return;
+	}
+
+	if ( cg.warmup < cg.time ) {
+		cg.warmup = 0;
+		count = 0;
+	} else {
+		count = ( cg.warmup - cg.time + 999 ) / 1000;
+	}
+
+	if ( cg.warmupCount == -2 && cg.demoPlayback ) {
+		cg.warmupCount = 0;
+	}
+
+	if ( cg.warmupCount == count ) {
+		return;
+	}
+
+	cg.warmupCount = count;
+	cg.timelimitWarnings = 0;
+
+	switch ( count ) {
+		case 0:
+			if ( cg.warmupFightSound <= cg.time ) {
+				trap_S_StartLocalSound( cgs.media.countFightSound, CHAN_ANNOUNCER );
+				cg.warmupFightSound = cg.time + 750;
+			}
+			CG_CenterPrint( "FIGHT!", 120, GIANTCHAR_WIDTH*2 );
+			break;
+
+		case 1:
+			trap_S_StartLocalSound( cgs.media.count1Sound, CHAN_ANNOUNCER );
+			break;
+
+		case 2:
+			trap_S_StartLocalSound( cgs.media.count2Sound, CHAN_ANNOUNCER );
+			break;
+
+		case 3:
+			trap_S_StartLocalSound( cgs.media.count3Sound, CHAN_ANNOUNCER );
+			break;
+
+		default:
+			break;
+	}
+}
+
+void CG_WarmupEvent( void ) {
+
+	cg.attackerTime = 0;
+	cg.attackerName[0] = '\0';
+
+	cg.itemPickupTime = 0;
+	cg.itemPickupBlendTime = 0;
+	cg.itemPickupCount = 0;
+
+	cg.killerTime = 0;
+	cg.killerName[0] = '\0';
+
+	cg.damageTime = 0;
+
+	cg.rewardStack = 0;
+	cg.rewardTime = 0;
+
+	cg.weaponSelectTime = cg.time;
+
+	cg.lowAmmoWarning = 0;
+
+	cg.followTime = 0;
+}
+
+static void CG_ApplyClientChange( void ) {
+	CG_WarmupEvent();
+	CG_ForceModelChange();
+}
+
+void CG_TrackClientTeamChange( void ) {
+	static int spec_client = -1;
+	static int spec_team = -1;
+	static int curr_team = -1;
+
+	int		ti;
+	int		tp;
+
+	if ( !cg.snap )
+		return;
+
+	tp = cg.snap->ps.persistant[ PERS_TEAM ];
+	ti = cgs.clientinfo[ cg.snap->ps.clientNum ].team;
+
+	if ( !(cg.snap->ps.pm_flags & PMF_FOLLOW) && tp != TEAM_SPECTATOR ) {
+		ti = tp;
+	}
+
+	if ( curr_team != ti )
+	{
+		curr_team = ti;
+		spec_client = cg.snap->ps.clientNum;
+		spec_team = tp;
+
+		if ( spec_team == TEAM_SPECTATOR )
+			spec_team = curr_team;
+
+		CG_ApplyClientChange();
+		CG_ResetPlayerEntity( &cg.predictedPlayerEntity );
+		return;
+	}
+
+	if ( curr_team == TEAM_SPECTATOR )
+	{
+		if ( spec_team != tp )
+		{
+			spec_team  = tp;
+			spec_client = cg.snap->ps.clientNum;
+
+			CG_ApplyClientChange();
+			CG_ResetPlayerEntity( &cg.predictedPlayerEntity );
+			return;
+		}
+
+		if ( cgs.gametype >= GT_TEAM )
+		{
+			spec_client = cg.snap->ps.clientNum;
+			return;
+		}
+	}
+
+	if ( spec_client != cg.snap->ps.clientNum )
+	{
+		spec_client = cg.snap->ps.clientNum;
+		spec_team = tp;
+
+		if ( spec_team == TEAM_SPECTATOR )
+			spec_team = cgs.clientinfo[ cg.snap->ps.clientNum ].team;
+
+		CG_ApplyClientChange();
+		CG_ResetPlayerEntity( &cg.predictedPlayerEntity );
+	}
+}
+
+static void CG_CalculatePing( void ) {
+	int count, i, v;
+
+	cg.meanPing = 0;
+
+	for ( i = 0, count = 0; i < LAG_SAMPLES; i++ ) {
+
+		v = lagometer.snapshotSamples[i];
+		if ( v >= 0 ) {
+			cg.meanPing += v;
+			count++;
+		}
+
+	}
+
+	if ( count ) {
+		cg.meanPing /= count;
+	}
+}
+
 /*
 =====================
 CG_DrawActive
@@ -2812,6 +3114,10 @@ void CG_DrawActive( void ) {
 	if ( !cg.snap ) {
 		CG_DrawInformation();
 		return;
+	}
+
+	if ( !cg.demoPlayback ) {
+		CG_CalculatePing();
 	}
 
 	// optionally draw the tournement scoreboard instead
@@ -2907,18 +3213,26 @@ void CG_DrawActive( void ) {
         if (cg.snap->ps.stats[STAT_HEALTH] > 0 &&
                 cg.snap->ps.pm_type != PM_INTERMISSION)
         {
-            float viewYaw = SHORT2ANGLE(cg.predictedPlayerState.delta_angles[YAW]) +
-                            (vr->clientviewangles[YAW] - vr->hmdorientation[YAW]);
-
             static float hmd_yaw_x = 0.0f;
             static float hmd_yaw_y = 1.0f;
             static float prevPitch = 0.0f;
-            {
-                hmd_yaw_x = 0.95f * hmd_yaw_x + 0.05f * cosf(DEG2RAD(vr->hmdorientation[YAW]));
-                hmd_yaw_y = 0.95f * hmd_yaw_y + 0.05f * sinf(DEG2RAD(vr->hmdorientation[YAW]));
-            }
 
-            angles[YAW] = viewYaw + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
+            // Smooth only the HMD orientation
+            hmd_yaw_x = 0.95f * hmd_yaw_x + 0.05f * cosf(DEG2RAD(vr->hmdorientation[YAW]));
+            hmd_yaw_y = 0.95f * hmd_yaw_y + 0.05f * sinf(DEG2RAD(vr->hmdorientation[YAW]));
+
+            if (vr->use_fake_6dof)
+            {
+                // Multiplayer: use clientviewangles logic
+                float viewYaw = SHORT2ANGLE(cg.predictedPlayerState.delta_angles[YAW]) +
+                                (vr->clientviewangles[YAW] - vr->hmdorientation[YAW]);
+                angles[YAW] = viewYaw + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
+            }
+            else
+            {
+                // Single player: use refdefViewAngles - HMD offset + smoothed HMD
+                angles[YAW] = cg.refdefViewAngles[YAW] - vr->hmdorientation[YAW] + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
+            }
             angles[PITCH] = 0.95f * prevPitch + 0.05f * vr->hmdorientation[PITCH];
             prevPitch = angles[PITCH];
             angles[ROLL] = 0;
@@ -2962,6 +3276,7 @@ void CG_DrawActive( void ) {
 			//Tell renderer we want to draw to the HUD buffer
 			trap_R_HUDBufferStart(qtrue);
 
+			CG_WarmupEvents();
 			// draw status bar and other floating elements
 			CG_DrawHUD2D();
 

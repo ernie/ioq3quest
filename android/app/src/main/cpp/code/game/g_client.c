@@ -734,6 +734,13 @@ void ClientUserinfoChanged( int clientNum ) {
 		client->pers.predictItemPickup = qtrue;
 	}
 
+	// client wants damage plum data?
+	if ( atoi( Info_ValueForKey( userinfo, "cg_damagePlums" ) ) ) {
+		client->pers.damagePlums = qtrue;
+	} else {
+		client->pers.damagePlums = qfalse;
+	}
+
 	// set name
 	Q_strncpyz ( oldname, client->pers.netname, sizeof( oldname ) );
 	s = Info_ValueForKey (userinfo, "name");
@@ -950,7 +957,8 @@ char *ClientConnect( int clientNum, qboolean firstTime, qboolean isBot ) {
 
 	// read or initialize the session data
 	if ( firstTime || level.newSession ) {
-		G_InitSessionData( client, userinfo );
+		value = Info_ValueForKey( userinfo, "team" );
+		G_InitSessionData( client, value, isBot );
 	}
 	G_ReadSessionData( client );
 
@@ -1237,6 +1245,10 @@ void ClientSpawn(gentity_t *ent) {
 	if ( ent->client->sess.spectatorState != SPECTATOR_FOLLOW ) {
 		ClientEndFrame( ent );
 	}
+
+	// unlagged
+	G_ResetHistory( ent );
+	client->saved.leveltime = 0;
 
 	// clear entity state values
 	BG_PlayerStateToEntityState( &client->ps, &ent->s, qtrue );

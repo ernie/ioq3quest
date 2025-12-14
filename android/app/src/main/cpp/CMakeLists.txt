@@ -16,6 +16,7 @@ add_custom_target(copy_libs
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libioquake3_opengl2.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libioquake3_opengl2.so
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libSDL2.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libSDL2.so
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libopenxr_loader.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libopenxr_loader.so
+	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libcurl.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libcurl.so
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/cgameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libcgameaarch64_baseq3.so
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/qagameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libqagameaarch64_baseq3.so
 	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/uiaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libuiaarch64_baseq3.so

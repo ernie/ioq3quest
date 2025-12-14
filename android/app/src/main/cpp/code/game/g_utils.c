@@ -58,8 +58,8 @@ const char *BuildShaderStateConfig(void) {
 	static char	buff[MAX_STRING_CHARS*4];
 	char out[(MAX_QPATH * 2) + 5];
 	int i;
-  
-	memset(buff, 0, MAX_STRING_CHARS);
+
+	memset(buff, 0, sizeof(buff));
 	for (i = 0; i < remapCount; i++) {
 		Com_sprintf(out, (MAX_QPATH * 2) + 5, "%s=%s:%5.2f@", remappedShaders[i].oldShader, remappedShaders[i].newShader, remappedShaders[i].timeOffset);
 		Q_strcat( buff, sizeof( buff ), out);
@@ -369,6 +369,7 @@ void G_InitGentity( gentity_t *e ) {
 	e->classname = "noclass";
 	e->s.number = e - g_entities;
 	e->r.ownerNum = ENTITYNUM_NONE;
+	e->tag = TAG_NONE;
 }
 
 /*
@@ -564,7 +565,7 @@ void G_AddPredictableEvent( gentity_t *ent, int event, int eventParm ) {
 	if ( !ent->client ) {
 		return;
 	}
-	BG_AddPredictableEventToPlayerstate( event, eventParm, &ent->client->ps );
+	BG_AddPredictableEventToPlayerstate( event, eventParm, &ent->client->ps, -1 );
 }
 
 

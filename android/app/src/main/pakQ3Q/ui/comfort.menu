@@ -123,7 +123,37 @@ itemDef {
       		textaligny 20
 		textscale .333
       		forecolor 1 1 1 1
-      		visible 1 
+      		visible 1
+    		}
+
+	itemDef {
+      		name comfort
+		group grpComfort
+      		type ITEM_TYPE_SLIDER
+		text "HUD Scale:"
+		cvarfloat "vr_hudScale" 0.1 0.5 2.0
+		rect 99 300 256 20
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 128
+      		textaligny 20
+		textscale .333
+      		forecolor 1 1 1 1
+      		visible 1
+    		}
+
+	itemDef {
+      		name comfort
+		group grpComfort
+      		type ITEM_TYPE_YESNO
+		text "Smooth Follow:"
+		cvar "cg_smoothFollow"
+		rect 99 325 256 20
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 128
+      		textaligny 20
+		textscale .333
+      		forecolor 1 1 1 1
+      		visible 1
     		}
 
 

@@ -1495,6 +1495,7 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 			{
 #ifdef __ANDROID__
 				Com_sprintf(found, foundlen, "lib%s", dllName);
+				*startSearch = search;
 				return VMI_NATIVE;
 #else
 				netpath = FS_BuildOSPath(dir->path, dir->gamedir, dllName);

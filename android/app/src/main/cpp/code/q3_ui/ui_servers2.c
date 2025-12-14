@@ -32,13 +32,17 @@ MULTIPLAYER MENU (SERVER BROWSER)
 #include "ui_local.h"
 
 
-#define MAX_GLOBALSERVERS		128
+#define REFRESH_DELAY			10	  // in ms
+#define MAX_RESPONSE_TIME		10000 // in ms
+#define MAX_GLOBALSERVERS		4096
 #define MAX_PINGREQUESTS		32
+#define MAX_PINGLISTSIZE		(MAX_PINGREQUESTS*8)
 #define MAX_ADDRESSLENGTH		64
-#define MAX_HOSTNAMELENGTH		22
-#define MAX_MAPNAMELENGTH		16
-#define MAX_LISTBOXITEMS		128
-#define MAX_LOCALSERVERS		128
+#define MAX_HOSTNAMELENGTH		26
+#define MAX_MAPNAMELENGTH		11
+#define MAX_GAMENAMELENGTH		8
+#define MAX_LISTBOXITEMS		MAX_GLOBALSERVERS
+#define MAX_LOCALSERVERS		512
 #define MAX_STATUSLENGTH		64
 #define MAX_LEAGUELENGTH		28
 #define MAX_LISTBOXWIDTH		68
@@ -154,9 +158,9 @@ static char* gamenames[] = {
 };
 
 static char* netnames[] = {
-	"??? ",
-	"UDP ",
-	"UDP6",
+	"???",
+	"UDP",
+	"IP6",
 	NULL
 };
 
@@ -183,13 +187,14 @@ typedef struct {
 
 typedef struct servernode_s {
 	char	adrstr[MAX_ADDRESSLENGTH];
-	char	hostname[MAX_HOSTNAMELENGTH+3];
-	char	mapname[MAX_MAPNAMELENGTH];
+	char	hostname[MAX_HOSTNAMELENGTH+1];
+	char	mapname[MAX_MAPNAMELENGTH+1];
 	int		numclients;
+	int		g_humanplayers;
 	int		maxclients;
 	int		pingtime;
 	int		gametype;
-	char	gamename[12];
+	char	gamename[MAX_GAMENAMELENGTH+1];
 	int		nettype;
 	int		minPing;
 	int		maxPing;
@@ -261,6 +266,7 @@ static int				g_gametype;
 static int				g_sortkey;
 static int				g_emptyservers;
 static int				g_fullservers;
+static int				g_excludebots;
 
 
 /*
@@ -412,10 +418,9 @@ static void ArenaServers_UpdateMenu( void ) {
 	int				i;
 	int				j;
 	int				count;
-	char*			buff;
 	servernode_t*	servernodeptr;
 	table_t*		tableptr;
-	char			*pingColor;
+	const char		*pingColor;
 
 	if( g_arenaservers.numqueriedservers > 0 ) {
 		// servers found
@@ -516,10 +521,9 @@ static void ArenaServers_UpdateMenu( void ) {
 	for( i = 0, j = 0; i < count; i++, servernodeptr++ ) {
 		tableptr = &g_arenaservers.table[j];
 		tableptr->servernode = servernodeptr;
-		buff = tableptr->buff;
 
 		// can only cull valid results
-		if( !g_emptyservers && !servernodeptr->numclients ) {
+		if( !g_emptyservers && !(g_excludebots ? servernodeptr->g_humanplayers : servernodeptr->numclients) ) {
 			continue;
 		}
 
@@ -550,19 +554,19 @@ static void ArenaServers_UpdateMenu( void ) {
 			break;
 
 		case GAMES_CTF:
-			if( servernodeptr->gametype != GT_CTF ) {
+			if ( servernodeptr->gametype != GT_CTF ) {
 				continue;
 			}
 			break;
 		}
 
-		if( servernodeptr->pingtime < servernodeptr->minPing ) {
+		if ( servernodeptr->pingtime < servernodeptr->minPing ) {
 			pingColor = S_COLOR_BLUE;
 		}
-		else if( servernodeptr->maxPing && servernodeptr->pingtime > servernodeptr->maxPing ) {
+		else if ( servernodeptr->maxPing && servernodeptr->pingtime > servernodeptr->maxPing ) {
 			pingColor = S_COLOR_BLUE;
 		}
-		else if( servernodeptr->pingtime < 200 ) {
+		else if ( servernodeptr->pingtime < 200 ) {
 			pingColor = S_COLOR_GREEN;
 		}
 		else if( servernodeptr->pingtime < 400 ) {
@@ -572,20 +576,13 @@ static void ArenaServers_UpdateMenu( void ) {
 			pingColor = S_COLOR_RED;
 		}
 
-		if (uis.demoversion && !servernodeptr->demo)
-        {
-            Com_sprintf( buff, MAX_LISTBOXWIDTH, S_COLOR_MID_GREY "%-20.20s %-12.12s %2d/%2d %-8.8s %4s%s%3d " S_COLOR_YELLOW "%s",
-                         servernodeptr->hostname, servernodeptr->mapname, servernodeptr->numclients,
-                         servernodeptr->maxclients, servernodeptr->gamename,
-                         netnames[servernodeptr->nettype], pingColor, servernodeptr->pingtime, servernodeptr->bPB ? "Yes" : "No" );
-        }
-        else
-        {
-            Com_sprintf( buff, MAX_LISTBOXWIDTH, "%-20.20s %-12.12s %2d/%2d %-8.8s %4s%s%3d " S_COLOR_YELLOW "%s",
-                         servernodeptr->hostname, servernodeptr->mapname, servernodeptr->numclients,
-                         servernodeptr->maxclients, servernodeptr->gamename,
-                         netnames[servernodeptr->nettype], pingColor, servernodeptr->pingtime, servernodeptr->bPB ? "Yes" : "No" );
-        }
+		Com_sprintf( tableptr->buff, sizeof( tableptr->buff ), "%-*.*s %-*.*s %2d/%2d %-*.*s %3s %s%3d",
+			MAX_HOSTNAMELENGTH, MAX_HOSTNAMELENGTH, servernodeptr->hostname,
+			MAX_MAPNAMELENGTH, MAX_MAPNAMELENGTH, servernodeptr->mapname,
+			(g_excludebots ? servernodeptr->g_humanplayers : servernodeptr->numclients), servernodeptr->maxclients,
+			MAX_GAMENAMELENGTH, MAX_GAMENAMELENGTH, servernodeptr->gamename,
+			netnames[ servernodeptr->nettype ],
+			pingColor, servernodeptr->pingtime );
 		j++;
 	}
 
@@ -669,7 +666,6 @@ static void ArenaServers_Insert( char* adrstr, char* info, int pingtime )
 	servernode_t*	servernodeptr;
 	char*			s;
 	int				i;
-
 
 	if ((pingtime >= ArenaServers_MaxPing()) && (g_servertype != UIAS_FAVORITES))
 	{
@@ -899,11 +895,11 @@ static void ArenaServers_DoRefresh( void )
 		}
 
 		// find ping result in our local list
-		for (j=0; j<MAX_PINGREQUESTS; j++)
+		for (j=0; j<MAX_PINGLISTSIZE; j++)
 			if (!Q_stricmp( adrstr, g_arenaservers.pinglist[j].adrstr ))
 				break;
 
-		if (j < MAX_PINGREQUESTS)
+		if (j < MAX_PINGLISTSIZE)
 		{
 			// found it
 			if (!time)
@@ -957,7 +953,7 @@ static void ArenaServers_DoRefresh( void )
 
 	// send ping requests in reasonable bursts
 	// iterate ping through all found servers
-	for (i=0; i<MAX_PINGREQUESTS && g_arenaservers.currentping < g_arenaservers.numqueriedservers; i++)
+	for (i=0; i<MAX_PINGLISTSIZE && g_arenaservers.currentping < g_arenaservers.numqueriedservers; i++)
 	{
 		if (trap_LAN_GetPingQueueCount() >= MAX_PINGREQUESTS)
 		{
@@ -966,11 +962,11 @@ static void ArenaServers_DoRefresh( void )
 		}
 
 		// find empty slot
-		for (j=0; j<MAX_PINGREQUESTS; j++)
+		for (j=0; j<MAX_PINGLISTSIZE; j++)
 			if (!g_arenaservers.pinglist[j].adrstr[0])
 				break;
 
-		if (j >= MAX_PINGREQUESTS)
+		if (j >= MAX_PINGLISTSIZE)
 			// no empty slots available yet - wait for timeout
 			break;
 
@@ -1013,12 +1009,14 @@ static void ArenaServers_StartRefresh( void )
 	int		i;
 	char	myargs[32], protocol[32];
 
-	memset( g_arenaservers.serverlist, 0, g_arenaservers.maxservers*sizeof(table_t) );
+	memset( g_arenaservers.serverlist, 0, g_arenaservers.maxservers*sizeof(servernode_t) );
 
-	for (i=0; i<MAX_PINGREQUESTS; i++)
+	for (i=0; i<MAX_PINGLISTSIZE; i++)
 	{
 		g_arenaservers.pinglist[i].adrstr[0] = '\0';
-		trap_LAN_ClearPing( i );
+		if (i < MAX_PINGREQUESTS) {
+			trap_LAN_ClearPing( i );
+		}
 	}
 
 	g_arenaservers.refreshservers    = qtrue;

@@ -130,6 +130,7 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		// Copy our special pak file and demo
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pakQ3Q.pk3", true);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak0.pk3", false);
+		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak8a.pk3", true);
 		//Copy Omarlego's excellent replacement background
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "z_custom_background66.pk3", false);
 		// Cleanup incompatible shaders
@@ -137,8 +138,8 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 
 		// If Team Arena is installed then copy necessary stuff
 		if (new File("/sdcard/ioquake3Quest/missionpack").exists()) {
-			copy_asset("/sdcard/ioquake3Quest/missionpack", "autoexec.cfg", false);
 			copy_asset("/sdcard/ioquake3Quest/missionpack", "pakQ3Q.pk3", true);
+			copy_asset("/sdcard/ioquake3Quest/missionpack", "pak3a.pk3", true);
 			delete_asset("/sdcard/ioquake3Quest/missionpack/glsl");
 		}
 

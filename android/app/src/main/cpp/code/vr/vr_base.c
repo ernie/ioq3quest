@@ -48,7 +48,12 @@ cvar_t *vr_weaponSelectorMode = NULL;
 cvar_t *vr_weaponSelectorWithHud = NULL;
 cvar_t *vr_goreLevel = NULL;
 cvar_t *vr_hudDrawStatus = NULL;
+cvar_t *vr_currentHudDrawStatus = NULL;
 cvar_t *vr_showConsoleMessages = NULL;
+cvar_t *vr_hudScale = NULL;
+cvar_t *vr_thumbstickDeadzone = NULL;
+cvar_t *vr_thumbstickFullDeflection = NULL;
+cvar_t *vr_screenCurvature = NULL;
 
 engine_t* VR_Init( ovrJava java )
 {
@@ -180,7 +185,12 @@ void VR_InitCvars( void )
 	vr_weaponSelectorWithHud = Cvar_Get ("vr_weaponSelectorWithHud", "0", CVAR_ARCHIVE);
 	vr_goreLevel = Cvar_Get ("vr_goreLevel", "2", CVAR_ARCHIVE);
 	vr_hudDrawStatus = Cvar_Get ("vr_hudDrawStatus", "1", CVAR_ARCHIVE); // 0 - no hud, 1 - in-world hud, 2 - performance (static HUD)
+	vr_currentHudDrawStatus = Cvar_Get ("vr_currentHudDrawStatus", "1", CVAR_ARCHIVE); // Runtime HUD mode (set dynamically based on follow mode)
 	vr_showConsoleMessages = Cvar_Get ("vr_showConsoleMessages", "1", CVAR_ARCHIVE);
+	vr_hudScale = Cvar_Get ("vr_hudScale", "1.0", CVAR_ARCHIVE);
+	vr_thumbstickDeadzone = Cvar_Get ("vr_thumbstickDeadzone", "0.15", CVAR_ARCHIVE);
+	vr_thumbstickFullDeflection = Cvar_Get ("vr_thumbstickFullDeflection", "0.85", CVAR_ARCHIVE);
+	vr_screenCurvature = Cvar_Get ("vr_screenCurvature", "0.5", CVAR_ARCHIVE);
 
 	// Values are:  scale,right,up,forward,pitch,yaw,roll
 	// VALUES PROVIDED BY SkillFur - Thank-you!
@@ -284,6 +294,10 @@ void VR_InitCvars( void )
 	Cvar_Get ("vr_button_map_SECONDARYGRIP", "+weapon_stabilise", CVAR_ARCHIVE); // Weapon stabilisation
 	Cvar_Get ("vr_button_map_SECONDARYGRIP_ALT", "", CVAR_ARCHIVE); // unmapped
 	Cvar_Get ("vr_button_map_PRIMARYGRIP_ALT", "", CVAR_ARCHIVE); // unmapped
+	Cvar_Get ("vr_button_map_PRIMARYTHUMBREST", "+alt", CVAR_ARCHIVE); // Alt modifier
+	Cvar_Get ("vr_button_map_PRIMARYTHUMBREST_ALT", "", CVAR_ARCHIVE); // unmapped
+	Cvar_Get ("vr_button_map_SECONDARYTHUMBREST", "+alt", CVAR_ARCHIVE); // Alt modifier
+	Cvar_Get ("vr_button_map_SECONDARYTHUMBREST_ALT", "", CVAR_ARCHIVE); // unmapped
 
     vr.menuYaw = 0;
     vr.recenterYaw = 0;
@@ -370,7 +384,10 @@ int VR_useScreenLayer( void )
     }
 
     int keyCatcher = Key_GetCatcher( );
-	return ( clc.state == CA_CINEMATIC ||
-			( keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE) ));
+	qboolean isFollowingInFirstPerson = (((cl.snap.ps.pm_flags & PMF_FOLLOW) || clc.demoplaying)) && (vr.follow_mode == VRFM_FIRSTPERSON);
+	return (qboolean)( clc.state == CA_CINEMATIC ||
+			clc.state != CA_ACTIVE ||
+			( keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE) ) ||
+			isFollowingInFirstPerson);
 }
 //#endif

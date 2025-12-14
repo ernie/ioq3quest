@@ -66,6 +66,13 @@ typedef struct {
 
     float recenterYaw;
     float superSampling;
+
+    qboolean recenter_follow_camera; // flag to trigger camera recentering in follow mode
+    float snapTurnYaw;                // yaw rotation to apply (like CL_SnapTurn), set by cgame
+    qboolean first_person_following;  // true when in first-person follow mode
+
+    int *scoreboardCursorX;           // cursor X for scoreboard click-to-follow
+    int *scoreboardCursorY;           // cursor Y for scoreboard click-to-follow
 } vr_clientinfo_t;
 
 #endif //vr_clientinfo_h

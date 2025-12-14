@@ -211,6 +211,10 @@ typedef int		sfxHandle_t;
 typedef int		fileHandle_t;
 typedef int		clipHandle_t;
 
+#ifndef FS_INVALID_HANDLE
+#define FS_INVALID_HANDLE 0
+#endif
+
 #define PAD(base, alignment)	(((base)+(alignment)-1) & ~((alignment)-1))
 #define PADLEN(base, alignment)	(PAD((base), (alignment)) - (base))
 
@@ -763,6 +767,9 @@ void	COM_BeginParseSession( const char *name );
 int		COM_GetCurrentParseLine( void );
 char	*COM_Parse( char **data_p );
 char	*COM_ParseExt( char **data_p, qboolean allowLineBreak );
+void	SkipTillSeparators( char **data );
+void	Com_InitSeparators( void );
+char	*COM_ParseSep( char **data_p, qboolean allowLineBreaks );
 int		COM_Compress( char *data_p );
 void	COM_ParseError( char *format, ... ) __attribute__ ((format (printf, 1, 2)));
 void	COM_ParseWarning( char *format, ... ) __attribute__ ((format (printf, 1, 2)));

@@ -68,10 +68,10 @@ static const int numSkillLevels = ARRAY_LEN( skillLevels );
 
 static const char *netSources[] = {
 	"Local",
-	"Internet",
-	"Master1",
-	"Master2",
-	"Master3",
+	"Internet (all)",
+	"VR Master",
+	"Q3A Master",
+	"ioq3 Master",
 	"Master4",
 	"Master5",
 	"Favorites"
@@ -115,8 +115,8 @@ static char* netnames[] = {
 static char quake3worldMessage[] = "Visit www.quake3world.com - News, Community, Events, Files";
 #endif
 
-static int gamecodetoui[] = {4,2,3,0,5,1,6};
-static int uitogamecode[] = {4,6,2,3,1,5,7};
+static int gamecodetoui[] = {0,1,2,3,4,5,6};
+static int uitogamecode[] = {1,2,3,4,5,6,7};
 
 
 static void UI_StartServerRefresh(qboolean full, qboolean force);
@@ -1782,12 +1782,44 @@ static void UI_DrawRedBlue(rectDef_t *rect, float scale, vec4_t color, int textS
 }
 
 static void UI_DrawCrosshair(rectDef_t *rect, float scale, vec4_t color) {
+	vec4_t crosshairColor;
+	int colorCode;
+
 	if (!uiInfo.currentCrosshair) {
 		return;
 	}
-	trap_R_SetColor( color );
+
+	// Get crosshair color from cvar
+	colorCode = (int)trap_Cvar_VariableValue("cg_crosshairColor");
+
+	// Convert color code to RGB (same logic as CG_CrosshairColorFromInt)
+	if ( colorCode < 1 || colorCode > 7 ) {
+		crosshairColor[0] = 1.0f;
+		crosshairColor[1] = 1.0f;
+		crosshairColor[2] = 1.0f;
+	} else {
+		crosshairColor[0] = (colorCode & 1) ? 1.0f : 0.0f;
+		crosshairColor[1] = (colorCode & 2) ? 1.0f : 0.0f;
+		crosshairColor[2] = (colorCode & 4) ? 1.0f : 0.0f;
+	}
+	crosshairColor[3] = 1.0f;
+
+	trap_R_SetColor( crosshairColor );
 	UI_DrawHandlePic( rect->x, rect->y - rect->h, rect->w, rect->h, uiInfo.uiDC.Assets.crosshairShader[uiInfo.currentCrosshair]);
  	trap_R_SetColor( NULL );
+}
+
+static void UI_DrawCrosshairColor(rectDef_t *rect, float scale, vec4_t color) {
+	static int gamecodetofxpic[] = {0,2,1,4,5,3,6};
+	int gameColorCode = (int)trap_Cvar_VariableValue("cg_crosshairColor");
+	if (gameColorCode < 1 || gameColorCode > 7) {
+		gameColorCode = 7;
+	}
+	int uiColorIndex = gamecodetoui[gameColorCode - 1];
+	int fxPicIndex = gamecodetofxpic[gameColorCode - 1];
+
+	UI_DrawHandlePic( rect->x, rect->y - 10, 128, 8, uiInfo.uiDC.Assets.fxBasePic );
+	UI_DrawHandlePic( rect->x + uiColorIndex * 16 + 8, rect->y - 12, 16, 12, uiInfo.uiDC.Assets.fxPic[fxPicIndex] );
 }
 
 /*
@@ -2130,6 +2162,9 @@ static void UI_OwnerDraw(float x, float y, float w, float h, float text_x, float
 			break;
 		case UI_CROSSHAIR:
 			UI_DrawCrosshair(&rect, scale, color);
+			break;
+		case UI_CROSSHAIRCOLOR:
+			UI_DrawCrosshairColor(&rect, scale, color);
 			break;
 		case UI_SELECTEDPLAYER:
 			UI_DrawSelectedPlayer(&rect, scale, color, textStyle);
@@ -2611,6 +2646,29 @@ static qboolean UI_Crosshair_HandleKey(int flags, float *special, int key) {
 	return qfalse;
 }
 
+static qboolean UI_CrosshairColor_HandleKey(int flags, float *special, int key) {
+	int select = UI_SelectForKey(key);
+	if (select != 0) {
+		int currentColor = (int)trap_Cvar_VariableValue("cg_crosshairColor");
+		currentColor += select;
+
+		if (currentColor > 7) {
+			currentColor = 1;
+		} else if (currentColor < 1) {
+			currentColor = 7;
+		}
+		trap_Cvar_SetValue("cg_crosshairColor", currentColor);
+		// Enable health-based coloring for white, disable for custom colors
+		if (currentColor == 7) {
+			trap_Cvar_SetValue("cg_crosshairHealth", 1);
+		} else {
+			trap_Cvar_SetValue("cg_crosshairHealth", 0);
+		}
+		return qtrue;
+	}
+	return qfalse;
+}
+
 
 
 static qboolean UI_SelectedPlayer_HandleKey(int flags, float *special, int key) {
@@ -2706,6 +2764,9 @@ static qboolean UI_OwnerDrawHandleKey(int ownerDraw, int flags, float *special, 
 			break;
 		case UI_CROSSHAIR:
 			UI_Crosshair_HandleKey(flags, special, key);
+			break;
+		case UI_CROSSHAIRCOLOR:
+			UI_CrosshairColor_HandleKey(flags, special, key);
 			break;
 		case UI_SELECTEDPLAYER:
 			UI_SelectedPlayer_HandleKey(flags, special, key);
@@ -5687,6 +5748,11 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 	// see what information we should display
 	trap_GetClientState( &cstate );
 
+	// During CA_LOADING/CA_PRIMED, don't draw UI connect screen - just show cgame loading screen
+	if (cstate.connState == CA_LOADING || cstate.connState == CA_PRIMED) {
+		return;
+	}
+
 	info[0] = '\0';
 	if( trap_GetConfigString( CS_SERVERINFO, info, sizeof(info) ) ) {
 		Text_PaintCenter(centerPoint, yStart, scale, colorWhite, va( "Loading %s", Info_ValueForKey( info, "mapname" )), 0);
@@ -5729,10 +5795,6 @@ void UI_DrawConnectScreen( qboolean overlay ) {
 		}
 		s = "Awaiting gamestate...";
 		break;
-	case CA_LOADING:
-		return;
-	case CA_PRIMED:
-		return;
 	default:
 		return;
 	}
@@ -6136,6 +6198,8 @@ static void UI_DoServerRefresh( void )
 UI_StartServerRefresh
 =================
 */
+static int lastQueriedMaster = -1;
+
 static void UI_StartServerRefresh(qboolean full, qboolean force)
 {
 	char	*ptr;
@@ -6145,9 +6209,10 @@ static void UI_StartServerRefresh(qboolean full, qboolean force)
 	// This function is called with force=qfalse when server browser menu opens or net source changes.
 	// Automatically update local and favorite servers.
 	// Only auto update master server list if there is no server info cache.
+	// Also force refresh when switching between different masters since they share the same server list.
 	if ( !force && ( ui_netSource.integer >= UIAS_GLOBAL0 && ui_netSource.integer <= UIAS_GLOBAL5 ) ) {
-		if ( trap_LAN_GetServerCount( UI_SourceForLAN() ) > 0 ) {
-			return; // have cached list
+		if ( ui_netSource.integer == lastQueriedMaster && trap_LAN_GetServerCount( UI_SourceForLAN() ) > 0 ) {
+			return; // have cached list from the same master
 		}
 	}
 
@@ -6179,6 +6244,7 @@ static void UI_StartServerRefresh(qboolean full, qboolean force)
 
 	uiInfo.serverStatus.refreshtime = uiInfo.uiDC.realTime + 5000;
 	if( ui_netSource.integer >= UIAS_GLOBAL0 && ui_netSource.integer <= UIAS_GLOBAL5 ) {
+		lastQueriedMaster = ui_netSource.integer;
 
 		ptr = UI_Cvar_VariableString("debug_protocol");
 		if (strlen(ptr)) {

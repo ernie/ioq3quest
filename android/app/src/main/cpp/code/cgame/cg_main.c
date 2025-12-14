@@ -34,6 +34,10 @@ displayContextDef_t cgDC;
 vr_clientinfo_t *vr;
 
 int forceModelModificationCount = -1;
+int enemyModelModificationCount = -1;
+int enemyColorsModificationCount = -1;
+int teamModelModificationCount = -1;
+int teamColorsModificationCount = -1;
 
 void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum );
 void CG_Shutdown( void );
@@ -109,8 +113,10 @@ vmCvar_t	cg_shadows;
 vmCvar_t	cg_playerShadow;
 vmCvar_t	cg_gibs;
 vmCvar_t	cg_megagibs;
+vmCvar_t	cg_hitSounds;
 vmCvar_t	cg_drawTimer;
 vmCvar_t	cg_drawFPS;
+vmCvar_t	cg_drawSpeed;
 vmCvar_t	cg_drawSnapshot;
 vmCvar_t	cg_draw3dIcons;
 vmCvar_t	cg_drawIcons;
@@ -125,6 +131,7 @@ vmCvar_t	cg_crosshairSize;
 vmCvar_t	cg_crosshairX;
 vmCvar_t	cg_crosshairY;
 vmCvar_t	cg_crosshairHealth;
+vmCvar_t	cg_crosshairColor;
 vmCvar_t	cg_animSpeed;
 vmCvar_t	cg_debugAnim;
 vmCvar_t	cg_debugPosition;
@@ -162,10 +169,17 @@ vmCvar_t 	cg_teamChatHeight;
 vmCvar_t 	cg_stats;
 vmCvar_t 	cg_buildScript;
 vmCvar_t 	cg_forceModel;
+vmCvar_t	cg_enemyModel;
+vmCvar_t	cg_enemyColors;
+vmCvar_t	cg_teamModel;
+vmCvar_t	cg_teamColors;
+vmCvar_t	cg_deadBodyDarken;
 vmCvar_t	cg_paused;
 vmCvar_t	cg_blood;
+vmCvar_t	cg_damageEffect;
 vmCvar_t	cg_predictItems;
 vmCvar_t	cg_deferPlayers;
+vmCvar_t	cg_followKiller;
 vmCvar_t	cg_drawTeamOverlay;
 vmCvar_t	cg_teamOverlayUserinfo;
 vmCvar_t	cg_drawFriend;
@@ -176,6 +190,7 @@ vmCvar_t	cg_noVoiceText;
 #endif
 vmCvar_t	cg_hudFiles;
 vmCvar_t 	cg_scorePlum;
+vmCvar_t 	cg_damagePlums;
 vmCvar_t 	cg_smoothClients;
 vmCvar_t	pmove_fixed;
 //vmCvar_t	cg_pmove_fixed;
@@ -230,8 +245,10 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_playerShadow, "cg_playerShadow", "1", CVAR_ARCHIVE  },
 	{ &cg_gibs, "cg_gibs", "1", CVAR_ARCHIVE  },
 	{ &cg_megagibs, "cg_megagibs", "0", CVAR_ARCHIVE  },
+	{ &cg_hitSounds, "cg_hitSounds", "0", CVAR_ARCHIVE  },
 	{ &cg_drawTimer, "cg_drawTimer", "0", CVAR_ARCHIVE  },
 	{ &cg_drawFPS, "cg_drawFPS", "0", CVAR_ARCHIVE  },
+	{ &cg_drawSpeed, "cg_drawSpeed", "0", CVAR_ARCHIVE  },
 	{ &cg_drawSnapshot, "cg_drawSnapshot", "0", CVAR_ARCHIVE  },
 	{ &cg_draw3dIcons, "cg_draw3dIcons", "1", CVAR_ARCHIVE  },
 	{ &cg_debugWeaponAiming, "cg_debugWeaponAiming", "0", CVAR_ARCHIVE  },
@@ -247,6 +264,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_crosshairHealth, "cg_crosshairHealth", "1", CVAR_ARCHIVE },
 	{ &cg_crosshairX, "cg_crosshairX", "0", CVAR_ARCHIVE },
 	{ &cg_crosshairY, "cg_crosshairY", "0", CVAR_ARCHIVE },
+	{ &cg_crosshairColor, "cg_crosshairColor", "7", CVAR_ARCHIVE },
 	{ &cg_brassTime, "cg_brassTime", "2500", CVAR_ARCHIVE },
 	{ &cg_simpleItems, "cg_simpleItems", "0", CVAR_ARCHIVE },
 	{ &cg_addMarks, "cg_marks", "1", CVAR_ARCHIVE },
@@ -282,12 +300,18 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_teamChatTime, "cg_teamChatTime", "3000", CVAR_ARCHIVE  },
 	{ &cg_teamChatHeight, "cg_teamChatHeight", "0", CVAR_ARCHIVE  },
 	{ &cg_forceModel, "cg_forceModel", "0", CVAR_ARCHIVE  },
+	{ &cg_enemyModel, "cg_enemyModel", "", CVAR_ARCHIVE  },
+	{ &cg_enemyColors, "cg_enemyColors", "", CVAR_ARCHIVE  },
+	{ &cg_teamModel, "cg_teamModel", "", CVAR_ARCHIVE  },
+	{ &cg_teamColors, "cg_teamColors", "", CVAR_ARCHIVE  },
+	{ &cg_deadBodyDarken, "cg_deadBodyDarken", "1", CVAR_ARCHIVE  },
 	{ &cg_predictItems, "cg_predictItems", "1", CVAR_ARCHIVE },
 #ifdef MISSIONPACK
 	{ &cg_deferPlayers, "cg_deferPlayers", "0", CVAR_ARCHIVE },
 #else
 	{ &cg_deferPlayers, "cg_deferPlayers", "1", CVAR_ARCHIVE },
 #endif
+	{ &cg_followKiller, "cg_followKiller", "0", CVAR_ARCHIVE },
 	{ &cg_drawTeamOverlay, "cg_drawTeamOverlay", "0", CVAR_ARCHIVE },
 	{ &cg_teamOverlayUserinfo, "teamoverlay", "0", CVAR_ROM | CVAR_USERINFO },
 	{ &cg_stats, "cg_stats", "0", 0 },
@@ -302,6 +326,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_buildScript, "com_buildScript", "0", 0 },	// force loading of all possible data amd error on failures
 	{ &cg_paused, "cl_paused", "0", CVAR_ROM },
 	{ &cg_blood, "com_blood", "1", CVAR_ARCHIVE },
+	{ &cg_damageEffect, "cg_damageEffect", "0", CVAR_ARCHIVE },
 	{ &cg_synchronousClients, "g_synchronousClients", "0", CVAR_SYSTEMINFO },
 #ifdef MISSIONPACK
 	{ &cg_redTeamName, "g_redteam", DEFAULT_REDTEAM_NAME, CVAR_ARCHIVE | CVAR_SERVERINFO | CVAR_USERINFO },
@@ -323,6 +348,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_timescaleFadeSpeed, "cg_timescaleFadeSpeed", "0", 0},
 	{ &cg_timescale, "timescale", "1", 0},
 	{ &cg_scorePlum, "cg_scorePlums", "0", CVAR_USERINFO | CVAR_ARCHIVE},
+	{ &cg_damagePlums, "cg_damagePlums", "0", CVAR_USERINFO | CVAR_ARCHIVE},
 	{ &cg_smoothClients, "cg_smoothClients", "1", CVAR_USERINFO | CVAR_ARCHIVE},
 	{ &cg_cameraMode, "com_cameraMode", "0", CVAR_CHEAT},
 
@@ -363,6 +389,10 @@ void CG_RegisterCvars( void ) {
 	cgs.localServer = atoi( var );
 
 	forceModelModificationCount = cg_forceModel.modificationCount;
+	enemyModelModificationCount = cg_enemyModel.modificationCount;
+	enemyColorsModificationCount = cg_enemyColors.modificationCount;
+	teamModelModificationCount = cg_teamModel.modificationCount;
+	teamColorsModificationCount = cg_teamColors.modificationCount;
 
 	trap_Cvar_Register(NULL, "model", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
 	trap_Cvar_Register(NULL, "headmodel", DEFAULT_MODEL, CVAR_USERINFO | CVAR_ARCHIVE );
@@ -375,7 +405,7 @@ void CG_RegisterCvars( void ) {
 CG_ForceModelChange
 ===================
 */
-static void CG_ForceModelChange( void ) {
+void CG_ForceModelChange( void ) {
 	int		i;
 
 	for (i=0 ; i<MAX_CLIENTS ; i++) {
@@ -419,6 +449,30 @@ void CG_UpdateCvars( void ) {
 	// if force model changed
 	if ( forceModelModificationCount != cg_forceModel.modificationCount ) {
 		forceModelModificationCount = cg_forceModel.modificationCount;
+		CG_ForceModelChange();
+	}
+
+	// if enemy model changed
+	if ( enemyModelModificationCount != cg_enemyModel.modificationCount ) {
+		enemyModelModificationCount = cg_enemyModel.modificationCount;
+		CG_ForceModelChange();
+	}
+
+	// if enemy colors changed
+	if ( enemyColorsModificationCount != cg_enemyColors.modificationCount ) {
+		enemyColorsModificationCount = cg_enemyColors.modificationCount;
+		CG_ForceModelChange();
+	}
+
+	// if team model changed
+	if ( teamModelModificationCount != cg_teamModel.modificationCount ) {
+		teamModelModificationCount = cg_teamModel.modificationCount;
+		CG_ForceModelChange();
+	}
+
+	// if team colors changed
+	if ( teamColorsModificationCount != cg_teamColors.modificationCount ) {
+		teamColorsModificationCount = cg_teamColors.modificationCount;
 		CG_ForceModelChange();
 	}
 }
@@ -662,6 +716,11 @@ static void CG_RegisterSounds( void ) {
 
 	cgs.media.talkSound = trap_S_RegisterSound( "sound/player/talk.wav", qfalse );
 	cgs.media.landSound = trap_S_RegisterSound( "sound/player/land1.wav", qfalse);
+
+	cgs.media.hitSounds[0] = trap_S_RegisterSound( "sound/feedback/hit25.wav", qfalse );
+	cgs.media.hitSounds[1] = trap_S_RegisterSound( "sound/feedback/hit50.wav", qfalse );
+	cgs.media.hitSounds[2] = trap_S_RegisterSound( "sound/feedback/hit75.wav", qfalse );
+	cgs.media.hitSounds[3] = trap_S_RegisterSound( "sound/feedback/hit100.wav", qfalse );
 
 	cgs.media.hitSound = trap_S_RegisterSound( "sound/feedback/hit.wav", qfalse );
 #ifdef MISSIONPACK
@@ -1945,6 +2004,10 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 	CG_LoadingString( "graphics" );
 
 	CG_RegisterGraphics();
+
+#ifdef USE_NEW_FONT_RENDERER
+	CG_LoadFonts();
+#endif
 
 	CG_LoadingString( "clients" );
 

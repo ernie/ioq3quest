@@ -474,6 +474,13 @@ ifeq ($(PLATFORM),android)
   CLIENT_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
   RENDERER_LIBS += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
   CLIENT_EXTRA_FILES += $(OPENXRDIR)/Libs/Android/arm64-v8a/libopenxr_loader.so
+
+  # libcurl for HTTP downloads (loaded dynamically at runtime via dlopen)
+  ifeq ($(USE_CURL),1)
+    CURL_CFLAGS = -I$(MOUNT_DIR)/curl-8.11.0/include
+    CLIENT_CFLAGS += $(CURL_CFLAGS)
+    CLIENT_EXTRA_FILES += $(LIBSDIR)/android/arm64-v8a/libcurl.so
+  endif
 else # ifeq Android
 
 #############################################################################
@@ -2482,12 +2489,14 @@ Q3GOBJ_ = \
   $(B)/$(BASEGAME)/game/g_misc.o \
   $(B)/$(BASEGAME)/game/g_missile.o \
   $(B)/$(BASEGAME)/game/g_mover.o \
+  $(B)/$(BASEGAME)/game/g_rotation.o \
   $(B)/$(BASEGAME)/game/g_session.o \
   $(B)/$(BASEGAME)/game/g_spawn.o \
   $(B)/$(BASEGAME)/game/g_svcmds.o \
   $(B)/$(BASEGAME)/game/g_target.o \
   $(B)/$(BASEGAME)/game/g_team.o \
   $(B)/$(BASEGAME)/game/g_trigger.o \
+  $(B)/$(BASEGAME)/game/g_unlagged.o \
   $(B)/$(BASEGAME)/game/g_utils.o \
   $(B)/$(BASEGAME)/game/g_weapon.o \
   \
@@ -2533,12 +2542,14 @@ MPGOBJ_ = \
   $(B)/$(MISSIONPACK)/game/g_misc.o \
   $(B)/$(MISSIONPACK)/game/g_missile.o \
   $(B)/$(MISSIONPACK)/game/g_mover.o \
+  $(B)/$(MISSIONPACK)/game/g_rotation.o \
   $(B)/$(MISSIONPACK)/game/g_session.o \
   $(B)/$(MISSIONPACK)/game/g_spawn.o \
   $(B)/$(MISSIONPACK)/game/g_svcmds.o \
   $(B)/$(MISSIONPACK)/game/g_target.o \
   $(B)/$(MISSIONPACK)/game/g_team.o \
   $(B)/$(MISSIONPACK)/game/g_trigger.o \
+  $(B)/$(MISSIONPACK)/game/g_unlagged.o \
   $(B)/$(MISSIONPACK)/game/g_utils.o \
   $(B)/$(MISSIONPACK)/game/g_weapon.o \
   \

@@ -35,14 +35,43 @@ itemDef {
 
 
 itemDef {
-      		name options				
+      		name options
 		group grpOptions
 		text "Crosshair:"
-		rect 227 15 20 20
+		rect 227 15 20 18
 		ownerdraw UI_CROSSHAIR
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 0
-      		textaligny 20
+      		textaligny 18
+		textscale .3
+      		forecolor 1 1 1 1
+      		visible 1
+    		}
+
+	itemDef {
+      		name options
+		group grpOptions
+      		type ITEM_TYPE_SLIDER
+		text "Crosshair Size:"
+		cvarfloat "cg_crosshairSize" 8 8 24
+		rect 99 33 256 18
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 128
+      		textaligny 18
+		textscale .3
+      		forecolor 1 1 1 1
+      		visible 1
+    		}
+
+	itemDef {
+      		name options
+		group grpOptions
+		text "Crosshair Color:"
+		ownerdraw UI_CROSSHAIRCOLOR
+		rect 99 51 256 18
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 128
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -54,10 +83,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Laser Sight:"
 		cvar "vr_lasersight"
-		rect 99 35 256 20
+		rect 99 69 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -69,10 +98,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Simple Items (World):"
 		cvar "cg_simpleItems"
-		rect 99 55 256 20
+		rect 99 87 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -84,10 +113,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Simple Items (Weapon Wheel):"
 		cvar "cg_weaponSelectorSimple2DIcons"
-		rect 99 75 256 20
+		rect 99 105 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -99,10 +128,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Show Item In Hand:"
 		cvar "vr_showItemInHand"
-		rect 99 95 256 20
+		rect 99 123 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -114,10 +143,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Marks On Walls:"
 		cvar "cg_marks"
-		rect 99 115 256 20
+		rect 99 141 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -129,10 +158,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Show Floating Scores:"
 		cvar "cg_scorePlums"
-		rect 99 135 256 20
+		rect 99 159 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -145,10 +174,10 @@ itemDef {
 		type ITEM_TYPE_MULTI
 		cvar "cg_brassTime"
 		cvarFloatList { "High" 2500 "Med" 1250 "Off" 0 }
-		rect 99 155 256 20
+		rect 99 177 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -160,10 +189,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Identify Target:"
 		cvar "cg_drawCrosshairNames"
-		rect 99 175 256 20
+		rect 99 195 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -175,10 +204,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Force Player Models:"
 		cvar "cg_forceModel"
-		rect 99 195 256 20
+		rect 99 213 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -190,10 +219,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Draw Team Overlay:"
 		cvar "cg_drawTeamOverlay"
-		rect 99 215 256 20
+		rect 99 231 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -205,10 +234,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Show Time:"
 		cvar "cg_drawTimer"
-		rect 99 235 256 20
+		rect 99 249 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -220,10 +249,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Taunts Off:"
 		cvar "cg_noTaunt"
-		rect 99 255 256 20
+		rect 99 267 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -235,10 +264,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "In Game Video:"
 		cvar "r_inGameVideo"
-		rect 99 275 256 20
+		rect 99 285 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -251,10 +280,10 @@ itemDef {
 		text "HUD Type:"
 		cvar "cg_hudfiles"
 		cvarStrList { Normal "ui/hud.txt" Small "ui/hud2.txt" }
-		rect 99 295 256 20
+		rect 99 303 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -267,10 +296,10 @@ itemDef {
 		text "HUD Mode:"
 		cvar "vr_hudDrawStatus"
 		cvarFloatList { "Off" 0 "Floating" 1 "Fixed to View" 2 }
-		rect 99 315 256 20
+		rect 99 321 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -283,10 +312,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Draw HUD On Weapon Wheel:"
 		cvar "vr_weaponSelectorWithHud"
-		rect 99 335 256 20
+		rect 99 339 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -298,10 +327,10 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Show Console Messages:"
 		cvar "vr_showConsoleMessages"
-		rect 99 355 256 20
+		rect 99 357 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
@@ -314,14 +343,30 @@ itemDef {
 		type ITEM_TYPE_MULTI
 		cvar "vr_goreLevel"
 		cvarFloatList { "None" 0 "Blood Only" 1 "Blood & Gibs (Default)" 2 "Extra Gore (Performance Hit)" 3 }
-		rect 99 385 256 20
+		rect 99 375 256 18
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 70
-      		textaligny 20
+      		textaligny 18
 		textscale .3
       		forecolor 1 1 1 1
       		visible 1
       		action { uiScript update "vr_goreLevel" }
+    		}
+
+	itemDef {
+      		name options
+		group grpOptions
+		text "Blood Spatter Effect:"
+		type ITEM_TYPE_MULTI
+		cvar "cg_damageEffect"
+		cvarFloatList { "Classic" 0 "Modern" 1 }
+		rect 99 393 256 18
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 70
+      		textaligny 18
+		textscale .3
+      		forecolor 1 1 1 1
+      		visible 1
     		}
 
 itemDef {
@@ -331,7 +376,7 @@ itemDef {
 	forecolor 0 0 0 1
 	backcolor 0 0 0 1
 	rect 0 0 640 480
-      	visible 1 
+      	visible 1
 	decoration
     	}
 

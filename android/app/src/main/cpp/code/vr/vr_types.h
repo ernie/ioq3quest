@@ -135,6 +135,26 @@ typedef enum ovrButton_ {
     ovrButton_EnumSize = 0x7fffffff
 } ovrButton;
 
+/// Describes touch input types (capacitive touch sensors)
+typedef enum ovrTouch_ {
+    ovrTouch_A = 0x00000001,             //< The A button has a finger resting on it.
+    ovrTouch_B = 0x00000002,             //< The B button has a finger resting on it.
+    ovrTouch_X = 0x00000004,             //< The X button has a finger resting on it.
+    ovrTouch_Y = 0x00000008,             //< The Y button has a finger resting on it.
+    ovrTouch_TrackPad = 0x00000010,      //< The TrackPad has a finger resting on it.
+    ovrTouch_Joystick = 0x00000020,      //< The Joystick has a finger resting on it.
+    ovrTouch_IndexTrigger = 0x00000040,  //< The Index Trigger has a finger resting on it.
+    ovrTouch_ThumbUp = 0x00000100,       //< None of A, B, X, Y, or Joystick has a finger/thumb in proximity
+    ovrTouch_IndexPointing = 0x00000200, //< The finger is sufficiently far from trigger
+    ovrTouch_BaseState = 0x00000300,     //< No buttons touched or in proximity
+    ovrTouch_LThumb = 0x00000400,        //< The Left controller Joystick has a finger/thumb resting on it.
+    ovrTouch_RThumb = 0x00000800,        //< The Right controller Joystick has a finger/thumb resting on it.
+    ovrTouch_ThumbRest = 0x00001000,     //< Thumb Rest
+    ovrTouch_LThumbRest = 0x00002000,    //< Left Thumb Rest
+    ovrTouch_RThumbRest = 0x00004000,    //< Right Thumb Rest
+    ovrTouch_EnumSize = 0x7fffffff
+} ovrTouch;
+
 typedef struct {
 	uint64_t frameIndex;
 	ovrApp appState;

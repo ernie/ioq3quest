@@ -23,6 +23,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include "../vr/vr_clientinfo.h"
+#include "../vr/vr_renderer.h"
+#include "../vr/vr_base.h"
 
 extern vr_clientinfo_t vr;
 extern cvar_t *vr_hudDrawStatus;
@@ -597,6 +599,10 @@ void SCR_UpdateScreen( void ) {
 	// that case.
 	if( uivm || com_dedicated->integer )
 	{
+		// During loading states, set up VR framebuffer BEFORE rendering so loading screen
+		// gets drawn to the correct buffer for VR submission
+		VR_PrepareLoadingFrame( VR_GetEngine() );
+
 		// XXX
 		int in_anaglyphMode = Cvar_VariableIntegerValue("r_anaglyphMode");
 		// if running in stereo, we need to draw the frame twice
@@ -613,8 +619,13 @@ void SCR_UpdateScreen( void ) {
 		} else {
 			re.EndFrame( NULL, NULL );
 		}
+
+		// During loading states (CA_LOADING/CA_PRIMED), SCR_UpdateScreen is called repeatedly
+		// from within CG_Init (before Com_Frame returns). We need to submit VR frames during
+		// this time so the loading screen is visible in the headset.
+		VR_SubmitLoadingFrame( VR_GetEngine() );
 	}
-	
+
 	recursive = 0;
 }
 

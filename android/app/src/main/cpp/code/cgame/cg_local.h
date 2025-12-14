@@ -182,6 +182,8 @@ typedef struct centity_s {
 	int				trailTime;		// so missile trails can handle dropped initial packets
 	int				dustTrailTime;
 	int				miscTime;
+	int				delaySpawn;
+	qboolean		delaySpawnPlayed;
 
 	int				snapShotTime;	// last time this entity was found in a snapshot
 
@@ -229,6 +231,7 @@ typedef enum {
 	LE_FADE_RGB,
 	LE_SCALE_FADE,
 	LE_SCOREPLUM,
+	LE_DAMAGEPLUM,
 #ifdef MISSIONPACK
 	LE_KAMIKAZE,
 	LE_INVULIMPACT,
@@ -304,6 +307,8 @@ typedef struct {
 	int				captures;
 	qboolean	perfect;
 	int				team;
+	int				minx, maxx;
+	int				miny, maxy;
 } score_t;
 
 // each client has an associated clientInfo_t
@@ -380,6 +385,11 @@ typedef struct {
 	animation_t		animations[MAX_TOTALANIMATIONS];
 
 	sfxHandle_t		sounds[MAX_CUSTOM_SOUNDS];
+
+	vec3_t			headColor;
+	vec3_t			bodyColor;
+	vec3_t			legsColor;
+	qboolean		coloredSkin;
 } clientInfo_t;
 
 
@@ -455,7 +465,9 @@ typedef struct {
 // occurs, and they will have visible effects for #define STEP_TIME or whatever msec after
 
 #define MAX_PREDICTED_EVENTS	16
- 
+#define PICKUP_PREDICTION_DELAY 200
+#define NUM_SAVED_STATES ( CMD_BACKUP + 2 )
+
 typedef struct {
 	int			clientFrame;		// incremented each frame
 
@@ -554,7 +566,8 @@ typedef struct {
 	qboolean	showScores;
 	qboolean	scoreBoardShowing;
 	int			scoreFadeTime;
-	char		killerName[MAX_NAME_LENGTH];
+	char		killerName[MAX_NAME_LENGTH+32];
+	int			killerTime;
 	char			spectatorList[MAX_STRING_CHARS];		// list of names
 	int				spectatorLen;												// length of list
 	float			spectatorWidth;											// width in device units
@@ -579,6 +592,8 @@ typedef struct {
 	// low ammo warning state
 	int			lowAmmoWarning;		// 1 = low, 2 = empty
 
+	int			lastKillTime;
+
 	// crosshair client ID
 	int			crosshairClientNum;
 	int			crosshairClientTime;
@@ -588,6 +603,8 @@ typedef struct {
 	int			powerupTime;
 
 	// attacking player
+	char		attackerName[MAX_NAME_LENGTH];
+	int			attackerClientNum;
 	int			attackerTime;
 	int			voiceTime;
 
@@ -603,6 +620,7 @@ typedef struct {
 	int			soundBufferOut;
 	int			soundTime;
 	qhandle_t	soundBuffer[MAX_SOUNDBUFFER];
+	qhandle_t	soundPlaying;
 
 #ifdef MISSIONPACK
 	// for voice chat buffer
@@ -614,10 +632,12 @@ typedef struct {
 	// warmup countdown
 	int			warmup;
 	int			warmupCount;
+	int			warmupFightSound;
 
 	//==========================
 
 	int			itemPickup;
+	int			itemPickupCount;
 	int			itemPickupTime;
 	int			itemPickupBlendTime;	// the pulse around the crosshair is timed separately
 
@@ -632,7 +652,7 @@ typedef struct {
 	vec3_t		weaponSelectorOffset;
 
 	// blend blobs
-	float		damageTime;
+	int			damageTime;
 	float		damageX, damageY, damageValue;
 
 	// status bar head
@@ -649,11 +669,25 @@ typedef struct {
 	float		v_dmg_pitch;
 	float		v_dmg_roll;
 
+	vec3_t		kick_angles;
+	vec3_t		kick_origin;
+
 	// temp working variables for player view
 	float		bobfracsin;
 	int			bobcycle;
 	float		xyspeed;
 	int     nextOrbitTime;
+
+	int				lastPredictedCommand;
+	int				lastServerTime;
+	playerState_t	savedPmoveStates[ NUM_SAVED_STATES ];
+	int				stateHead, stateTail;
+
+	int				meanPing;
+	int				timeResidual;
+	int				allowPickupPrediction;
+
+	qboolean		skipDFshaders;
 
 	//qboolean cameraMode;		// if rendering from a loaded camera
 
@@ -662,6 +696,10 @@ typedef struct {
 	refEntity_t		testModelEntity;
 	char			testModelName[MAX_QPATH];
 	qboolean		testGun;
+
+	// follow killer
+	int				followTime;
+	int				followClient;
 
 } cg_t;
 
@@ -912,6 +950,7 @@ typedef struct {
 	sfxHandle_t oneFragSound;
 
 	sfxHandle_t hitSound;
+	sfxHandle_t hitSounds[4];
 	sfxHandle_t hitSoundHighArmor;
 	sfxHandle_t hitSoundLowArmor;
 	sfxHandle_t hitTeamSound;
@@ -1129,8 +1168,10 @@ extern	vmCvar_t		cg_shadows;
 extern	vmCvar_t		cg_playerShadow;
 extern	vmCvar_t		cg_gibs;
 extern	vmCvar_t		cg_megagibs;
+extern	vmCvar_t		cg_hitSounds;
 extern	vmCvar_t		cg_drawTimer;
 extern	vmCvar_t		cg_drawFPS;
+extern	vmCvar_t		cg_drawSpeed;
 extern	vmCvar_t		cg_drawSnapshot;
 extern	vmCvar_t		cg_draw3dIcons;
 extern	vmCvar_t		cg_debugWeaponAiming;
@@ -1147,6 +1188,7 @@ extern	vmCvar_t		cg_crosshairX;
 extern	vmCvar_t		cg_crosshairY;
 extern	vmCvar_t		cg_crosshairSize;
 extern	vmCvar_t		cg_crosshairHealth;
+extern	vmCvar_t		cg_crosshairColor;
 extern	vmCvar_t		cg_animSpeed;
 extern	vmCvar_t		cg_debugAnim;
 extern	vmCvar_t		cg_debugPosition;
@@ -1186,8 +1228,10 @@ extern	vmCvar_t 		cg_forceModel;
 extern	vmCvar_t 		cg_buildScript;
 extern	vmCvar_t		cg_paused;
 extern	vmCvar_t		cg_blood;
+extern	vmCvar_t		cg_damageEffect;
 extern	vmCvar_t		cg_predictItems;
 extern	vmCvar_t		cg_deferPlayers;
+extern	vmCvar_t		cg_followKiller;
 extern	vmCvar_t		cg_drawFriend;
 extern	vmCvar_t		cg_teamChatsOnly;
 #ifdef MISSIONPACK
@@ -1195,6 +1239,7 @@ extern	vmCvar_t		cg_noVoiceChats;
 extern	vmCvar_t		cg_noVoiceText;
 #endif
 extern  vmCvar_t		cg_scorePlum;
+extern  vmCvar_t		cg_damagePlums;
 extern	vmCvar_t		cg_smoothClients;
 extern	vmCvar_t		pmove_fixed;
 extern	vmCvar_t		pmove_msec;
@@ -1284,8 +1329,23 @@ void CG_RemoveHUDFlags(int flags);
 void CG_AdjustFrom640( float *x, float *y, float *w, float *h );
 void CG_FillRect( float x, float y, float width, float height, const float *color );
 void CG_DrawPic( float x, float y, float width, float height, qhandle_t hShader );
-void CG_DrawString( float x, float y, const char *string, 
-				   float charWidth, float charHeight, const float *modulate );
+#define USE_NEW_FONT_RENDERER
+
+// flags for CG_DrawString
+enum {
+	DS_SHADOW       = 0x1,
+	DS_FORCE_COLOR  = 0x2,
+	DS_PROPORTIONAL = 0x4,
+	DS_CENTER       = 0x8,	// alignment
+	DS_RIGHT        = 0x10	// alignment
+};
+
+void CG_DrawString( float x, float y, const char *string, const vec4_t color,
+				   float charWidth, float charHeight, int maxChars, int flags );
+#ifdef USE_NEW_FONT_RENDERER
+void CG_LoadFonts( void );
+void CG_SelectFont( int index );
+#endif
 
 
 void CG_DrawStringExt( int x, int y, const char *string, const float *setColor, 
@@ -1324,6 +1384,7 @@ void CG_AddLagometerSnapshotInfo( snapshot_t *snap );
 void CG_CenterPrint( const char *str, int y, int charWidth );
 void CG_DrawHead( float x, float y, float w, float h, int clientNum, vec3_t headAngles );
 void CG_DrawActive( void );
+void CG_DamageBorderVignette( void );
 void CG_DrawFlagModel( float x, float y, float w, float h, int team, qboolean force2D );
 void CG_DrawTeamBackground( int x, int y, int w, int h, float alpha, int team );
 void CG_OwnerDraw(float x, float y, float w, float h, float text_x, float text_y, int ownerDraw, int ownerDrawFlags, int align, float special, float scale, vec4_t color, qhandle_t shader, int textStyle);
@@ -1376,7 +1437,7 @@ void CG_LoadDeferredPlayers( void );
 //
 void CG_CheckEvents( centity_t *cent );
 const char	*CG_PlaceString( int rank );
-void CG_EntityEvent( centity_t *cent, vec3_t position );
+void CG_EntityEvent( centity_t *cent, vec3_t position, int entityNum );
 void CG_PainEvent( centity_t *cent, int health );
 
 
@@ -1469,6 +1530,7 @@ void CG_InvulnerabilityJuiced( vec3_t org );
 void CG_LightningBoltBeam( vec3_t start, vec3_t end );
 #endif
 void CG_ScorePlum( int client, vec3_t org, int score );
+void CG_DamagePlum( vec3_t org, int damage );
 
 void CG_GibPlayer( vec3_t playerOrigin );
 void CG_BigExplode( vec3_t playerOrigin );
@@ -1511,6 +1573,9 @@ void CG_ExecuteNewServerCommands( int latestSequence );
 void CG_ParseServerinfo( void );
 void CG_SetConfigValues( void );
 void CG_ShaderStateChanged(void);
+void CG_TrackClientTeamChange( void );
+void CG_WarmupEvent( void );
+void CG_ForceModelChange( void );
 #ifdef MISSIONPACK
 void CG_LoadVoiceChats( void );
 void CG_VoiceChatLocal( int mode, qboolean voiceOnly, int clientNum, int color, const char *cmd );
@@ -1523,6 +1588,7 @@ void CG_PlayBufferedVoiceChats( void );
 void CG_Respawn( void );
 void CG_TransitionPlayerState( playerState_t *ps, playerState_t *ops );
 void CG_CheckChangedPredictableEvents( playerState_t *ps );
+void CG_PlayDroppedEvents( playerState_t *ps, playerState_t *ops );
 
 
 //===============================================

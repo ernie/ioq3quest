@@ -631,12 +631,25 @@ void CL_FinishMove( usercmd_t *cmd ) {
 
 		vec3_t out;
 		rotateAboutOrigin(cmd->rightmove, cmd->forwardmove, -vr.calculated_weaponangles[YAW], out);
-		cmd->rightmove = out[0];
-		cmd->forwardmove = out[1];
+		cmd->rightmove = ClampChar( (int)out[0] );
+		cmd->forwardmove = ClampChar( (int)out[1] );
 	}
 	else {
 		for (i = 0; i < 3; i++) {
 			cmd->angles[i] = ANGLE2SHORT(cl.viewangles[i]);
+		}
+
+		// In single-player spectator mode, apply offhand pitch to convert forward movement
+		// into vertical movement for fly controls
+		if (cl.snap.ps.pm_type == PM_SPECTATOR && !(cl.snap.ps.pm_flags & PMF_FOLLOW)) {
+			float pitchRad = vr.offhandangles[PITCH] * (M_PI / 180.0f);
+			float originalForward = cmd->forwardmove;
+			float originalUp = cmd->upmove;
+
+			// Decompose forward movement into horizontal and vertical components based on pitch
+			cmd->forwardmove = ClampChar((int)(originalForward * cos(pitchRad)));
+			// Integrate original upmove input with pitch-based vertical movement
+			cmd->upmove = ClampChar((int)(originalUp + originalForward * -sin(pitchRad)));
 		}
 	}
 }

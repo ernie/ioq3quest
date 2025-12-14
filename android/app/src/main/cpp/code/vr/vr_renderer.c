@@ -636,3 +636,130 @@ void VR_DrawFrame( engine_t* engine ) {
         needRecenter = qfalse;
     }
 }
+
+// Track loading frame state for two-phase submit
+static qboolean loadingFrameStarted = qfalse;
+static XrTime loadingFrameDisplayTime = 0;
+
+int VR_PrepareLoadingFrame( engine_t* engine )
+{
+	// Only prepare frames during loading states
+	if (!engine || (clc.state != CA_LOADING && clc.state != CA_PRIMED))
+	{
+		return qfalse;
+	}
+
+	// Handle XR events and check session is active
+	if (ovrApp_HandleXrEvents(&engine->appState)) {
+		VR_Recenter(engine);
+	}
+	if (engine->appState.SessionActive == GL_FALSE) {
+		return qfalse;
+	}
+
+	// Already started a frame? Don't start another
+	if (loadingFrameStarted) {
+		return qfalse;
+	}
+
+	ovrFramebuffer* frameBuffer = &engine->appState.Renderer.FrameBuffer;
+	int width = frameBuffer->ColorSwapChain.Width;
+	int height = frameBuffer->ColorSwapChain.Height;
+
+	// Begin OpenXR frame
+	XrFrameWaitInfo waitFrameInfo = {XR_TYPE_FRAME_WAIT_INFO};
+	XrFrameState frameState = {XR_TYPE_FRAME_STATE};
+	OXR(xrWaitFrame(engine->appState.Session, &waitFrameInfo, &frameState));
+	engine->predictedDisplayTime = frameState.predictedDisplayTime;
+	loadingFrameDisplayTime = frameState.predictedDisplayTime;
+
+	XrFrameBeginInfo beginFrameDesc = {XR_TYPE_FRAME_BEGIN_INFO};
+	OXR(xrBeginFrame(engine->appState.Session, &beginFrameDesc));
+
+	// Acquire swapchain and set up renderer to draw to it
+	ovrFramebuffer_Acquire(frameBuffer);
+
+	// Set up projection matrices for loading screen
+	float fov_x = vr.fov_x > 0 ? vr.fov_x : 90.0f;
+	float fov_y = vr.fov_y > 0 ? vr.fov_y : 90.0f;
+	float hudScale = M_PI * 15.0f / 180.0f;
+
+	const ovrMatrix4f projectionMatrix = ovrMatrix4f_CreateProjectionFov(
+		-fov_x / 2.0f * M_PI / 180.0f, fov_x / 2.0f * M_PI / 180.0f,
+		fov_y / 2.0f * M_PI / 180.0f, -fov_y / 2.0f * M_PI / 180.0f,
+		1.0f, 0.0f );
+	const ovrMatrix4f monoVRMatrix = ovrMatrix4f_CreateProjectionFov(
+		-hudScale, hudScale, hudScale, -hudScale, 1.0f, 0.0f );
+
+	int swapchainIndex = frameBuffer->TextureSwapChainIndex;
+	int glFramebuffer = frameBuffer->FrameBuffers[swapchainIndex];
+	re.SetVRHeadsetParms(projectionMatrix.M, monoVRMatrix.M, glFramebuffer);
+
+	ovrFramebuffer_SetCurrent(frameBuffer);
+	VR_ClearFrameBuffer(width, height);
+
+	loadingFrameStarted = qtrue;
+	return qtrue;
+}
+
+int VR_SubmitLoadingFrame( engine_t* engine )
+{
+	// Only submit frames during loading states
+	if (!engine || (clc.state != CA_LOADING && clc.state != CA_PRIMED))
+	{
+		loadingFrameStarted = qfalse;
+		return qfalse;
+	}
+
+	// If we didn't start a loading frame, nothing to submit
+	if (!loadingFrameStarted) {
+		return qfalse;
+	}
+
+	if (engine->appState.SessionActive == GL_FALSE) {
+		loadingFrameStarted = qfalse;
+		return qfalse;
+	}
+
+	ovrFramebuffer* frameBuffer = &engine->appState.Renderer.FrameBuffer;
+	int width = frameBuffer->ColorSwapChain.Width;
+	int height = frameBuffer->ColorSwapChain.Height;
+
+	// Clear alpha channel so OpenXR transfers framebuffer correctly
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+	glClearColor(0.0, 0.0, 0.0, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	// Release swapchain image
+	ovrFramebuffer_Resolve(frameBuffer);
+	ovrFramebuffer_Release(frameBuffer);
+	ovrFramebuffer_SetNone();
+
+	// Build cylinder layer for loading screen
+	XrCompositionLayerCylinderKHR cylinder_layer = {XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR};
+	cylinder_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+	cylinder_layer.space = engine->appState.CurrentSpace;
+	cylinder_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	cylinder_layer.subImage.swapchain = frameBuffer->ColorSwapChain.Handle;
+	cylinder_layer.subImage.imageRect.extent.width = width;
+	cylinder_layer.subImage.imageRect.extent.height = height;
+	const XrVector3f axis = {0.0f, 1.0f, 0.0f};
+	cylinder_layer.pose.orientation = XrQuaternionf_CreateFromVectorAngle(axis, radians(vr.menuYaw));
+	cylinder_layer.pose.position = (XrVector3f){-sin(radians(vr.menuYaw)) * 6.0f, -0.25f, -cos(radians(vr.menuYaw)) * 6.0f};
+	cylinder_layer.radius = 8.0f;
+	cylinder_layer.centralAngle = MATH_PI * 0.5f;
+	cylinder_layer.aspectRatio = width / (float)height / 0.75f;
+
+	const XrCompositionLayerBaseHeader* layers[] = {(const XrCompositionLayerBaseHeader*)&cylinder_layer};
+
+	XrFrameEndInfo endFrameInfo = {XR_TYPE_FRAME_END_INFO};
+	endFrameInfo.displayTime = loadingFrameDisplayTime;
+	endFrameInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+	endFrameInfo.layerCount = 1;
+	endFrameInfo.layers = layers;
+	OXR(xrEndFrame(engine->appState.Session, &endFrameInfo));
+
+	loadingFrameStarted = qfalse;
+	return qtrue;
+}

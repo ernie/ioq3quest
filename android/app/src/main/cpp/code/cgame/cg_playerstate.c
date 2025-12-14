@@ -179,10 +179,6 @@ void CG_DamageFeedback( int yawByte, int pitchByte, int damage ) {
 		trap_HapticEvent("bullet", 0, 0, 100, yaw, 0);
 	}
 
-	// don't let the screen flashes vary as much
-	if ( kick > 10 ) {
-		kick = 10;
-	}
 	cg.damageValue = kick;
 	cg.v_dmg_time = cg.time + DAMAGE_TIME;
 	cg.damageTime = cg.snap->serverTime;
@@ -211,6 +207,8 @@ void CG_Respawn( void ) {
 
 extern char *eventnames[];
 
+extern int		eventStack;
+
 /*
 ==============
 CG_CheckPlayerstateEvents
@@ -225,7 +223,7 @@ void CG_CheckPlayerstateEvents( playerState_t *ps, playerState_t *ops ) {
 		cent = &cg_entities[ ps->clientNum ];
 		cent->currentState.event = ps->externalEvent;
 		cent->currentState.eventParm = ps->externalEventParm;
-		CG_EntityEvent( cent, cent->lerpOrigin );
+		CG_EntityEvent( cent, cent->lerpOrigin, -1 );
 	}
 
 	cent = &cg.predictedPlayerEntity; // cg_entities[ ps->clientNum ];
@@ -240,7 +238,7 @@ void CG_CheckPlayerstateEvents( playerState_t *ps, playerState_t *ops ) {
 			event = ps->events[ i & (MAX_PS_EVENTS-1) ];
 			cent->currentState.event = event;
 			cent->currentState.eventParm = ps->eventParms[ i & (MAX_PS_EVENTS-1) ];
-			CG_EntityEvent( cent, cent->lerpOrigin );
+			CG_EntityEvent( cent, cent->lerpOrigin, -1 );
 
 			cg.predictableEvents[ i & (MAX_PREDICTED_EVENTS-1) ] = event;
 
@@ -273,7 +271,7 @@ void CG_CheckChangedPredictableEvents( playerState_t *ps ) {
 				event = ps->events[ i & (MAX_PS_EVENTS-1) ];
 				cent->currentState.event = event;
 				cent->currentState.eventParm = ps->eventParms[ i & (MAX_PS_EVENTS-1) ];
-				CG_EntityEvent( cent, cent->lerpOrigin );
+				CG_EntityEvent( cent, cent->lerpOrigin, -1 );
 
 				cg.predictableEvents[ i & (MAX_PREDICTED_EVENTS-1) ] = event;
 
@@ -329,7 +327,28 @@ void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
 			trap_S_StartLocalSound( cgs.media.hitSound, CHAN_LOCAL_SOUND );
 		}
 #else
-		trap_S_StartLocalSound( cgs.media.hitSound, CHAN_LOCAL_SOUND );
+		if ( cg_hitSounds.integer > 0 && (ps->persistant[PERS_ATTACKEE_ARMOR] & 0xFF00) == 0 )
+		{
+			// high byte of PERS_ATTACKEE_ARMOR is target->health in vq3/ta i.e. it is always non-zero
+			// so we will use this value to filter legacy data from our new hitsounds where it is always 0
+			int damage, index;
+			damage = ps->persistant[PERS_ATTACKEE_ARMOR] & 0xFF;
+
+			// damage value is already scaled by STAT_MAX_HEALTH on server side
+			if ( damage > 75 ) index = 3;
+			else if ( damage > 50 ) index = 2;
+			else if ( damage > 25 ) index = 1;
+			else index = 0;
+
+			if ( cg_hitSounds.integer > 1 ) // reversed: higher damage - higher tone
+				index = 3 - index;
+
+			trap_S_StartLocalSound( cgs.media.hitSounds[ index ], CHAN_LOCAL_SOUND );
+		}
+		else
+		{
+			trap_S_StartLocalSound( cgs.media.hitSound, CHAN_LOCAL_SOUND );
+		}
 #endif
 	} else if ( ps->persistant[PERS_HITS] < ops->persistant[PERS_HITS] ) {
 		trap_S_StartLocalSound( cgs.media.hitTeamSound, CHAN_LOCAL_SOUND );
@@ -534,6 +553,9 @@ void CG_TransitionPlayerState( playerState_t *ps, playerState_t *ops ) {
 
 	// run events
 	CG_CheckPlayerstateEvents( ps, ops );
+
+	// reset event stack
+	eventStack = 0;
 
 	// smooth the ducking viewheight change
 	if ( ps->viewheight != ops->viewheight ) {

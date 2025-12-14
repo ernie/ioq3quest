@@ -775,7 +775,12 @@ void ClientThink_real( gentity_t *ent ) {
 	if ( ucmd->serverTime < level.time - 1000 ) {
 		ucmd->serverTime = level.time - 1000;
 //		G_Printf("serverTime >>>>>\n" );
-	} 
+	}
+
+	// unlagged
+	client->frameOffset = trap_Milliseconds() - level.frameStartTime;
+	client->lastCmdTime = ucmd->serverTime;
+	client->lastUpdateFrame = level.framenum;
 
 	msec = ucmd->serverTime - client->ps.commandTime;
 	// following others may result in bad times, but we still want
@@ -1110,6 +1115,9 @@ while a slow client may have multiple ClientEndFrame between ClientThink.
 void ClientEndFrame( gentity_t *ent ) {
 	int			i;
 
+	// unlagged
+	int			frames;
+
 	if ( ent->client->sess.sessionTeam == TEAM_SPECTATOR ) {
 		SpectatorClientEndFrame( ent );
 		return;
@@ -1171,6 +1179,38 @@ void ClientEndFrame( gentity_t *ent ) {
 	}
 
 	ent->client->ps.stats[STAT_HEALTH] = ent->health;	// FIXME: get rid of ent->health...
+
+	// unlagged
+	frames = level.framenum - ent->client->lastUpdateFrame - 1;
+	if ( frames > 0 && g_smoothClients.integer ) {
+		G_PredictPlayerMove( ent, (float)frames / sv_fps.value );
+		SnapVector( ent->s.pos.trBase );
+	}
+
+	// unlagged
+	G_StoreHistory( ent );
+
+	// hitsounds
+	if ( ent->client->damage.enemy && ent->client->damage.amount ) {
+		ent->client->ps.persistant[PERS_HITS] += ent->client->damage.enemy;
+		ent->client->damage.enemy = 0;
+		// scale damage by max.health
+		i = ent->client->damage.amount * 100 / ent->client->ps.stats[STAT_MAX_HEALTH];
+		// avoid high-byte setup
+		if ( i > 255 )
+			i = 255;
+		ent->client->ps.persistant[PERS_ATTACKEE_ARMOR] = i;
+		ent->client->damage.amount = 0;
+	} else if ( ent->client->damage.team ) {
+		ent->client->ps.persistant[PERS_HITS] -= ent->client->damage.team;
+		ent->client->damage.team = 0;
+	}
+
+	// send accumulated damage plums
+	for ( i = 0; i < ent->client->damagePlumCount; i++ ) {
+		DamagePlum( ent, ent->client->damagePlums[i].origin, ent->client->damagePlums[i].damage );
+	}
+	ent->client->damagePlumCount = 0;
 
 	G_SetClientSound (ent);
 

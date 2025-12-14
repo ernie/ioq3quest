@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/qcommon.h"
 
 #ifdef USE_LOCAL_HEADERS
-  #include "../curl-7.54.0/include/curl/curl.h"
+  #include "../curl-8.11.0/include/curl/curl.h"
 #else
   #include <curl/curl.h>
 #endif
@@ -39,6 +39,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
   #define ALTERNATE_CURL_LIB "libcurl-3.dll"
 #elif defined(__APPLE__)
   #define DEFAULT_CURL_LIB "libcurl.dylib"
+#elif defined(__ANDROID__)
+  #define DEFAULT_CURL_LIB "libcurl.so"
 #else
   #define DEFAULT_CURL_LIB "libcurl.so.4"
   #define ALTERNATE_CURL_LIB "libcurl.so.3"
