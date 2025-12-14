@@ -79,36 +79,39 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 	yscale = cls.glconfig.vidHeight / 480.0;
 
 	if (vr.virtual_screen) {
-		// In virtual screen mode, scale to 4:3 viewable area and center vertically
-		float viewableHeight = cls.glconfig.vidWidth * 0.75f;
-		float viewableYScale = viewableHeight / 480.0f;
-		float yoffset = (cls.glconfig.vidHeight - viewableHeight) / 2.0f;
-
+		// In virtual screen mode (menus, loading, first-person follow), scale to full framebuffer
+		// No optical offset needed - cylinder layer handles positioning in 3D space
 		if (x) {
 			*x *= xscale;
 		}
 		if (y) {
-			*y *= viewableYScale;
-			*y += yoffset;
+			*y *= yscale;
 		}
 		if (w) {
 			*w *= xscale;
 		}
 		if (h) {
-			*h *= viewableYScale;
+			*h *= yscale;
 		}
 	} else if (vr.weapon_zoomed) {
 		// Weapon zoomed: scaled down with 1:1 square layout (640x640)
 		// Use xscale for both to match cg_drawtools.c HUD rendering
-		// Scale is slightly smaller (2.4 vs 2.25) and Y offset approximates optical centering
-		float zoomedHudScale = 2.4f;
-		float zoomedHudYOffset = 50.0f;  // Virtual coords offset
-		float screenXScale = xscale / zoomedHudScale;
-		float screenYScale = xscale / zoomedHudScale;
+		float screenXScale = xscale / 2.25f;
+		float screenYScale = xscale / 2.25f;
 
-		// Remap Y from 480 range to 640 range, apply offset in virtual coords before scaling
+		// Remap Y from 480 range to 640 range (stretch vertically to fill square)
 		if (y) {
-			*y = (*y / 480.0f) * 640.0f + zoomedHudYOffset;
+			*y = (*y / 480.0f) * 640.0f;
+		}
+
+		// Calculate optical centering offset (asymmetric FOV compensation)
+		float opticalOffset = 0.0f;
+		float tanUp = tanf(vr.fov_angle_up);
+		float tanDown = tanf(vr.fov_angle_down);
+		float tanHeight = tanUp - tanDown;
+		if (fabsf(tanHeight) > 0.001f) {
+			float m9 = (tanUp + tanDown) / tanHeight;
+			opticalOffset = 320.0f * m9 * screenYScale;  // 320 = center of 640
 		}
 
 		if (x) {
@@ -117,7 +120,7 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 		}
 		if (y) {
 			*y *= screenYScale;
-			*y += (cls.glconfig.vidHeight - (640 * screenYScale)) / 2.0f;
+			*y += (cls.glconfig.vidHeight - (640 * screenYScale)) / 2.0f + opticalOffset;
 		}
 		if (w) {
 			*w *= screenXScale;
@@ -131,13 +134,23 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 		float screenXScale = xscale / 2.25f;
 		float screenYScale = xscale / 2.25f;
 
+		// Calculate optical centering offset (asymmetric FOV compensation)
+		float opticalOffset = 0.0f;
+		float tanUp = tanf(vr.fov_angle_up);
+		float tanDown = tanf(vr.fov_angle_down);
+		float tanHeight = tanUp - tanDown;
+		if (fabsf(tanHeight) > 0.001f) {
+			float m9 = (tanUp + tanDown) / tanHeight;
+			opticalOffset = 240.0f * m9 * screenYScale;
+		}
+
 		if (x) {
 			*x *= screenXScale;
 			*x += (cls.glconfig.vidWidth - (640 * screenXScale)) / 2.0f;
 		}
 		if (y) {
 			*y *= screenYScale;
-			*y += (cls.glconfig.vidHeight - (480 * screenYScale)) / 2.0f;
+			*y += (cls.glconfig.vidHeight - (480 * screenYScale)) / 2.0f + opticalOffset;
 		}
 		if (w) {
 			*w *= screenXScale;
@@ -760,6 +773,10 @@ void SCR_UpdateScreen( void ) {
 	// that case.
 	if( uivm || com_dedicated->integer )
 	{
+		// During loading states, set up VR framebuffer BEFORE rendering so loading screen
+		// gets drawn to the correct buffer for VR submission
+		VR_PrepareLoadingFrame( VR_GetEngine() );
+
 		// XXX
 		int in_anaglyphMode = Cvar_VariableIntegerValue("r_anaglyphMode");
 		// if running in stereo, we need to draw the frame twice

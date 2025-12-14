@@ -62,19 +62,24 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 	{
 		// Weapon zoomed HUD: scaled down and centered, similar to HUD mode 2
 		// Use 1:1 square layout (640x640) to push top/bottom elements away from center
-		// Scale is slightly smaller than HUD mode 2 (2.4 vs 2.25) to better match q3vr's
-		// quad layer positioning, and Y offset pushes down to approximate optical centering
-		float zoomedHudScale = 2.4f;
-		float zoomedHudYOffset = 50.0f;  // Virtual coords offset to approximate optical centering
-		float screenXScale = cgs.screenXScale / zoomedHudScale;
-		float screenYScale = cgs.screenXScale / zoomedHudScale;
+		float screenXScale = cgs.screenXScale / 2.25f;
+		float screenYScale = cgs.screenXScale / 2.25f;
 		float effectiveWidth = cg.refdef.width;
 		float effectiveHeight = cg.refdef.height;
 
 		// Remap Y from 480 range to 640 range (stretch vertically to fill square)
 		// This maps input y=0 to output y=0, and input y=480 to output y=640
-		// Apply Y offset in virtual coordinates before scaling
-		*y = (*y / 480.0f) * 640.0f + zoomedHudYOffset;
+		*y = (*y / 480.0f) * 640.0f;
+
+		// Calculate optical centering offset (asymmetric FOV compensation)
+		float opticalOffset = 0.0f;
+		float tanUp = tanf(vr->fov_angle_up);
+		float tanDown = tanf(vr->fov_angle_down);
+		float tanHeight = tanUp - tanDown;
+		if (fabsf(tanHeight) > 0.001f) {
+			float m9 = (tanUp + tanDown) / tanHeight;
+			opticalOffset = 320.0f * m9 * screenYScale;  // 320 = center of 640
+		}
 
 		*x *= screenXScale;
 		*y *= screenYScale;
@@ -82,10 +87,12 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 		*h *= screenYScale;
 
 		*x += (effectiveWidth - (640 * screenXScale)) / 2.0f;
-		*y += (effectiveHeight - (640 * screenYScale)) / 2.0f;
+		*y += (effectiveHeight - (640 * screenYScale)) / 2.0f + opticalOffset;
 	}
 	else if (!cg.drawingHUD)
 	{
+		// Not drawing HUD - just scale to framebuffer
+		// No optical offset for virtual_screen since cylinder layer handles positioning
 		*x *= cgs.screenXScale;
 		*y *= cgs.screenYScale;
 		*w *= cgs.screenXScale;
@@ -94,13 +101,25 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 	else  // scale to clearly visible portion of VR screen
 	{
 		float screenXScale, screenYScale;
+		float yOffset = 0.0f;
+		float effectiveWidth = cg.refdef.width;
+		float effectiveHeight = cg.refdef.height;
 
 		if (vr->virtual_screen) {
+			// Virtual screen (menus, first-person follow) - cylinder layer handles positioning
+			// No optical offset needed
 			screenXScale = cgs.screenXScale;
 			screenYScale = cgs.screenYScale;
 		} else {
-			screenXScale = cgs.screenXScale / 2.8f;
-			screenYScale = cgs.screenYScale / 2.3f;
+			// HUD mode 2: scaled down for in-world display (projection layer)
+			screenXScale = cgs.screenXScale / 2.25f;
+			screenYScale = cgs.screenXScale / 2.25f;
+
+			// Apply optical centering for HUD mode 2 (asymmetric FOV compensation)
+			float projCenterY;
+			CG_GetProjectionCenter(NULL, &projCenterY);
+			float opticalOffset = projCenterY - 240.0f;
+			yOffset = opticalOffset * screenYScale;
 		}
 
 		*x *= screenXScale;
@@ -108,8 +127,8 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 		*w *= screenXScale;
 		*h *= screenYScale;
 
-		*x += (cg.refdef.width - (640 * screenXScale)) / 2.0f;
-		*y += (cg.refdef.height - (480 * screenYScale)) / 2.0f - trap_Cvar_VariableValue("vr_hudYOffset");
+		*x += (effectiveWidth - (640 * screenXScale)) / 2.0f;
+		*y += (effectiveHeight - (480 * screenYScale)) / 2.0f - trap_Cvar_VariableValue("vr_hudYOffset") + yOffset;
 	}
 }
 

@@ -2735,6 +2735,54 @@ void CG_DrawTimedMenus( void ) {
 
 /*
 ==============
+CG_GetProjectionCenter
+
+Returns the optical center of the current projection in 640x480 virtual coords.
+OpenXR has asymmetric FOV (different up/down angles), so the optical center
+is not at the geometric center (320, 240).
+==============
+*/
+void CG_GetProjectionCenter( float *outX, float *outY )
+{
+	// Default to geometric center
+	float x = 320.0f;
+	float y = 240.0f;
+
+	// Get the effective FOV angles, accounting for weapon zoom
+	// The projection matrix in vr_renderer.c divides angles by weapon_zoomLevel
+	float zoomLevel = vr->weapon_zoomLevel;
+	if (zoomLevel < 1.0f) zoomLevel = 1.0f;
+
+	float angleUp = vr->fov_angle_up / zoomLevel;
+	float angleDown = vr->fov_angle_down / zoomLevel;
+	float angleLeft = vr->fov_angle_left / zoomLevel;
+	float angleRight = vr->fov_angle_right / zoomLevel;
+
+	float tanUp = tanf(angleUp);
+	float tanDown = tanf(angleDown);
+	float tanLeft = tanf(angleLeft);
+	float tanRight = tanf(angleRight);
+
+	// Vertical: m[9] = (tanUp + tanDown) / (tanUp - tanDown)
+	float tanHeightV = tanUp - tanDown;
+	if (fabsf(tanHeightV) > 0.001f) {
+		float m9 = (tanUp + tanDown) / tanHeightV;
+		y = 240.0f * (1.0f + m9);
+	}
+
+	// Horizontal: m[8] = (tanRight + tanLeft) / (tanRight - tanLeft)
+	float tanWidthH = tanRight - tanLeft;
+	if (fabsf(tanWidthH) > 0.001f) {
+		float m8 = (tanRight + tanLeft) / tanWidthH;
+		x = 320.0f * (1.0f + m8);
+	}
+
+	if (outX) *outX = x;
+	if (outY) *outY = y;
+}
+
+/*
+==============
 CG_DrawWeapReticle
 
 Draws the railgun scope reticle overlay.
@@ -2751,12 +2799,16 @@ static void CG_DrawWeapReticle( void )
 	float X_WIDTH = 640;
 	float Y_HEIGHT = 480;
 
-	// VrApi uses symmetric FOV, so projection center is at geometric center
-	float centerX = 320.0f;
-	float centerY = 240.0f;
+	// OpenXR has asymmetric FOV, so get the actual optical center
+	float centerX, centerY;
+	CG_GetProjectionCenter(&centerX, &centerY);
+
+	// Get the Y offset: projection center is above geometric center (lower Y value),
+	// so we need a negative offset to shift elements UP toward the projection center
+	float reticleYOffset = centerY - 240.0f;  // negative when proj center is above geometric center
 
 	float x = (X_WIDTH * indentX);
-	float y = (Y_HEIGHT * indentY);
+	float y = (Y_HEIGHT * indentY) + reticleYOffset;
 	float w = (X_WIDTH * (1-(2*indentX))) / 2.0f;
 	float h = (Y_HEIGHT * (1-(2*indentY))) / 2;
 
@@ -2766,8 +2818,8 @@ static void CG_DrawWeapReticle( void )
 	CG_FillRect( 0, 0, (X_WIDTH * indentX), Y_HEIGHT, black );
 	CG_FillRect( X_WIDTH * (1 - indentX), 0, (X_WIDTH * indentX), Y_HEIGHT, black );
 	// top/bottom
-	CG_FillRect( X_WIDTH * indentX, 0, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
-	CG_FillRect( X_WIDTH * indentX, Y_HEIGHT * (1-indentY), X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
+	CG_FillRect( X_WIDTH * indentX, 0, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY) + reticleYOffset, black );
+	CG_FillRect( X_WIDTH * indentX, Y_HEIGHT * (1-indentY) + reticleYOffset, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
 
 	{
 		// center
@@ -2785,8 +2837,8 @@ static void CG_DrawWeapReticle( void )
 		// Scope edges
 		float leftEdge = X_WIDTH * indentX;
 		float rightEdge = X_WIDTH * (1.0f - indentX);
-		float topEdge = Y_HEIGHT * indentY;
-		float bottomEdge = Y_HEIGHT * (1.0f - indentY);
+		float topEdge = Y_HEIGHT * indentY + reticleYOffset;
+		float bottomEdge = Y_HEIGHT * (1.0f - indentY) + reticleYOffset;
 
 		CG_FillRect( leftEdge, centerY - hairThick/2.66f, hairLength, hairThick * 0.75f, light_color );                 // left
 		CG_FillRect( rightEdge - hairLength, centerY - hairThick/2.66f, hairLength, hairThick * 0.75f, light_color );   // right

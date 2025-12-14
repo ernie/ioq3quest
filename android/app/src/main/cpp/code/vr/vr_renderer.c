@@ -506,6 +506,11 @@ void VR_DrawFrame( engine_t* engine ) {
     }
     vr.fov_x = (fabs(fov.angleLeft) + fabs(fov.angleRight)) * 180.0f / M_PI;
     vr.fov_y = (fabs(fov.angleUp) + fabs(fov.angleDown)) * 180.0f / M_PI;
+    // Store raw FOV angles for asymmetric projection center calculations
+    vr.fov_angle_up = fov.angleUp;
+    vr.fov_angle_down = fov.angleDown;
+    vr.fov_angle_left = fov.angleLeft;
+    vr.fov_angle_right = fov.angleRight;
 
     // Update HMD and controllers
     IN_VRUpdateHMD( invViewTransform[0] );

@@ -645,7 +645,7 @@ void Con_DrawNotify (void)
 	// coordinates and scale character size to try to match floating HUD scaling
 	if (vr_currentHudDrawStatus->integer == 2 || vr.weapon_zoomed) {
 		if (!vr.virtual_screen) {
-			charScale /= 1.5f;
+			charScale /= 2.0f;
 		}
 		SCR_AdjustFrom640(&xadjust, &yadjust, NULL, NULL);
 	}

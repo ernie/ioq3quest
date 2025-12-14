@@ -1412,6 +1412,7 @@ void CG_CheckOrderPending( void );
 const char *CG_GameTypeString( void );
 qboolean CG_YourTeamHasFlag( void );
 qboolean CG_OtherTeamHasFlag( void );
+void CG_GetProjectionCenter( float *outX, float *outY );
 qhandle_t CG_StatusHandle(int task);
 
 
