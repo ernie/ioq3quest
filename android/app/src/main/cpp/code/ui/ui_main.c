@@ -5267,17 +5267,8 @@ static void UI_DrawCinematic(int handle, float x, float y, float w, float h) {
 	// CIN_SetExtents takes stretched 640x480 virtualized coords
 	x *= SCREEN_WIDTH / (float)uiInfo.uiDC.glconfig.vidWidth;
 	w *= SCREEN_WIDTH / (float)uiInfo.uiDC.glconfig.vidWidth;
-
-	// When undoing the Y scaling, account for virtual_screen 4:3 adjustment
-	if (vr && vr->virtual_screen) {
-		float viewableHeight = uiInfo.uiDC.glconfig.vidWidth * 0.75f;
-		float yoffset = (uiInfo.uiDC.glconfig.vidHeight - viewableHeight) / 2.0f;
-		y = (y - yoffset) * (SCREEN_HEIGHT / viewableHeight);
-		h *= SCREEN_HEIGHT / viewableHeight;
-	} else {
-		y *= SCREEN_HEIGHT / (float)uiInfo.uiDC.glconfig.vidHeight;
-		h *= SCREEN_HEIGHT / (float)uiInfo.uiDC.glconfig.vidHeight;
-	}
+	y *= SCREEN_HEIGHT / (float)uiInfo.uiDC.glconfig.vidHeight;
+	h *= SCREEN_HEIGHT / (float)uiInfo.uiDC.glconfig.vidHeight;
 
 	trap_CIN_SetExtents(handle, x, y, w, h);
 	trap_CIN_DrawCinematic(handle);

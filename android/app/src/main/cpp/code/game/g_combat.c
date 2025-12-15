@@ -834,6 +834,8 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	int			asave;
 	int			knockback;
 	int			max;
+	int			i;
+	qboolean	found;
 #ifdef MISSIONPACK
 	vec3_t		bouncedir, impactpoint;
 #endif
@@ -1014,10 +1016,17 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	}
 
 	// add to the attacker's hit counter (if the target isn't a general entity like a prox mine)
-	if ( attacker->client && client
-			&& targ != attacker && targ->health > 0
+	if ( attacker->client && client && targ != attacker && targ->health > 0
 			&& targ->s.eType != ET_MISSILE
 			&& targ->s.eType != ET_GENERAL) {
+#ifdef MISSIONPACK
+		if ( OnSameTeam( targ, attacker ) ) {
+			attacker->client->ps.persistant[PERS_HITS]--;
+		} else {
+			attacker->client->ps.persistant[PERS_HITS]++;
+		}
+		attacker->client->ps.persistant[PERS_ATTACKEE_ARMOR] = (targ->health<<8)|(client->ps.stats[STAT_ARMOR]);
+#else
 		// we may hit multiple targets from different teams
 		// so usual PERS_HITS increments/decrements could result in ZERO delta
 		if ( OnSameTeam( targ, attacker ) ) {
@@ -1027,10 +1036,10 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 			// accumulate damage during server frame
 			attacker->client->damage.amount += take + asave;
 		}
+#endif
 		if ( !OnSameTeam( targ, attacker ) ) {
 			// accumulate damage per target for damage plums
-			qboolean found = qfalse;
-			int i;
+			found = qfalse;
 			for ( i = 0; i < attacker->client->damagePlumCount; i++ ) {
 				if ( attacker->client->damagePlums[i].clientNum == targ->s.number ) {
 					attacker->client->damagePlums[i].damage += take + asave;
@@ -1045,27 +1054,6 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 				attacker->client->damagePlums[attacker->client->damagePlumCount].origin[2] += 48;
 				attacker->client->damagePlumCount++;
 			}
-		}
-	}
-
-	if ( g_debugDamage.integer ) {
-		G_Printf( "%i: client:%i health:%i damage:%i armor:%i\n", level.time, targ->s.number,
-			targ->health, take, asave );
-	}
-
-	// add to the attacker's hit counter (if the target isn't a general entity like a prox mine)
-	if ( attacker->client && client
-			&& targ != attacker && targ->health > 0
-			&& targ->s.eType != ET_MISSILE
-			&& targ->s.eType != ET_GENERAL) {
-		// we may hit multiple targets from different teams
-		// so usual PERS_HITS increments/decrements could result in ZERO delta
-		if ( OnSameTeam( targ, attacker ) ) {
-			attacker->client->damage.team++;
-		} else {
-			attacker->client->damage.enemy++;
-			// accumulate damage during server frame
-			attacker->client->damage.amount += take + asave;
 		}
 	}
 

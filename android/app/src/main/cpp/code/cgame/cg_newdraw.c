@@ -545,8 +545,8 @@ static void CG_DrawSelectedPlayerHead( rectDef_t *rect, qboolean draw2D, qboolea
     	angles[PITCH] = 0;
     	angles[YAW] = 180;
     	angles[ROLL] = 0;
-  	
-      CG_Draw3DModel( rect->x, rect->y, rect->w, rect->h, ci->headModel, ci->headSkin, origin, angles );
+
+      CG_Draw3DModelColor( rect->x, rect->y, rect->w, rect->h, ci->headModel, ci->headSkin, origin, angles, ci->headColor );
   	} else if ( cg_drawIcons.integer ) {
 	  	CG_DrawPic( rect->x, rect->y, rect->w, rect->h, ci->modelIcon );
   	}
