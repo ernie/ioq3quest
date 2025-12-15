@@ -77,6 +77,14 @@ typedef struct {
 
     int *scoreboardCursorX;           // cursor X for scoreboard click-to-follow
     int *scoreboardCursorY;           // cursor Y for scoreboard click-to-follow
+
+    // SP intermission overlay anchoring (world-fixed UI during podium view)
+    qboolean sp_intermission_active;
+    float sp_intermission_yaw;        // The yaw angle the overlay is anchored to
+
+    // Overlay buffer dimensions (may differ from glConfig when supersampling is used)
+    int overlayWidth;
+    int overlayHeight;
 } vr_clientinfo_t;
 
 #endif //vr_clientinfo_h

@@ -92,8 +92,6 @@ static float IN_ApplyThumbstickCurve(float value, float threshold)
 	return (value < 0) ? -f : f;
 }
 
-static float heightAdjust = 0.0f;
-
 extern cvar_t *cl_sensitivity;
 extern cvar_t *m_pitch;
 extern cvar_t *m_yaw;

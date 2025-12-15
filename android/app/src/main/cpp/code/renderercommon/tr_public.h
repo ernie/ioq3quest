@@ -88,6 +88,9 @@ typedef struct {
 	void	(*SetVRHeadsetParms)( const float projectionMatrix[4][4],
 								  const float nonVRProjectionMatrix[4][4],
 								  int renderBuffer );
+	void	(*SetScreenOverlayBuffer)( int buffer, int width, int height );
+	void	(*ScreenOverlayBufferStart)( qboolean clear );
+	void	(*ScreenOverlayBufferEnd)( void );
 #endif
 
 	int		(*MarkFragments)( int numPoints, const vec3_t *points, const vec3_t projection,

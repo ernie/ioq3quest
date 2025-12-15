@@ -1641,6 +1641,9 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 
 #if __ANDROID__
 	re.SetVRHeadsetParms = RE_SetVRHeadsetParms;
+	re.SetScreenOverlayBuffer = RE_SetScreenOverlayBuffer;
+	re.ScreenOverlayBufferStart = RE_ScreenOverlayBufferStart;
+	re.ScreenOverlayBufferEnd = RE_ScreenOverlayBufferEnd;
 #endif
 
 	re.MarkFragments = R_MarkFragments;

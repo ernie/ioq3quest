@@ -32,9 +32,10 @@
 typedef union {
     XrCompositionLayerProjection Projection;
     XrCompositionLayerCylinderKHR Cylinder;
+    XrCompositionLayerQuad Quad;
 } ovrCompositorLayer_Union;
 
-enum { ovrMaxLayerCount = 1 };
+enum { ovrMaxLayerCount = 2 };
 enum { ovrMaxNumEyes = 2 };
 
 #define GL(func) func;
@@ -85,6 +86,7 @@ typedef struct {
     XrSpace StageSpace;
     XrSpace FakeStageSpace;
     XrSpace CurrentSpace;
+    XrSpace ViewSpace;          // VIEW reference space for head-locked quad layers
     GLboolean SessionActive;
 
     float* SupportedDisplayRefreshRates;
@@ -102,6 +104,14 @@ typedef struct {
 
     ovrRenderer Renderer;
     ovrTrackedController TrackedController[2];
+
+    // Screen overlay swapchain for 2D quad layer (HUD mode 2, vignette, damage, reticle)
+    ovrSwapChain OverlaySwapChain;
+    XrSwapchainImageOpenGLESKHR* OverlaySwapChainImage;
+    uint32_t OverlaySwapChainLength;
+    uint32_t OverlaySwapChainIndex;
+    GLuint OverlayFrameBuffer;
+    GLboolean OverlayAcquired;
 } ovrApp;
 
 

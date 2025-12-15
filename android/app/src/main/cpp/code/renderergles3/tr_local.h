@@ -859,6 +859,10 @@ typedef struct {
 	float		monoVRProjection[16];
 	int			renderBuffer;
 	int			renderBufferOriginal;
+	// Screen overlay quad layer
+	int			screenOverlayBuffer;
+	int			screenOverlayWidth;
+	int			screenOverlayHeight;
 } vrParms_t;
 
 /*
@@ -1402,6 +1406,7 @@ typedef struct {
 	mat4_t        modelMatrix;
 	mat4_t        projection;
 	qboolean 		isDrawingHUD;
+	qboolean 		isDrawingScreenOverlay;
 } glstate_t;
 
 typedef enum {
@@ -2481,6 +2486,12 @@ typedef struct {
 	qboolean clear; // Clear the buffer?
 } hudBufferCommand_t;
 
+typedef struct {
+	int commandId;
+	qboolean start;
+	qboolean clear; // Clear the buffer?
+} screenOverlayBufferCommand_t;
+
 typedef enum {
 	RC_END_OF_LIST,
 	RC_SET_COLOR,
@@ -2496,7 +2507,8 @@ typedef enum {
 	RC_POSTPROCESS,
 	RC_EXPORT_CUBEMAPS,
 	RC_SWITCH_EYE,
-	RC_HUD_BUFFER
+	RC_HUD_BUFFER,
+	RC_SCREEN_OVERLAY_BUFFER
 } renderCommand_t;
 
 
@@ -2542,6 +2554,9 @@ void RE_EndFrame( int *frontEndMsec, int *backEndMsec );
 void RE_SetVRHeadsetParms( const float projectionMatrix[4][4],
 						   const float nonVRProjectionMatrix[4][4],
 						   int renderBuffer );
+void RE_SetScreenOverlayBuffer( int buffer, int width, int height );
+void RE_ScreenOverlayBufferStart( qboolean clear );
+void RE_ScreenOverlayBufferEnd( void );
 #endif
 void RE_HUDBufferStart( qboolean clear );
 void RE_HUDBufferEnd( void );

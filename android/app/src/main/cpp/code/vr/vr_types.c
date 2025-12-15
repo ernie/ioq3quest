@@ -190,21 +190,11 @@ void ovrFramebuffer_Acquire(ovrFramebuffer* frameBuffer) {
     XrSwapchainImageWaitInfo waitInfo;
     waitInfo.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO;
     waitInfo.next = NULL;
-    waitInfo.timeout = 1000; /* timeout in nanoseconds - matching quake3pico */
-    XrResult res = xrWaitSwapchainImage(frameBuffer->ColorSwapChain.Handle, &waitInfo);
-    int i = 0;
-    while (res != XR_SUCCESS) {
-        res = xrWaitSwapchainImage(frameBuffer->ColorSwapChain.Handle, &waitInfo);
-        i++;
-        ALOGV(
-                " Retry xrWaitSwapchainImage %d times due to result %d (timeout %f microseconds)",
-                i,
-                res,
-                waitInfo.timeout * (1E-3));
-    }
+    waitInfo.timeout = XR_INFINITE_DURATION;
+    OXR(xrWaitSwapchainImage(frameBuffer->ColorSwapChain.Handle, &waitInfo));
 
     if (acquireCount <= 5 || acquireCount % 100 == 0) {
-        ALOGV("ovrFramebuffer_Acquire[%d]: wait completed with result %d", acquireCount, res);
+        ALOGV("ovrFramebuffer_Acquire[%d]: wait completed", acquireCount);
     }
 }
 

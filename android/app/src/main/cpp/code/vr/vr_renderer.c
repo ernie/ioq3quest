@@ -30,6 +30,7 @@ GLboolean stageSupported = GL_FALSE;
 GLboolean localFloorSupported = GL_FALSE;
 qboolean fullscreenMode = qfalse;
 qboolean needRecenter = qtrue;
+static qboolean spaceWasRecentered = qfalse;  // Flag to invalidate SP intermission pose on recenter
 
 void VR_UpdateStageBounds(ovrApp* pappState) {
     XrExtent2Df stageBounds = {};
@@ -162,6 +163,12 @@ void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
                     for (uint32_t e = 0; e < viewCount; e++) {
                         engine->appState.ViewConfigurationView[e] = elements[e];
                     }
+                    // Log OpenXR reported resolutions
+                    ALOGI("VR_GetResolution: OpenXR recommended=%dx%d, max=%dx%d",
+                          elements[0].recommendedImageRectWidth,
+                          elements[0].recommendedImageRectHeight,
+                          elements[0].maxImageRectWidth,
+                          elements[0].maxImageRectHeight);
                 }
 
                 free(elements);
@@ -174,6 +181,8 @@ void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
 
         *pWidth = width = engine->appState.ViewConfigurationView[0].recommendedImageRectWidth * superSampling;
         *pHeight = height = engine->appState.ViewConfigurationView[0].recommendedImageRectHeight * superSampling;
+        ALOGI("VR_GetResolution: superSampling=%.2f, final resolution=%dx%d",
+              superSampling, width, height);
 	}
 	else
 	{
@@ -184,10 +193,15 @@ void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
 }
 
 void VR_Recenter(engine_t* engine) {
-    // Calculate recenter reference
+    // Calculate recenter reference - we'll apply yaw rotation to center forward direction
     XrReferenceSpaceCreateInfo spaceCreateInfo = {};
     spaceCreateInfo.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
     spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0f;
+
+    // For STAGE-based recentering, we need to capture the player's current position
+    // in raw STAGE space (no offset) so we can offset the new space to center on them
+    XrVector3f stageOffset = {0, 0, 0};
+    qboolean haveStageOffset = qfalse;
 
     // Only try to get current head position if we have a valid time
     // (predictedDisplayTime is only set after xrWaitFrame returns)
@@ -203,6 +217,38 @@ void VR_Recenter(engine_t* engine) {
         spaceCreateInfo.poseInReferenceSpace.orientation.y = sin(vr.recenterYaw / 2);
         spaceCreateInfo.poseInReferenceSpace.orientation.z = 0;
         spaceCreateInfo.poseInReferenceSpace.orientation.w = cos(vr.recenterYaw / 2);
+
+        // Create a temporary RAW STAGE space (no offset) to get true position in guardian coordinates
+        if (stageSupported) {
+            XrReferenceSpaceCreateInfo rawStageCreateInfo = {};
+            rawStageCreateInfo.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
+            rawStageCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+            rawStageCreateInfo.poseInReferenceSpace.orientation.w = 1.0f;  // Identity - no rotation or offset
+            rawStageCreateInfo.poseInReferenceSpace.position.x = 0;
+            rawStageCreateInfo.poseInReferenceSpace.position.y = 0;
+            rawStageCreateInfo.poseInReferenceSpace.position.z = 0;
+
+            XrSpace rawStageSpace = XR_NULL_HANDLE;
+            OXR(xrCreateReferenceSpace(engine->appState.Session, &rawStageCreateInfo, &rawStageSpace));
+
+            if (rawStageSpace != XR_NULL_HANDLE) {
+                XrSpaceLocation stageLoc = {};
+                stageLoc.type = XR_TYPE_SPACE_LOCATION;
+                OXR(xrLocateSpace(engine->appState.HeadSpace, rawStageSpace, engine->predictedDisplayTime, &stageLoc));
+
+                if (stageLoc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) {
+                    // Store raw position for offset - we'll apply yaw rotation when creating the space
+                    stageOffset.x = stageLoc.pose.position.x;
+                    stageOffset.z = stageLoc.pose.position.z;
+                    stageOffset.y = 0;  // Don't offset Y - STAGE already has correct floor reference
+                    haveStageOffset = qtrue;
+                    ALOGV("VR_Recenter: Player at raw STAGE pos (%.2f, %.2f), will apply offset",
+                          stageLoc.pose.position.x, stageLoc.pose.position.z);
+                }
+
+                OXR(xrDestroySpace(rawStageSpace));
+            }
+        }
     }
 
     // Delete previous space instances
@@ -219,43 +265,49 @@ void VR_Recenter(engine_t* engine) {
         engine->appState.FakeStageSpace = XR_NULL_HANDLE;
     }
 
-    // Create reference spaces in order of preference:
-    // 1. LOCAL_FLOOR - Preferred, recenterable floor-relative space (like VrApi's LOCAL_FLOOR)
-    // 2. LOCAL with offset - Fallback for systems that don't support LOCAL_FLOOR
-    // Note: STAGE is NOT used as CurrentSpace on Meta Quest because it's anchored to play area
-    // center rather than user position, causing offset issues with stationary boundary.
-
     // Always create a fallback space using LOCAL with floor offset
     spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    spaceCreateInfo.poseInReferenceSpace.position.x = 0;
     spaceCreateInfo.poseInReferenceSpace.position.y = -1.6750f;  // Approximate floor offset for Meta Quest
+    spaceCreateInfo.poseInReferenceSpace.position.z = 0;
     OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.FakeStageSpace));
     engine->appState.CurrentSpace = engine->appState.FakeStageSpace;
     ALOGV("VR_Recenter: Created FakeStageSpace (LOCAL with floor offset) as fallback");
 
-    // Create STAGE space for bounds queries only (not used as CurrentSpace)
+    // Create STAGE space as CurrentSpace if supported
+    // Apply position offset to center on player (fixes stationary boundary offset issue)
+    // This makes STAGE behave like a recenterable space while maintaining world stability
     if (stageSupported) {
         spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+        spaceCreateInfo.poseInReferenceSpace.position.x = haveStageOffset ? stageOffset.x : 0;
         spaceCreateInfo.poseInReferenceSpace.position.y = 0.0f;
+        spaceCreateInfo.poseInReferenceSpace.position.z = haveStageOffset ? stageOffset.z : 0;
         OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.StageSpace));
-        ALOGV("VR_Recenter: Created StageSpace (STAGE) for bounds queries only");
+        engine->appState.CurrentSpace = engine->appState.StageSpace;
+        ALOGV("VR_Recenter: Created StageSpace (STAGE with offset %.2f, %.2f)",
+              spaceCreateInfo.poseInReferenceSpace.position.x, spaceCreateInfo.poseInReferenceSpace.position.z);
     }
 
-    // Prefer LOCAL_FLOOR if supported - this is the closest equivalent to VrApi's LOCAL_FLOOR
-    // It provides floor-relative vertical position with recenterable horizontal position
+    // Still create LOCAL_FLOOR for potential fallback use, but don't use as CurrentSpace
     if (localFloorSupported) {
         spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL_FLOOR;
+        spaceCreateInfo.poseInReferenceSpace.position.x = 0;
         spaceCreateInfo.poseInReferenceSpace.position.y = 0.0f;
+        spaceCreateInfo.poseInReferenceSpace.position.z = 0;
         OXR(xrCreateReferenceSpace(engine->appState.Session, &spaceCreateInfo, &engine->appState.LocalFloorSpace));
-        engine->appState.CurrentSpace = engine->appState.LocalFloorSpace;
-        ALOGV("VR_Recenter: Created LocalFloorSpace (LOCAL_FLOOR) - PREFERRED");
+        ALOGV("VR_Recenter: Created LocalFloorSpace (LOCAL_FLOOR) for fallback");
     }
 
     ALOGV("VR_Recenter: CurrentSpace set to %s",
+          engine->appState.CurrentSpace == engine->appState.StageSpace ? "STAGE (with offset)" :
           engine->appState.CurrentSpace == engine->appState.LocalFloorSpace ? "LOCAL_FLOOR" :
           "FAKE_STAGE (LOCAL)");
 
     // Update menu orientation
     vr.menuYaw = 0;
+
+    // Signal that space changed - SP intermission pose needs recapture
+    spaceWasRecentered = qtrue;
 }
 
 void VR_InitRenderer( engine_t* engine ) {
@@ -275,7 +327,7 @@ void VR_InitRenderer( engine_t* engine ) {
 
 	int eyeW, eyeH;
     VR_GetResolution(engine, &eyeW, &eyeH);
-    ALOGV("VR_InitRenderer: resolution %dx%d", eyeW, eyeH);
+    ALOGI("VR_InitRenderer: requested resolution %dx%d", eyeW, eyeH);
 
     // Get the viewport configuration info for the chosen viewport configuration type.
     engine->appState.ViewportConfig.type = XR_TYPE_VIEW_CONFIGURATION_PROPERTIES;
@@ -370,12 +422,82 @@ void VR_InitRenderer( engine_t* engine ) {
         projections[eye].type = XR_TYPE_VIEW;
     }
 
+    // Create VIEW reference space for head-locked quad layers
+    {
+        XrReferenceSpaceCreateInfo viewSpaceCI = {};
+        viewSpaceCI.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO;
+        viewSpaceCI.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+        viewSpaceCI.poseInReferenceSpace.orientation.w = 1.0f;  // Identity
+        OXR(xrCreateReferenceSpace(engine->appState.Session, &viewSpaceCI, &engine->appState.ViewSpace));
+        ALOGV("VR_InitRenderer: created VIEW reference space for head-locked quad layers");
+    }
+
     ALOGV("VR_InitRenderer: creating renderer framebuffers");
     ovrRenderer_Create(
             engine->appState.Session,
             &engine->appState.Renderer,
             eyeW,
             eyeH);
+
+    // Create screen overlay swapchain for 2D quad layer
+    // This is a single-layer swapchain (not multiview) for HUD mode 2, vignette, damage, reticle
+    {
+        XrSwapchainCreateInfo swapchainCI = {};
+        swapchainCI.type = XR_TYPE_SWAPCHAIN_CREATE_INFO;
+        swapchainCI.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchainCI.format = GL_SRGB8_ALPHA8;
+        swapchainCI.sampleCount = 1;
+        // Use same dimensions as main framebuffer (includes superSampling) for correct coordinate mapping
+        swapchainCI.width = eyeW;
+        swapchainCI.height = eyeH;
+        swapchainCI.faceCount = 1;
+        swapchainCI.arraySize = 1;  // Single layer, NOT multiview
+        swapchainCI.mipCount = 1;
+
+        XrResult result;
+        OXR(result = xrCreateSwapchain(engine->appState.Session, &swapchainCI, &engine->appState.OverlaySwapChain.Handle));
+        if (result != XR_SUCCESS) {
+            ALOGE("VR_InitRenderer: failed to create overlay swapchain: %d", result);
+        } else {
+            engine->appState.OverlaySwapChain.Width = swapchainCI.width;
+            engine->appState.OverlaySwapChain.Height = swapchainCI.height;
+
+            // Store overlay dimensions in vr struct for coordinate scaling
+            vr.overlayWidth = swapchainCI.width;
+            vr.overlayHeight = swapchainCI.height;
+
+            // Enumerate swapchain images
+            uint32_t imageCount = 0;
+            OXR(xrEnumerateSwapchainImages(engine->appState.OverlaySwapChain.Handle, 0, &imageCount, NULL));
+            engine->appState.OverlaySwapChainLength = imageCount;
+            engine->appState.OverlaySwapChainImage = (XrSwapchainImageOpenGLESKHR*)malloc(imageCount * sizeof(XrSwapchainImageOpenGLESKHR));
+            for (uint32_t i = 0; i < imageCount; i++) {
+                engine->appState.OverlaySwapChainImage[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+                engine->appState.OverlaySwapChainImage[i].next = NULL;
+            }
+            OXR(xrEnumerateSwapchainImages(
+                engine->appState.OverlaySwapChain.Handle,
+                imageCount,
+                &imageCount,
+                (XrSwapchainImageBaseHeader*)engine->appState.OverlaySwapChainImage));
+
+            // Create overlay framebuffer
+            GL(glGenFramebuffers(1, &engine->appState.OverlayFrameBuffer));
+            GL(glBindFramebuffer(GL_FRAMEBUFFER, engine->appState.OverlayFrameBuffer));
+            GL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                      engine->appState.OverlaySwapChainImage[0].image, 0));
+            GLenum fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            if (fbStatus != GL_FRAMEBUFFER_COMPLETE) {
+                ALOGE("VR_InitRenderer: overlay framebuffer incomplete: 0x%x", fbStatus);
+            }
+            GL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+
+            engine->appState.OverlayAcquired = GL_FALSE;
+            ALOGV("VR_InitRenderer: created overlay swapchain %dx%d with %d images",
+                  swapchainCI.width, swapchainCI.height, imageCount);
+        }
+    }
+
     ALOGV("VR_InitRenderer: complete");
 }
 
@@ -383,6 +505,20 @@ void VR_DestroyRenderer( engine_t* engine )
 {
     ovrRenderer_Destroy(&engine->appState.Renderer);
     free(projections);
+
+    // Destroy overlay framebuffer and swapchain
+    if (engine->appState.OverlayFrameBuffer) {
+        GL(glDeleteFramebuffers(1, &engine->appState.OverlayFrameBuffer));
+        engine->appState.OverlayFrameBuffer = 0;
+    }
+    if (engine->appState.OverlaySwapChainImage) {
+        free(engine->appState.OverlaySwapChainImage);
+        engine->appState.OverlaySwapChainImage = NULL;
+    }
+    if (engine->appState.OverlaySwapChain.Handle != XR_NULL_HANDLE) {
+        OXR(xrDestroySwapchain(engine->appState.OverlaySwapChain.Handle));
+        engine->appState.OverlaySwapChain.Handle = XR_NULL_HANDLE;
+    }
 }
 
 void VR_ReInitRenderer()
@@ -536,6 +672,38 @@ void VR_DrawFrame( engine_t* engine ) {
     // Acquire swapchain image FIRST to get the correct index
     ovrFramebuffer_Acquire(frameBuffer);
 
+    // Acquire overlay swapchain for HUD mode 2 and SP intermission only
+    // Skip during virtual screen mode, HUD mode 1, deathcam, weapon zoom - these use HUD buffer instead
+    int currentHudMode = (int)Cvar_VariableValue("vr_currentHudDrawStatus");
+    qboolean isSPIntermission = VR_IsSPIntermission();
+    qboolean useOverlay = (clc.state == CA_ACTIVE) && !VR_useScreenLayer() &&
+                          (engine->appState.OverlaySwapChain.Handle != XR_NULL_HANDLE) &&
+                          !vr.weapon_zoomed &&
+                          (currentHudMode == 2 || isSPIntermission);
+    if (useOverlay) {
+        XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        OXR(xrAcquireSwapchainImage(engine->appState.OverlaySwapChain.Handle, &acquireInfo, &engine->appState.OverlaySwapChainIndex));
+        XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        waitInfo.timeout = XR_INFINITE_DURATION;
+        OXR(xrWaitSwapchainImage(engine->appState.OverlaySwapChain.Handle, &waitInfo));
+        engine->appState.OverlayAcquired = GL_TRUE;
+
+        // Rebind overlay framebuffer to the acquired swapchain image
+        GL(glBindFramebuffer(GL_FRAMEBUFFER, engine->appState.OverlayFrameBuffer));
+        GL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                  engine->appState.OverlaySwapChainImage[engine->appState.OverlaySwapChainIndex].image, 0));
+        GL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+
+        // Tell renderer about the overlay buffer
+        re.SetScreenOverlayBuffer(
+            engine->appState.OverlayFrameBuffer,
+            engine->appState.OverlaySwapChain.Width,
+            engine->appState.OverlaySwapChain.Height);
+    } else {
+        // Clear overlay buffer info when not using overlay
+        re.SetScreenOverlayBuffer(0, 0, 0);
+    }
+
     // Get the swapchain index (set by xrAcquireSwapchainImage in Acquire)
     int swapchainIndex = frameBuffer->TextureSwapChainIndex;
     int glFramebuffer = frameBuffer->FrameBuffers[swapchainIndex];
@@ -554,6 +722,13 @@ void VR_DrawFrame( engine_t* engine ) {
     ovrFramebuffer_Resolve(frameBuffer);
     ovrFramebuffer_Release(frameBuffer);
     ovrFramebuffer_SetNone();
+
+    // Release overlay swapchain if it was acquired
+    if (engine->appState.OverlayAcquired) {
+        XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        OXR(xrReleaseSwapchainImage(engine->appState.OverlaySwapChain.Handle, &releaseInfo));
+        engine->appState.OverlayAcquired = GL_FALSE;
+    }
 
     XrCompositionLayerProjectionView projection_layer_elements[2] = {};
     if (!VR_useScreenLayer() && !(cl.snap.ps.pm_flags & PMF_FOLLOW && vr.follow_mode == VRFM_FIRSTPERSON)) {
@@ -590,6 +765,143 @@ void VR_DrawFrame( engine_t* engine ) {
         projection_layer.views = projection_layer_elements;
 
         engine->appState.Layers[engine->appState.LayerCount++].Projection = projection_layer;
+
+        // SP intermission overlay anchoring - track state for world-fixed UI
+        static XrPosef sp_intermission_anchor_pose;
+        static qboolean sp_intermission_pose_captured = qfalse;
+
+        // Detect SP intermission start/end (isSPIntermission already computed at line 680)
+        if (isSPIntermission && !vr.sp_intermission_active) {
+            // First frame of SP intermission - capture anchor position
+            vr.sp_intermission_active = qtrue;
+            sp_intermission_pose_captured = qfalse;
+        } else if (!isSPIntermission && vr.sp_intermission_active) {
+            // Exiting SP intermission - reset state
+            vr.sp_intermission_active = qfalse;
+            sp_intermission_pose_captured = qfalse;
+        }
+
+        // Add quad layer for 2D screen overlays if acquired
+        if (useOverlay && engine->appState.OverlaySwapChain.Handle != XR_NULL_HANDLE) {
+            float distance = 0.5f;
+
+            // Calculate the edges at the given distance using the averaged FOV
+            float leftEdge = tanf(fov.angleLeft) * distance;
+            float rightEdge = tanf(fov.angleRight) * distance;
+            float bottomEdge = tanf(fov.angleDown) * distance;
+            float topEdge = tanf(fov.angleUp) * distance;
+
+            // The FOV center (where screen center should appear) is the midpoint
+            float fovCenterX = (leftEdge + rightEdge) / 2.0f;
+            float fovCenterY = (bottomEdge + topEdge) / 2.0f;
+
+            // Quad size - match FOV coverage with slight margin
+            float fovWidth = (rightEdge - leftEdge) * 1.1f;
+            float fovHeight = (topEdge - bottomEdge) * 1.1f;
+            float textureAspect = (float)engine->appState.OverlaySwapChain.Width / (float)engine->appState.OverlaySwapChain.Height;
+            float fovAspect = fovWidth / fovHeight;
+
+            float totalWidth, totalHeight;
+            if (textureAspect > fovAspect) {
+                totalWidth = fovWidth;
+                totalHeight = fovWidth / textureAspect;
+            } else {
+                totalHeight = fovHeight;
+                totalWidth = fovHeight * textureAspect;
+            }
+
+            XrCompositionLayerQuad quad_layer = {};
+            quad_layer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+            quad_layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+            quad_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+
+            // During SP intermission, anchor the overlay in world space
+            if (isSPIntermission) {
+                quad_layer.space = engine->appState.CurrentSpace;
+
+                // Get current head position
+                XrSpaceLocation viewInWorld = {XR_TYPE_SPACE_LOCATION};
+                xrLocateSpace(engine->appState.ViewSpace, engine->appState.CurrentSpace,
+                              frameState.predictedDisplayTime, &viewInWorld);
+                XrVector3f currentHeadPos = viewInWorld.pose.position;
+
+                // Capture initial state on first frame
+                static XrVector3f initialHeadPos;
+                static XrVector3f targetQuadPos;
+                static float capturedYaw = 0.0f;
+                static float targetQuadY = 0.0f;
+                if (!sp_intermission_pose_captured) {
+                    initialHeadPos = currentHeadPos;
+
+                    // Extract yaw from HMD orientation (use projections like q3vr uses views)
+                    XrQuaternionf q = projections[0].pose.orientation;
+                    float siny_cosp = 2.0f * (q.w * q.y + q.z * q.x);
+                    float cosy_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+                    capturedYaw = atan2f(siny_cosp, cosy_cosp);
+
+                    // Store yaw for cursor calculation
+                    vr.sp_intermission_yaw = capturedYaw * 180.0f / MATH_PI;
+
+                    // Calculate target Y position (below initial head height)
+                    targetQuadY = initialHeadPos.y - 1.1f;
+
+                    sp_intermission_pose_captured = qtrue;
+                }
+
+                // Distance for the quad
+                float worldDistance = 4.0f;
+
+                // Calculate position in front of where player was initially looking
+                // X and Z use initial position (STAGE space X/Z are stable)
+                targetQuadPos.x = initialHeadPos.x - sinf(capturedYaw) * worldDistance;
+                targetQuadPos.z = initialHeadPos.z - cosf(capturedYaw) * worldDistance;
+
+                // Y: Compensate for any vertical tracking drift
+                float headYDelta = currentHeadPos.y - initialHeadPos.y;
+                targetQuadPos.y = targetQuadY - headYDelta;
+
+                // Fixed position - STAGE space doesn't drift
+                sp_intermission_anchor_pose.position = targetQuadPos;
+
+                // Rotation: face back toward the initial position
+                float halfYaw = capturedYaw * 0.5f;
+                sp_intermission_anchor_pose.orientation.x = 0.0f;
+                sp_intermission_anchor_pose.orientation.y = sinf(halfYaw);
+                sp_intermission_anchor_pose.orientation.z = 0.0f;
+                sp_intermission_anchor_pose.orientation.w = cosf(halfYaw);
+
+                quad_layer.pose = sp_intermission_anchor_pose;
+
+                // Scale size for world-space distance
+                quad_layer.size.width = totalWidth * 14.0f;
+                quad_layer.size.height = totalHeight * 14.0f;
+            } else {
+                // Normal head-locked overlay
+                quad_layer.space = engine->appState.ViewSpace;
+
+                quad_layer.pose.orientation.x = 0.0f;
+                quad_layer.pose.orientation.y = 0.0f;
+                quad_layer.pose.orientation.z = 0.0f;
+                quad_layer.pose.orientation.w = 1.0f;
+
+                // Position the quad at the FOV center (accounts for asymmetric FOV)
+                quad_layer.pose.position.x = fovCenterX;
+                quad_layer.pose.position.y = fovCenterY;
+                quad_layer.pose.position.z = -distance;
+
+                quad_layer.size.width = totalWidth;
+                quad_layer.size.height = totalHeight;
+            }
+
+            quad_layer.subImage.swapchain = engine->appState.OverlaySwapChain.Handle;
+            quad_layer.subImage.imageRect.offset.x = 0;
+            quad_layer.subImage.imageRect.offset.y = 0;
+            quad_layer.subImage.imageRect.extent.width = engine->appState.OverlaySwapChain.Width;
+            quad_layer.subImage.imageRect.extent.height = engine->appState.OverlaySwapChain.Height;
+            quad_layer.subImage.imageArrayIndex = 0;
+
+            engine->appState.Layers[engine->appState.LayerCount++].Quad = quad_layer;
+        }
     } else {
         // Capture menuYaw on FIRST FRAME of virtual screen mode (not during gameplay)
         if (!fullscreenMode) {

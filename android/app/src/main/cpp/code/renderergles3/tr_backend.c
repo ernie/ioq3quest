@@ -615,6 +615,13 @@ void	RB_SetGL2D (void) {
         qglViewport(0, 0, tr.hudImage->width, tr.hudImage->height);
         qglScissor(0, 0, tr.hudImage->width, tr.hudImage->height);
     }
+    else if (glState.isDrawingScreenOverlay && tr.vrParms.screenOverlayBuffer != 0)
+    {
+        qglViewport(0, 0, tr.vrParms.screenOverlayWidth, tr.vrParms.screenOverlayHeight);
+        qglScissor(0, 0, tr.vrParms.screenOverlayWidth, tr.vrParms.screenOverlayHeight);
+        width = tr.vrParms.screenOverlayWidth;
+        height = tr.vrParms.screenOverlayHeight;
+    }
     else
     {
         qglViewport(0, 0, width, height);
@@ -1797,7 +1804,7 @@ const void* RB_HUDBuffer( const void* data ) {
 			if (cmd->clear)
 			{
 				qglClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-				qglClear(GL_COLOR_BUFFER_BIT);
+				qglClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			}
 		}
     }
@@ -1815,6 +1822,67 @@ const void* RB_HUDBuffer( const void* data ) {
     }
 
     glState.currentFBO = tr.renderFbo;
+
+	return (const void*)(cmd + 1);
+}
+
+/*
+====================
+RB_ScreenOverlayBuffer
+
+Handles drawing to the screen overlay quad layer framebuffer.
+Used for 2D overlays (vignette, damage effects, reticle, HUD mode 2).
+====================
+*/
+static int screenOverlayBackupFrameBuffer = 0;
+
+const void* RB_ScreenOverlayBuffer( const void* data ) {
+    const screenOverlayBufferCommand_t *cmd = data;
+
+    // finish any 2D drawing if needed
+    if(tess.numIndexes) {
+		RB_EndSurface();
+		// Ensure that next draw will call BeginSurface()
+		tess.shader = NULL;
+	}
+
+    if (cmd->start && !glState.isDrawingScreenOverlay)
+    {
+        // Check if overlay buffer is valid
+        if (tr.vrParms.screenOverlayBuffer == 0) {
+            return (const void*)(cmd + 1);
+        }
+
+        glState.isDrawingScreenOverlay = qtrue;
+
+        // Save current framebuffer
+        screenOverlayBackupFrameBuffer = tr.renderFbo->frameBuffer;
+
+        // Bind overlay framebuffer
+        GL_BindFramebuffer(GL_FRAMEBUFFER, tr.vrParms.screenOverlayBuffer);
+
+        // Set viewport to overlay dimensions
+        qglViewport(0, 0, tr.vrParms.screenOverlayWidth, tr.vrParms.screenOverlayHeight);
+        qglScissor(0, 0, tr.vrParms.screenOverlayWidth, tr.vrParms.screenOverlayHeight);
+
+        if (cmd->clear)
+        {
+            // Clear with transparent black for alpha blending
+            qglClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            qglClear(GL_COLOR_BUFFER_BIT);
+        }
+    }
+    else if (!cmd->start && glState.isDrawingScreenOverlay)
+    {
+        glState.isDrawingScreenOverlay = qfalse;
+
+        // Restore original framebuffer
+        GL_BindFramebuffer(GL_FRAMEBUFFER, screenOverlayBackupFrameBuffer);
+
+        // Restore viewport
+        qglViewport(0, 0, glConfig.vidWidth, glConfig.vidHeight);
+        qglScissor(0, 0, glConfig.vidWidth, glConfig.vidHeight);
+    }
 
 	return (const void*)(cmd + 1);
 }
@@ -1874,6 +1942,9 @@ void RB_ExecuteRenderCommands( const void *data ) {
 			break;
 		case RC_HUD_BUFFER:
 		    data = RB_HUDBuffer(data);
+			break;
+		case RC_SCREEN_OVERLAY_BUFFER:
+		    data = RB_ScreenOverlayBuffer(data);
 			break;
 		case RC_END_OF_LIST:
 		default:

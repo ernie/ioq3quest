@@ -377,6 +377,12 @@ int VR_isPauseable( void )
 	return ( clc.state == CA_ACTIVE) && !Cvar_VariableValue ("cl_paused");
 }
 
+int VR_IsSPIntermission( void )
+{
+	return (cl.snap.ps.pm_type == PM_INTERMISSION) &&
+	       (Cvar_VariableValue("g_gametype") == GT_SINGLE_PLAYER);
+}
+
 int VR_useScreenLayer( void )
 {
 	extern vr_clientinfo_t vr;

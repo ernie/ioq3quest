@@ -520,6 +520,46 @@ void RE_SetVRHeadsetParms( const float projectionMatrix[4][4],  const float nonV
 	tr.vrParms.renderBuffer = renderBuffer;
 	tr.vrParms.valid = qtrue;
 }
+
+void RE_SetScreenOverlayBuffer( int buffer, int width, int height ) {
+	tr.vrParms.screenOverlayBuffer = buffer;
+	tr.vrParms.screenOverlayWidth = width;
+	tr.vrParms.screenOverlayHeight = height;
+}
+
+void RE_ScreenOverlayBufferStart( qboolean clear ) {
+	screenOverlayBufferCommand_t *cmd;
+
+	if( !tr.registered ) {
+		return;
+	}
+
+	cmd = R_GetCommandBuffer( sizeof( *cmd ) );
+	if( !cmd ) {
+		return;
+	}
+
+	cmd->commandId = RC_SCREEN_OVERLAY_BUFFER;
+	cmd->start = qtrue;
+	cmd->clear = clear;
+}
+
+void RE_ScreenOverlayBufferEnd( void ) {
+	screenOverlayBufferCommand_t *cmd;
+
+	if( !tr.registered ) {
+		return;
+	}
+
+	cmd = R_GetCommandBuffer( sizeof( *cmd ) );
+	if( !cmd ) {
+		return;
+	}
+
+	cmd->commandId = RC_SCREEN_OVERLAY_BUFFER;
+	cmd->start = qfalse;
+	cmd->clear = qfalse;
+}
 //#endif
 
 /*
