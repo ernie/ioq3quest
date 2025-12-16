@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/system_properties.h>
 
 #define ENABLE_GL_DEBUG 0
 #define ENABLE_GL_DEBUG_VERBOSE 0
@@ -78,6 +79,17 @@ void APIENTRY VR_GLDebugLog(GLenum source, GLenum type, GLuint id,
 
 		Com_Printf("[%s] GL issue - %s: %s\n", severinityStr, typeStr, message);
 	}
+}
+
+static int VR_GetSystemPropertyInt(const char* name, int defaultValue) {
+	char value[PROP_VALUE_MAX] = {0};
+	if (__system_property_get(name, value) > 0) {
+		int result = atoi(value);
+		if (result > 0) {
+			return result;
+		}
+	}
+	return defaultValue;
 }
 
 void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
@@ -179,8 +191,23 @@ void VR_GetResolution(engine_t* engine, int *pWidth, int *pHeight)
 
         free(viewportConfigurationTypes);
 
-        *pWidth = width = engine->appState.ViewConfigurationView[0].recommendedImageRectWidth * superSampling;
-        *pHeight = height = engine->appState.ViewConfigurationView[0].recommendedImageRectHeight * superSampling;
+        // Get OpenXR recommended resolution as base
+        int baseWidth = engine->appState.ViewConfigurationView[0].recommendedImageRectWidth;
+        int baseHeight = engine->appState.ViewConfigurationView[0].recommendedImageRectHeight;
+
+        // Check for ADB resolution overrides (set by QGO, SideQuest, or manual adb setprop)
+        int adbWidth = VR_GetSystemPropertyInt("debug.oculus.textureWidth", 0);
+        int adbHeight = VR_GetSystemPropertyInt("debug.oculus.textureHeight", 0);
+
+        if (adbWidth > 0 && adbHeight > 0) {
+            ALOGI("VR_GetResolution: Using ADB override resolution=%dx%d (OpenXR recommended=%dx%d)",
+                  adbWidth, adbHeight, baseWidth, baseHeight);
+            baseWidth = adbWidth;
+            baseHeight = adbHeight;
+        }
+
+        *pWidth = width = baseWidth * superSampling;
+        *pHeight = height = baseHeight * superSampling;
         ALOGI("VR_GetResolution: superSampling=%.2f, final resolution=%dx%d",
               superSampling, width, height);
 	}
