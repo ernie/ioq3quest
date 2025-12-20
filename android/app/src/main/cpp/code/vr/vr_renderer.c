@@ -852,34 +852,35 @@ void VR_DrawFrame( engine_t* engine ) {
                               frameState.predictedDisplayTime, &viewInWorld);
                 XrVector3f currentHeadPos = viewInWorld.pose.position;
 
-                // Capture initial state on first frame
+                // Capture initial head position and yaw on first frame only
                 static XrVector3f initialHeadPos;
                 static XrVector3f targetQuadPos;
                 static float capturedYaw = 0.0f;
-                static float targetQuadY = 0.0f;
-                if (!sp_intermission_pose_captured) {
+                if (!sp_intermission_pose_captured)
+                {
                     initialHeadPos = currentHeadPos;
 
-                    // Extract yaw from HMD orientation (use projections like q3vr uses views)
+                    // Always use HMD yaw - this represents where the player is actually looking
+                    // in OpenXR space. The podium distance/height come from cgame, but the
+                    // direction should match the player's view direction in VR.
                     XrQuaternionf q = projections[0].pose.orientation;
                     float siny_cosp = 2.0f * (q.w * q.y + q.z * q.x);
                     float cosy_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
                     capturedYaw = atan2f(siny_cosp, cosy_cosp);
 
-                    // Store yaw for cursor calculation
+                    // Store yaw for cursor calculation (in degrees)
                     vr.sp_intermission_yaw = capturedYaw * 180.0f / MATH_PI;
-
-                    // Calculate target Y position (below initial head height)
-                    targetQuadY = initialHeadPos.y - 1.1f;
 
                     sp_intermission_pose_captured = qtrue;
                 }
 
-                // Distance for the quad
-                float worldDistance = 4.0f;
+                // Calculate quad position from current cgame values every frame
+                // This allows the position to correct if first frame had stale data
+                float worldDistance = vr.sp_intermission_podium_pos[0];
+                float targetQuadY = initialHeadPos.y + vr.sp_intermission_podium_pos[1];
 
-                // Calculate position in front of where player was initially looking
-                // X and Z use initial position (STAGE space X/Z are stable)
+                // Apply distance in the direction of the captured yaw
+                // In OpenXR: -Z is forward, so we use -sin for X and -cos for Z
                 targetQuadPos.x = initialHeadPos.x - sinf(capturedYaw) * worldDistance;
                 targetQuadPos.z = initialHeadPos.z - cosf(capturedYaw) * worldDistance;
 
@@ -890,7 +891,7 @@ void VR_DrawFrame( engine_t* engine ) {
                 // Fixed position - STAGE space doesn't drift
                 sp_intermission_anchor_pose.position = targetQuadPos;
 
-                // Rotation: face back toward the initial position
+                // Rotation: face back toward the camera position
                 float halfYaw = capturedYaw * 0.5f;
                 sp_intermission_anchor_pose.orientation.x = 0.0f;
                 sp_intermission_anchor_pose.orientation.y = sinf(halfYaw);
