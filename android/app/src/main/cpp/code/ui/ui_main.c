@@ -32,7 +32,7 @@ USER INTERFACE MAIN
 //#define PRE_RELEASE_TADEMO
 
 #include "ui_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 vr_clientinfo_t *vr = NULL;
 
@@ -115,8 +115,8 @@ static char* netnames[] = {
 static char quake3worldMessage[] = "Visit www.quake3world.com - News, Community, Events, Files";
 #endif
 
-static int gamecodetoui[] = {0,1,2,3,4,5,6};
-static int uitogamecode[] = {1,2,3,4,5,6,7};
+static int gamecodetoui[] = {4,2,3,0,5,1,6};
+static int uitogamecode[] = {4,6,2,3,1,5,7};
 
 
 static void UI_StartServerRefresh(qboolean full, qboolean force);
@@ -1293,12 +1293,10 @@ static void UI_DrawTeamMember(rectDef_t *rect, float scale, vec4_t color, qboole
 }
 
 static void UI_DrawEffects(rectDef_t *rect, float scale, vec4_t color) {
-	static int gamecodetofxpic[] = {0,2,1,4,5,3,6};
-	int gameColorCode = uitogamecode[uiInfo.effectsColor];
-	int fxPicIndex = gamecodetofxpic[gameColorCode - 1];
+	int markerX = rect->x + (uiInfo.effectsColor * 112 / 6);
 
 	UI_DrawHandlePic( rect->x, rect->y - 14, 128, 8, uiInfo.uiDC.Assets.fxBasePic );
-	UI_DrawHandlePic( rect->x + uiInfo.effectsColor * 16 + 8, rect->y - 16, 16, 12, uiInfo.uiDC.Assets.fxPic[fxPicIndex] );
+	UI_DrawHandlePic( markerX, rect->y - 16, 16, 12, uiInfo.uiDC.Assets.fxPic[uiInfo.effectsColor] );
 }
 
 static void UI_DrawMapPreview(rectDef_t *rect, float scale, vec4_t color, qboolean net) {
@@ -1892,9 +1890,9 @@ static void UI_DrawCrosshair(rectDef_t *rect, float scale, vec4_t color) {
 		crosshairColor[1] = 1.0f;
 		crosshairColor[2] = 1.0f;
 	} else {
-		crosshairColor[0] = (colorCode & 1) ? 1.0f : 0.0f;
+		crosshairColor[0] = (colorCode & 4) ? 1.0f : 0.0f;
 		crosshairColor[1] = (colorCode & 2) ? 1.0f : 0.0f;
-		crosshairColor[2] = (colorCode & 4) ? 1.0f : 0.0f;
+		crosshairColor[2] = (colorCode & 1) ? 1.0f : 0.0f;
 	}
 	crosshairColor[3] = 1.0f;
 
@@ -1904,16 +1902,15 @@ static void UI_DrawCrosshair(rectDef_t *rect, float scale, vec4_t color) {
 }
 
 static void UI_DrawCrosshairColor(rectDef_t *rect, float scale, vec4_t color) {
-	static int gamecodetofxpic[] = {0,2,1,4,5,3,6};
 	int gameColorCode = (int)trap_Cvar_VariableValue("cg_crosshairColor");
 	if (gameColorCode < 1 || gameColorCode > 7) {
 		gameColorCode = 7;
 	}
 	int uiColorIndex = gamecodetoui[gameColorCode - 1];
-	int fxPicIndex = gamecodetofxpic[gameColorCode - 1];
+	int markerX = rect->x + (uiColorIndex * 112 / 6);
 
 	UI_DrawHandlePic( rect->x, rect->y - 10, 128, 8, uiInfo.uiDC.Assets.fxBasePic );
-	UI_DrawHandlePic( rect->x + uiColorIndex * 16 + 8, rect->y - 12, 16, 12, uiInfo.uiDC.Assets.fxPic[fxPicIndex] );
+	UI_DrawHandlePic( markerX, rect->y - 12, 16, 12, uiInfo.uiDC.Assets.fxPic[uiColorIndex] );
 }
 
 /*
@@ -2744,13 +2741,15 @@ static qboolean UI_CrosshairColor_HandleKey(int flags, float *special, int key) 
 	int select = UI_SelectForKey(key);
 	if (select != 0) {
 		int currentColor = (int)trap_Cvar_VariableValue("cg_crosshairColor");
-		currentColor += select;
+		int uiIndex = gamecodetoui[currentColor - 1];
+		uiIndex += select;
 
-		if (currentColor > 7) {
-			currentColor = 1;
-		} else if (currentColor < 1) {
-			currentColor = 7;
+		if (uiIndex > 6) {
+			uiIndex = 0;
+		} else if (uiIndex < 0) {
+			uiIndex = 6;
 		}
+		currentColor = uitogamecode[uiIndex];
 		trap_Cvar_SetValue("cg_crosshairColor", currentColor);
 		// Enable health-based coloring for white, disable for custom colors
 		if (currentColor == 7) {
@@ -3230,14 +3229,17 @@ static void UI_Update(const char *name) {
 		}
 	} else if (Q_stricmp(name, "r_lodbias") == 0) {
 		switch (val) {
+			case -2:
+				trap_Cvar_SetValue( "r_subdivisions", 2 );  // Ultra
+			break;
 			case -1:
-				trap_Cvar_SetValue( "r_subdivisions", 4 );
+				trap_Cvar_SetValue( "r_subdivisions", 4 );  // High
 			break;
 			case 1:
-				trap_Cvar_SetValue( "r_subdivisions", 12 );
+				trap_Cvar_SetValue( "r_subdivisions", 12 ); // Medium
 			break;
 			case 2:
-				trap_Cvar_SetValue( "r_subdivisions", 80 );
+				trap_Cvar_SetValue( "r_subdivisions", 80 ); // Low
 			break;
 		}
 	} else if (Q_stricmp(name, "ui_glCustom") == 0) {
@@ -3246,7 +3248,7 @@ static void UI_Update(const char *name) {
 				trap_Cvar_SetValue( "r_fullScreen", 1 );
 				trap_Cvar_SetValue( "r_subdivisions", 4 );
 				trap_Cvar_SetValue( "r_vertexlight", 0 );
-				trap_Cvar_SetValue( "r_lodbias", 0 );
+				trap_Cvar_SetValue( "r_lodbias", -1 );  // High geometric detail
 				trap_Cvar_SetValue( "r_colorbits", 32 );
 				trap_Cvar_SetValue( "r_depthbits", 24 );
 				trap_Cvar_SetValue( "r_stencilbits", 8 );
@@ -3261,11 +3263,11 @@ static void UI_Update(const char *name) {
 				trap_Cvar_SetValue( "cg_brassTime", 2500 );
 				trap_Cvar_Set( "r_texturemode", "GL_LINEAR_MIPMAP_LINEAR" );
 			break;
-			case 1: // normal 
+			case 1: // normal
 				trap_Cvar_SetValue( "r_fullScreen", 1 );
 				trap_Cvar_SetValue( "r_subdivisions", 12 );
 				trap_Cvar_SetValue( "r_vertexlight", 0 );
-				trap_Cvar_SetValue( "r_lodbias", 0 );
+				trap_Cvar_SetValue( "r_lodbias", 1 );  // Medium geometric detail
 				trap_Cvar_SetValue( "r_colorbits", 0 );
 				trap_Cvar_SetValue( "r_depthbits", 0 );
 				trap_Cvar_Reset( "r_stencilbits" );

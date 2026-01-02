@@ -345,6 +345,10 @@ static void GraphicsOptions_UpdateMenuItems( void )
 	{
 		s_graphicsoptions.apply.generic.flags &= ~(QMF_HIDDEN|QMF_INACTIVE);
 	}
+	if ( s_ivo.supersampling != s_graphicsoptions.supersampling.curvalue )
+	{
+		s_graphicsoptions.apply.generic.flags &= ~(QMF_HIDDEN|QMF_INACTIVE);
+	}
 }
 
 /*
@@ -360,20 +364,40 @@ static void GraphicsOptions_ApplyChanges( void *unused, int notification )
 	trap_Cvar_SetValue( "r_picmip", 3 - s_graphicsoptions.tq.curvalue );
 	trap_Cvar_SetValue( "r_vertexLight", s_graphicsoptions.lighting.curvalue );
 
-	if ( s_graphicsoptions.geometry.curvalue == 2 )
+	if ( s_graphicsoptions.geometry.curvalue == 3 )  // Ultra
+	{
+		trap_Cvar_SetValue( "r_lodBias", -2 );
+		trap_Cvar_SetValue( "r_subdivisions", 1 );
+	}
+	else if ( s_graphicsoptions.geometry.curvalue == 2 )  // High
 	{
 		trap_Cvar_SetValue( "r_lodBias", -1 );
 		trap_Cvar_SetValue( "r_subdivisions", 4 );
 	}
-	else if ( s_graphicsoptions.geometry.curvalue == 1 )
+	else if ( s_graphicsoptions.geometry.curvalue == 1 )  // Medium
 	{
 		trap_Cvar_SetValue( "r_lodBias", 1 );
 		trap_Cvar_SetValue( "r_subdivisions", 12 );
 	}
-	else
+	else  // Low
 	{
 		trap_Cvar_SetValue( "r_lodBias", 2 );
 		trap_Cvar_SetValue( "r_subdivisions", 80 );
+	}
+
+	// Set supersampling before vid_restart
+	{
+		float supersampling;
+		switch (s_graphicsoptions.supersampling.curvalue) {
+			case 0: supersampling = 0.8f; break;
+			case 1: supersampling = 0.9f; break;
+			case 2: supersampling = 1.0f; break;
+			case 3: supersampling = 1.1f; break;
+			case 4: supersampling = 1.2f; break;
+			case 5: supersampling = 1.3f; break;
+			default: supersampling = 1.1f; break;
+		}
+		trap_Cvar_SetValue("vr_superSampling", supersampling);
 	}
 
 	trap_Cmd_ExecuteText( EXEC_APPEND, "vid_restart\n" );
@@ -460,30 +484,9 @@ static void GraphicsOptions_Event( void* ptr, int event ) {
 		trap_Cvar_SetValue( "r_fastsky", !s_graphicsoptions.highqualitysky.curvalue );
 		break;
 
-	case ID_SUPERSAMPLING: {
-			float supersampling;
-			switch (s_graphicsoptions.supersampling.curvalue) {
-				case 0:
-					supersampling = 0.8;
-					break;
-				case 1:
-					supersampling = 0.9;
-					break;
-				case 2:
-					supersampling = 1.0;
-					break;
-				case 3:
-					supersampling = 1.1;
-					break;
-				case 4:
-					supersampling = 1.2;
-					break;
-				case 5:
-					supersampling = 1.3;
-					break;
-				}
-			trap_Cvar_SetValue("vr_superSampling", supersampling);
-		}
+	case ID_SUPERSAMPLING:
+		// Supersampling requires vid_restart, defer to Apply button.
+		// The actual cvar set happens in GraphicsOptions_ApplyChanges().
 		break;
 
 	case ID_DRIVERINFO:
@@ -554,12 +557,14 @@ static void GraphicsOptions_SetMenuItems( void )
 	}
 
 	int lodbias = trap_Cvar_VariableValue( "r_lodBias" );
-	if (lodbias == -1) {
-		s_graphicsoptions.geometry.curvalue = 2;
+	if (lodbias <= -2) {
+		s_graphicsoptions.geometry.curvalue = 3;  // Ultra: r_lodBias <= -2
+	} else if (lodbias == -1) {
+		s_graphicsoptions.geometry.curvalue = 2;  // High: r_lodBias = -1
 	} else if (lodbias == 1) {
-		s_graphicsoptions.geometry.curvalue = 1;
+		s_graphicsoptions.geometry.curvalue = 1;  // Medium: r_lodBias = 1
 	} else {
-		s_graphicsoptions.geometry.curvalue = 0;
+		s_graphicsoptions.geometry.curvalue = 0;  // Low: r_lodBias >= 2
 	}
 
 	switch ( (int) trap_Cvar_VariableValue( "vr_refreshrate" ) )
@@ -653,6 +658,7 @@ void GraphicsOptions_MenuInit( void )
 		"Low",
 		"Medium",
 		"High",
+		"Ultra",
 		NULL
 	};
 

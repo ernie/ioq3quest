@@ -117,9 +117,33 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #ifdef __GNUC__
 #define UNUSED_VAR __attribute__((unused))
+#define Q_UNUSED_VAR __attribute__((unused))
+#define Q_NO_RETURN __attribute__((noreturn))
+
+#ifdef __MINGW32__
+// For some reason MinGW wants both gnu_printf and ms_printf
+#define Q_PRINTF_FUNC(fmt, va) \
+	__attribute__((format(gnu_printf, fmt, va))) \
+	__attribute__((format(ms_printf, fmt, va)))
+#else
+#define Q_PRINTF_FUNC(fmt, va) __attribute__((format(printf, fmt, va)))
+#endif
+
+#define Q_SCANF_FUNC(fmt, va) __attribute__((format(scanf, fmt, va)))
+#define Q_ALIGN(x) __attribute__((aligned(x)))
+#define QALIGN(x) __attribute__((aligned(x)))
 #else
 #define UNUSED_VAR
+#define Q_UNUSED_VAR
+#define Q_NO_RETURN
+#define Q_PRINTF_FUNC(fmt, va)
+#define Q_SCANF_FUNC(fmt, va)
+#define Q_ALIGN(x)
+#define QALIGN(x)
 #endif
+
+// Quake3e compatibility defines
+#define MAX_UINT ((unsigned)(~0))
 
 #if (defined _MSC_VER)
 #define Q_EXPORT __declspec(dllexport)
@@ -205,6 +229,11 @@ typedef union {
 	int i;
 	unsigned int ui;
 } floatint_t;
+
+typedef union {
+	byte rgba[4];
+	uint32_t u32;
+} color4ub_t;
 
 typedef int		qhandle_t;
 typedef int		sfxHandle_t;
@@ -553,6 +582,19 @@ float Q_rsqrt( float f );		// reciprocal square root
 
 #define SQRTFAST( x ) ( (x) * Q_rsqrt( x ) )
 
+// Round up to power of 2 (roundup=1) or down (roundup=0)
+static ID_INLINE unsigned int log2pad( unsigned int v, int roundup )
+{
+	unsigned int x = 1;
+	while ( x < v ) x <<= 1;
+	if ( roundup == 0 ) {
+		if ( x > v ) {
+			x >>= 1;
+		}
+	}
+	return x;
+}
+
 signed char ClampChar( int i );
 signed short ClampShort( int i );
 
@@ -594,6 +636,7 @@ typedef struct {
 #define VectorClear(a)			((a)[0]=(a)[1]=(a)[2]=0)
 #define VectorNegate(a,b)		((b)[0]=-(a)[0],(b)[1]=-(a)[1],(b)[2]=-(a)[2])
 #define VectorSet(v, x, y, z)	((v)[0]=(x), (v)[1]=(y), (v)[2]=(z))
+#define Vector4Set(v,x,y,z,w)	((v)[0]=(x), (v)[1]=(y), (v)[2]=(z), (v)[3]=(w))
 #define Vector4Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
 
 #define Byte4Copy(a,b)			((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
@@ -763,6 +806,14 @@ void	COM_StripExtension(const char *in, char *out, int destsize);
 qboolean COM_CompareExtension(const char *in, const char *ext);
 void	COM_DefaultExtension( char *path, int maxSize, const char *extension );
 
+unsigned long Com_GenerateHashValue( const char *fname, const unsigned int size );
+unsigned int crc32_buffer( const byte *buf, unsigned int len );
+
+// Quake3e utility functions for renderervk
+int		Com_Split( char *in, char **out, int outsz, int delim );
+char	*Q_stradd( char *dst, const char *src );
+float	Q_atof( const char *str );
+
 void	COM_BeginParseSession( const char *name );
 int		COM_GetCurrentParseLine( void );
 char	*COM_Parse( char **data_p );
@@ -770,10 +821,33 @@ char	*COM_ParseExt( char **data_p, qboolean allowLineBreak );
 void	SkipTillSeparators( char **data );
 void	Com_InitSeparators( void );
 char	*COM_ParseSep( char **data_p, qboolean allowLineBreaks );
+char	*COM_ParseComplex( const char **data_p, qboolean allowLineBreaks );
 int		COM_Compress( char *data_p );
 void	COM_ParseError( char *format, ... ) __attribute__ ((format (printf, 1, 2)));
 void	COM_ParseWarning( char *format, ... ) __attribute__ ((format (printf, 1, 2)));
 //int		COM_ParseInfos( char *buf, int max, char infos[][MAX_INFO_STRING] );
+
+// Quake3e enhanced parsing - token types for COM_ParseComplex (renderervk)
+typedef enum {
+	TK_GENEGIC = 0, // for single-char tokens
+	TK_STRING,
+	TK_QUOTED,
+	TK_EQ,
+	TK_NEQ,
+	TK_GT,
+	TK_GTE,
+	TK_LT,
+	TK_LTE,
+	TK_MATCH,
+	TK_OR,
+	TK_AND,
+	TK_SCOPE_OPEN,
+	TK_SCOPE_CLOSE,
+	TK_NEWLINE,
+	TK_EOF,
+} tokenType_t;
+
+extern tokenType_t com_tokentype;
 
 #define MAX_TOKENLENGTH		1024
 
@@ -942,9 +1016,21 @@ default values.
 #define CVAR_SERVER_CREATED	0x0800	// cvar was created by a server the client connected to.
 #define CVAR_VM_CREATED		0x1000	// cvar was created exclusively in one of the VMs.
 #define CVAR_PROTECTED		0x2000	// prevent modifying this var from VMs or the server
+#define CVAR_DEVELOPER		0x4000	// developer-only cvar (renderervk compatibility)
 // These flags are only returned by the Cvar_Flags() function
 #define CVAR_MODIFIED		0x40000000	// Cvar was modified
 #define CVAR_NONEXISTENT	0x80000000	// Cvar doesn't exist.
+
+// Alias for renderervk compatibility (CVAR_ARCHIVE_ND = "no default", same behavior as CVAR_ARCHIVE)
+#define CVAR_ARCHIVE_ND		CVAR_ARCHIVE
+
+// Cvar groups for batch modification checking (renderervk)
+typedef enum {
+	CVG_NONE = 0,
+	CVG_RENDERER,
+	CVG_SERVER,
+	CVG_MAX,
+} cvarGroup_t;
 
 // nothing outside the Cvar_*() functions should modify these fields!
 typedef struct cvar_s cvar_t;
@@ -964,6 +1050,7 @@ struct cvar_s {
 	float			min;
 	float			max;
 	char			*description;
+	cvarGroup_t		group;				// for batch modification checking (renderervk)
 
 	cvar_t *next;
 	cvar_t *prev;

@@ -1,46 +1,321 @@
-cmake_minimum_required(VERSION 3.4.1)
+cmake_minimum_required(VERSION 3.10)
 
-set(${CMAKE_C_FLAGS}, "${CMAKE_C_FLAGS}")
+# This CMakeLists.txt has two modes:
+# 1. FULL BUILD: When invoked from command line (run.bat/run.sh) with -DFULL_BUILD=ON
+#    Builds the entire engine and game modules
+# 2. STUB MODE: When invoked from Gradle (default)
+#    Just builds libmain.so and copies pre-built libraries from the CMake build
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11 -Wall -Werror")
-link_directories(../jniLibs/arm64-v8a)
+option(FULL_BUILD "Build full engine (not just the stub)" OFF)
 
-add_library(main SHARED main.c)
+if(FULL_BUILD)
+    #############################################################################
+    # FULL BUILD MODE - Build complete engine and game modules
+    #############################################################################
 
-SET(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Configs" FORCE)
-SET(BUILD_FOLDER release-android-aarch64)
-if(CMAKE_BUILD_TYPE MATCHES "Debug")
-	SET(BUILD_FOLDER debug-android-aarch64)
+    # Add cmake module path
+    list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+    # Include project identity (name, version, etc.)
+    include(identity)
+
+    project(${PROJECT_NAME} VERSION ${PROJECT_VERSION} LANGUAGES C)
+
+    #############################################################################
+    # Build Options
+    #############################################################################
+
+    option(BUILD_CLIENT "Build client executable" ON)
+    option(BUILD_GAME_LIBRARIES "Build game module libraries (cgame, qagame, ui)" ON)
+
+    # Renderer options (mutually exclusive, GL ES 3.0 default for now)
+    # In Phase 3, BUILD_RENDERER_VK will become the default
+    option(BUILD_RENDERER_GLES3 "Build OpenGL ES 3.0 renderer" ON)
+    option(BUILD_RENDERER_VK "Build Vulkan renderer" OFF)
+
+    # If Vulkan requested, disable GL ES
+    if(BUILD_RENDERER_VK)
+        set(BUILD_RENDERER_GLES3 OFF CACHE BOOL "" FORCE)
+        message(STATUS "BUILD_RENDERER_VK enabled - disabling BUILD_RENDERER_GLES3")
+    endif()
+
+    # Codec options
+    option(USE_CODEC_VORBIS "Ogg Vorbis support" ON)
+    option(USE_CODEC_OPUS "Ogg Opus support" ON)
+    option(USE_VOIP "Voice chat support" ON)
+
+    # Library options
+    option(USE_INTERNAL_LIBS "Use internally packaged libraries" ON)
+    option(USE_INTERNAL_ZLIB "Use internal copy of zlib" ${USE_INTERNAL_LIBS})
+    option(USE_INTERNAL_JPEG "Use internal copy of libjpeg" ${USE_INTERNAL_LIBS})
+    option(USE_INTERNAL_OGG "Use internal copy of ogg" ${USE_INTERNAL_LIBS})
+    option(USE_INTERNAL_VORBIS "Use internal copy of vorbis" ${USE_INTERNAL_LIBS})
+    option(USE_INTERNAL_OPUS "Use internal copy of opus" ${USE_INTERNAL_LIBS})
+
+    # HTTP download support
+    option(USE_HTTP "HTTP download support" ON)
+
+    #############################################################################
+    # Compiler and Platform Configuration
+    #############################################################################
+
+    # Release build by default
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Release)
+    endif()
+
+    set(CMAKE_C_STANDARD 99)
+    set(CMAKE_C_STANDARD_REQUIRED ON)
+    # Keep default lib prefix for engine library (libioquake3_opengl2.so)
+    # Game modules override this with their own output names
+
+    # Source directory
+    set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/code)
+
+    # Platform and compiler settings
+    include(compilers/clang)
+    include(platforms/android)
+
+    #############################################################################
+    # Version Information
+    #############################################################################
+
+    if(NOT PRODUCT_VERSION)
+        set(PRODUCT_VERSION "${CMAKE_PROJECT_VERSION}")
+
+        if(EXISTS "${CMAKE_SOURCE_DIR}/../../../../../.git")
+            execute_process(
+                COMMAND git show -s --pretty=format:%h
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/../../../../.."
+                OUTPUT_VARIABLE GIT_REV
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+
+            if(GIT_REV)
+                set(PRODUCT_VERSION "${PRODUCT_VERSION}_g${GIT_REV}")
+            endif()
+        endif()
+    endif()
+
+    add_definitions(-DPRODUCT_VERSION="${PRODUCT_VERSION}")
+    message(STATUS "Building ${PROJECT_NAME} version ${PRODUCT_VERSION}")
+
+    #############################################################################
+    # Libraries
+    #############################################################################
+
+    include(libraries/all)
+
+    #############################################################################
+    # Asset Packaging (pakQ3Q.pk3)
+    #############################################################################
+
+    include(pakQ3Q)
+
+    #############################################################################
+    # Client Executable
+    #############################################################################
+
+    if(BUILD_CLIENT)
+        include(utils/set_output_dirs)
+        include(shared_sources)
+        include(renderer_common)
+        include(renderer_gles3)
+        include(renderer_vk)
+        include(vr)
+
+        # Client definitions
+        list(APPEND CLIENT_DEFINITIONS BOTLIB)
+
+        if(USE_VOIP)
+            list(APPEND CLIENT_DEFINITIONS USE_VOIP)
+        endif()
+
+        # Combine all engine sources (without main.c entry point)
+        set(ENGINE_SOURCES
+            ${SERVER_SOURCES}
+            ${CLIENT_SOURCES}
+            ${COMMON_SOURCES}
+            ${BOTLIB_SOURCES}
+            ${SYSTEM_SOURCES}
+            ${VR_SOURCES}
+            ${CLIENT_LIBRARY_SOURCES}
+        )
+
+        # Add object library sources (CMake 3.10 compatible - can't link OBJECT libs directly)
+        foreach(OBJLIB IN LISTS CLIENT_OBJECT_LIBRARIES)
+            list(APPEND ENGINE_SOURCES $<TARGET_OBJECTS:${OBJLIB}>)
+        endforeach()
+
+        # Add renderer sources based on selection
+        if(BUILD_RENDERER_GLES3)
+            list(APPEND ENGINE_SOURCES ${RENDERER_GLES3_BINARY_SOURCES})
+            list(APPEND CLIENT_DEFINITIONS USE_RENDERER_GLES3)
+            message(STATUS "Building with OpenGL ES 3.0 renderer")
+        elseif(BUILD_RENDERER_VK)
+            list(APPEND ENGINE_SOURCES ${RENDERER_VK_BINARY_SOURCES})
+            list(APPEND CLIENT_DEFINITIONS USE_VULKAN)
+            message(STATUS "Building with Vulkan renderer")
+        endif()
+
+        #############################################################################
+        # Engine library (libioquake3_opengl2.so)
+        #############################################################################
+        set(ENGINE_BINARY "ioquake3_opengl2")
+
+        add_library(${ENGINE_BINARY} SHARED ${ENGINE_SOURCES})
+
+        target_include_directories(${ENGINE_BINARY} PRIVATE
+            ${SOURCE_DIR}
+            ${CLIENT_INCLUDE_DIRS}
+            ${RENDERER_INCLUDE_DIRS}
+        )
+
+        target_compile_definitions(${ENGINE_BINARY} PRIVATE
+            ${COMMON_DEFINITIONS}
+            ${CLIENT_DEFINITIONS}
+        )
+
+        target_compile_options(${ENGINE_BINARY} PRIVATE
+            ${COMMON_COMPILE_OPTIONS}
+            ${CLIENT_COMPILE_OPTIONS}
+        )
+
+        target_link_libraries(${ENGINE_BINARY} PRIVATE
+            ${COMMON_LIBRARIES}
+            ${CLIENT_LIBRARIES}
+            ${RENDERER_LIBRARIES}
+            android
+            log
+            m
+            dl
+        )
+
+        set_output_dirs(${ENGINE_BINARY})
+
+        # Add shader compilation dependency for Vulkan builds
+        if(BUILD_RENDERER_VK AND TARGET compile_shaders)
+            add_dependencies(${ENGINE_BINARY} compile_shaders)
+        endif()
+
+        # Copy deploy libraries to output directory
+        foreach(LIBRARY IN LISTS CLIENT_DEPLOY_LIBRARIES)
+            get_filename_component(LIB_NAME ${LIBRARY} NAME)
+            add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${LIBRARY}
+                    ${CMAKE_BINARY_DIR}/${LIB_NAME}
+            )
+        endforeach()
+
+        # Create marker file for stub build to detect renderer type
+        if(BUILD_RENDERER_VK)
+            add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/.vulkan_build
+                COMMENT "Creating Vulkan build marker"
+            )
+        else()
+            add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E remove -f ${CMAKE_BINARY_DIR}/.vulkan_build
+                COMMENT "Removing Vulkan build marker (GL ES build)"
+            )
+        endif()
+    endif()
+
+    #############################################################################
+    # Game Modules
+    #############################################################################
+
+    if(BUILD_GAME_LIBRARIES)
+        include(basegame)
+        include(missionpack)
+    endif()
+
+    #############################################################################
+    # Summary
+    #############################################################################
+
+    message(STATUS "")
+    message(STATUS "Build Configuration:")
+    message(STATUS "  Platform: Android (${ARCH})")
+    message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
+    message(STATUS "  Client: ${BUILD_CLIENT}")
+    message(STATUS "  GL ES 3.0 Renderer: ${BUILD_RENDERER_GLES3}")
+    message(STATUS "  Vulkan Renderer: ${BUILD_RENDERER_VK}")
+    message(STATUS "  Game Libraries: ${BUILD_GAME_LIBRARIES}")
+    message(STATUS "")
+
+else()
+    #############################################################################
+    # STUB MODE - Gradle invocation (default)
+    # Just build libmain.so and copy pre-built libraries
+    #############################################################################
+
+    project(ioq3quest_stub LANGUAGES C)
+
+    set(${CMAKE_C_FLAGS}, "${CMAKE_C_FLAGS}")
+
+    # Build directory where full CMake build outputs libraries
+    set(FULL_BUILD_DIR "${CMAKE_SOURCE_DIR}/../../../../../build")
+
+    # jniLibs destination
+    set(JNILIBS_DIR "${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a")
+
+    # Create jniLibs directory if it doesn't exist
+    file(MAKE_DIRECTORY ${JNILIBS_DIR})
+
+    # Copy libraries from full build to jniLibs
+    add_custom_target(copy_libs
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libioquake3_opengl2.so" "${JNILIBS_DIR}/libioquake3_opengl2.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libSDL2.so" "${JNILIBS_DIR}/libSDL2.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libopenxr_loader.so" "${JNILIBS_DIR}/libopenxr_loader.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libcurl.so" "${JNILIBS_DIR}/libcurl.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/cgameaarch64.so" "${JNILIBS_DIR}/libcgameaarch64_baseq3.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/qagameaarch64.so" "${JNILIBS_DIR}/libqagameaarch64_baseq3.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/uiaarch64.so" "${JNILIBS_DIR}/libuiaarch64_baseq3.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/missionpack/cgameaarch64.so" "${JNILIBS_DIR}/libcgameaarch64_missionpack.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/missionpack/qagameaarch64.so" "${JNILIBS_DIR}/libqagameaarch64_missionpack.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/missionpack/uiaarch64.so" "${JNILIBS_DIR}/libuiaarch64_missionpack.so"
+        # Copy validation layer if present (for debug builds)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libVkLayer_khronos_validation.so" "${JNILIBS_DIR}/libVkLayer_khronos_validation.so" || ${CMAKE_COMMAND} -E true
+        COMMENT "Copying pre-built libraries to jniLibs"
+    )
+
+    # Link directories for the pre-built libraries
+    link_directories(${JNILIBS_DIR})
+
+    # Build libmain.so - the JNI entry point
+    add_library(main SHARED main.c)
+
+    # Ensure libraries are copied before building main
+    add_dependencies(main copy_libs)
+
+    target_include_directories(main PRIVATE
+        ${CMAKE_SOURCE_DIR}/code/OpenXR-SDK/include
+        ${CMAKE_SOURCE_DIR}/code/OpenXR/Include
+        ${CMAKE_SOURCE_DIR}/code/SDL2/include
+        ${CMAKE_SOURCE_DIR}/code
+        ${CMAKE_SOURCE_DIR}/code/vrcommon
+        ${CMAKE_SOURCE_DIR}/code/vrgles
+        ${CMAKE_SOURCE_DIR}/code/vrvk
+    )
+
+    # USE_VULKAN is passed from Gradle via cmake arguments
+    option(USE_VULKAN "Use Vulkan renderer" OFF)
+
+    target_compile_definitions(main PRIVATE
+        ARCH_STRING=android
+        $<$<BOOL:${USE_VULKAN}>:USE_VULKAN>
+    )
+
+    find_library(log-lib log)
+
+    target_link_libraries(main
+        android
+        ioquake3_opengl2
+        SDL2
+        openxr_loader
+        ${log-lib}
+    )
+
 endif()
-add_custom_target(copy_libs
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libioquake3_opengl2.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libioquake3_opengl2.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libSDL2.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libSDL2.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/libopenxr_loader.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libopenxr_loader.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libcurl.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libcurl.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/cgameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libcgameaarch64_baseq3.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/qagameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libqagameaarch64_baseq3.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/baseq3/uiaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libuiaarch64_baseq3.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/missionpack/cgameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libcgameaarch64_missionpack.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/missionpack/qagameaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libqagameaarch64_missionpack.so
-	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../../../../build/${BUILD_FOLDER}/missionpack/uiaarch64.so ${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/libuiaarch64_missionpack.so
-	)
-
-add_dependencies(main copy_libs)
-
-target_include_directories(main PRIVATE
-	${CMAKE_SOURCE_DIR}/code/OpenXR-SDK/include
-	${CMAKE_SOURCE_DIR}/code/OpenXR/Include
-	${CMAKE_SOURCE_DIR}/code/SDL2/include
-	${CMAKE_SOURCE_DIR}/code)
-
-target_compile_definitions(main PRIVATE
-	ARCH_STRING=android)
-
-find_library(log-lib log)
-
-target_link_libraries(main
-	android
-	ioquake3_opengl2
-	SDL2
-	openxr_loader
-	${log-lib})

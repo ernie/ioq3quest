@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // console.c
 
 #include "client.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 
 int g_console_field_width = 78;
@@ -634,14 +634,9 @@ void Con_DrawNotify (void)
 	currentColor = 7;
 	re.SetColor( g_color_table[currentColor] );
 
-	// For HUD mode 2 outside virtual screen, use overlay buffer (quad layer)
-	// to match the HUD rendering. Otherwise use HUD buffer.
-	qboolean useOverlayBuffer = (vr_currentHudDrawStatus->integer == 2 && !vr.virtual_screen);
-	if (useOverlayBuffer) {
-		re.ScreenOverlayBufferStart(qfalse);  // Don't clear - append to HUD content
-	} else {
-		re.HUDBufferStart(qfalse);
-	}
+	// Console notifications always render to HUD buffer
+	// Stereo parallax is handled in vk_update_mvp() for direct screen drawing
+	re.HUDBufferStart(qfalse);
 
 	// Use console scale setting for notify messages
 	float charScale = con_scale ? con_scale->value : 2.0f;
@@ -780,11 +775,7 @@ void Con_DrawNotify (void)
 
 	re.SetColor( NULL );
 
-	if (useOverlayBuffer) {
-		re.ScreenOverlayBufferEnd();
-	} else {
-		re.HUDBufferEnd();
-	}
+	re.HUDBufferEnd();
 
 	if (Key_GetCatcher( ) & (KEYCATCH_UI | KEYCATCH_CGAME) ) {
 		return;

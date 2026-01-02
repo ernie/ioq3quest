@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cg_local.h"
 
 #include "../client/keycodes.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 #ifdef MISSIONPACK
 #include "../ui/ui_shared.h"
@@ -177,6 +177,7 @@ vmCvar_t	cg_teamColors;
 vmCvar_t	cg_deadBodyDarken;
 vmCvar_t	cg_paused;
 vmCvar_t	cg_blood;
+vmCvar_t	cg_bloodParticles;
 vmCvar_t	cg_damageEffect;
 vmCvar_t	cg_predictItems;
 vmCvar_t	cg_deferPlayers;
@@ -329,6 +330,7 @@ static cvarTable_t cvarTable[] = {
 	{ &cg_buildScript, "com_buildScript", "0", 0 },	// force loading of all possible data amd error on failures
 	{ &cg_paused, "cl_paused", "0", CVAR_ROM },
 	{ &cg_blood, "com_blood", "1", CVAR_ARCHIVE },
+	{ &cg_bloodParticles, "cg_bloodParticles", "0", CVAR_ARCHIVE },
 	{ &cg_damageEffect, "cg_damageEffect", "0", CVAR_ARCHIVE },
 	{ &cg_synchronousClients, "g_synchronousClients", "0", CVAR_SYSTEMINFO },
 #ifdef MISSIONPACK
@@ -896,6 +898,19 @@ static void CG_RegisterGraphics( void ) {
 		"gfx/2d/numbers/nine_32b",
 		"gfx/2d/numbers/minus_32b",
 	};
+	static char		*damage_nums[11] = {
+		"gfx/2d/damage/zero_32b",
+		"gfx/2d/damage/one_32b",
+		"gfx/2d/damage/two_32b",
+		"gfx/2d/damage/three_32b",
+		"gfx/2d/damage/four_32b",
+		"gfx/2d/damage/five_32b",
+		"gfx/2d/damage/six_32b",
+		"gfx/2d/damage/seven_32b",
+		"gfx/2d/damage/eight_32b",
+		"gfx/2d/damage/nine_32b",
+		"gfx/2d/damage/minus_32b",
+	};
 
 	// clear any references to old media
 	memset( &cg.refdef, 0, sizeof( cg.refdef ) );
@@ -910,6 +925,10 @@ static void CG_RegisterGraphics( void ) {
 
 	for ( i=0 ; i<11 ; i++) {
 		cgs.media.numberShaders[i] = trap_R_RegisterShader( sb_nums[i] );
+	}
+
+	for ( i = 0 ; i < ARRAY_LEN( damage_nums ) ; i++ ) {
+		cgs.media.damagePlumShaders[i] = trap_R_RegisterShader( damage_nums[i] );
 	}
 
 	cgs.media.botSkillShaders[0] = trap_R_RegisterShader( "menu/art/skill1.tga" );

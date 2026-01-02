@@ -1805,7 +1805,7 @@ const void* RB_HUDBuffer( const void* data ) {
 			GLenum result = qglCheckFramebufferStatus(GL_FRAMEBUFFER);
 			if (result != GL_FRAMEBUFFER_COMPLETE)
 			{
-				ri.Error("Error binding Framebuffer: %i\n", result);
+				ri.Error(ERR_DROP, "Error binding Framebuffer: %i\n", result);
 			}
 
 			if (cmd->clear)
@@ -1838,7 +1838,7 @@ const void* RB_HUDBuffer( const void* data ) {
 RB_ScreenOverlayBuffer
 
 Handles drawing to the screen overlay quad layer framebuffer.
-Used for 2D overlays (vignette, damage effects, reticle, HUD mode 2).
+Used for 2D stuff (vignette, damage effects, reticle, HUD mode 2).
 ====================
 */
 static int screenOverlayBackupFrameBuffer = 0;

@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <string.h> // memcpy
 
-#include "../vr/vr_base.h"
+#include "../vrcommon/vr_base.h"
 
 trGlobals_t		tr;
 

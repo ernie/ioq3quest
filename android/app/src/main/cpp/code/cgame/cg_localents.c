@@ -338,10 +338,10 @@ void CG_AddFadeRGB( localEntity_t *le ) {
 	c = ( le->endTime - cg.time ) * le->lifeRate;
 	c *= 0xff;
 
-	re->shaderRGBA[0] = le->color[0] * c;
-	re->shaderRGBA[1] = le->color[1] * c;
-	re->shaderRGBA[2] = le->color[2] * c;
-	re->shaderRGBA[3] = le->color[3] * c;
+	re->shaderRGBA.rgba[0] = le->color[0] * c;
+	re->shaderRGBA.rgba[1] = le->color[1] * c;
+	re->shaderRGBA.rgba[2] = le->color[2] * c;
+	re->shaderRGBA.rgba[3] = le->color[3] * c;
 
 	trap_R_AddRefEntityToScene( re );
 }
@@ -368,7 +368,7 @@ static void CG_AddMoveScaleFade( localEntity_t *le ) {
 		c = ( le->endTime - cg.time ) * le->lifeRate;
 	}
 
-	re->shaderRGBA[3] = 0xff * c * le->color[3];
+	re->shaderRGBA.rgba[3] = 0xff * c * le->color[3];
 
 	if ( !( le->leFlags & LEF_PUFF_DONT_SCALE ) ) {
 		re->radius = le->radius * ( 1.0 - c ) + 8;
@@ -383,6 +383,62 @@ static void CG_AddMoveScaleFade( localEntity_t *le ) {
 	if ( len < le->radius ) {
 		CG_FreeLocalEntity( le );
 		return;
+	}
+
+	trap_R_AddRefEntityToScene( re );
+}
+
+
+/*
+===================
+CG_AddBloodParticle
+
+Blood droplet that moves with gravity, traces for collision,
+leaves a blood mark on impact, then fades out on the surface.
+===================
+*/
+static void CG_AddBloodParticle( localEntity_t *le ) {
+	refEntity_t	*re;
+	vec3_t		newOrigin;
+	trace_t		trace;
+	float		c;
+
+	re = &le->refEntity;
+
+	// Calculate fade
+	c = ( le->endTime - cg.time ) * le->lifeRate;
+	if ( c < 0 ) c = 0;
+	re->shaderRGBA.rgba[3] = 0xff * c * le->color[3];
+
+	// Calculate new position
+	BG_EvaluateTrajectory( &le->pos, cg.time, newOrigin );
+
+	// Particle entered water - spawn sinking blood cloud
+	if ( CG_PointContents( newOrigin, -1 ) & MASK_WATER ) {
+		localEntity_t *cloud;
+
+		cloud = CG_SmokePuff( newOrigin, vec3_origin,
+			1 + random() * 2, 1, 1, 1, 0.4f,
+			300 + random() * 200, cg.time, 0, 0,
+			cgs.media.bloodTrailShader );
+		cloud->leType = LE_FALL_SCALE_FADE;
+		cloud->pos.trDelta[2] = 5 + random() * 10;
+		CG_FreeLocalEntity( le );
+		return;
+	}
+
+	// Trace for collision
+	CG_Trace( &trace, re->origin, NULL, NULL, newOrigin, -1, CONTENTS_SOLID );
+
+	if ( trace.fraction < 1.0f ) {
+		// Hit a surface - leave a matching mark
+		CG_ImpactMark( cgs.media.bloodMarkShader, trace.endpos, trace.plane.normal,
+			random() * 360, 1, 1, 1, 1, qtrue, le->radius, qfalse );
+		CG_FreeLocalEntity( le );
+		return;
+	} else {
+		// Still in flight
+		VectorCopy( newOrigin, re->origin );
 	}
 
 	trap_R_AddRefEntityToScene( re );
@@ -409,7 +465,7 @@ static void CG_AddScaleFade( localEntity_t *le ) {
 	// fade / grow time
 	c = ( le->endTime - cg.time ) * le->lifeRate;
 
-	re->shaderRGBA[3] = 0xff * c * le->color[3];
+	re->shaderRGBA.rgba[3] = 0xff * c * le->color[3];
 	re->radius = le->radius * ( 1.0 - c ) + 8;
 
 	// if the view would be "inside" the sprite, kill the sprite
@@ -446,7 +502,7 @@ static void CG_AddFallScaleFade( localEntity_t *le ) {
 	// fade time
 	c = ( le->endTime - cg.time ) * le->lifeRate;
 
-	re->shaderRGBA[3] = 0xff * c * le->color[3];
+	re->shaderRGBA.rgba[3] = 0xff * c * le->color[3];
 
 	re->origin[2] = le->pos.trBase[2] - ( 1.0 - c ) * le->pos.trDelta[2];
 
@@ -510,10 +566,10 @@ static void CG_AddSpriteExplosion( localEntity_t *le ) {
 		c = 1.0;	// can happen during connection problems
 	}
 
-	re.shaderRGBA[0] = 0xff;
-	re.shaderRGBA[1] = 0xff;
-	re.shaderRGBA[2] = 0xff;
-	re.shaderRGBA[3] = 0xff * c * 0.33;
+	re.shaderRGBA.rgba[0] = 0xff;
+	re.shaderRGBA.rgba[1] = 0xff;
+	re.shaderRGBA.rgba[2] = 0xff;
+	re.shaderRGBA.rgba[3] = 0xff * c * 0.33;
 
 	re.reType = RT_SPRITE;
 	re.radius = 42 * ( 1.0 - c ) + 30;
@@ -582,10 +638,10 @@ void CG_AddKamikaze( localEntity_t *le ) {
 			c = 0;
 		}
 		c *= 0xff;
-		shockwave.shaderRGBA[0] = 0xff - c;
-		shockwave.shaderRGBA[1] = 0xff - c;
-		shockwave.shaderRGBA[2] = 0xff - c;
-		shockwave.shaderRGBA[3] = 0xff - c;
+		shockwave.shaderRGBA.rgba[0] = 0xff - c;
+		shockwave.shaderRGBA.rgba[1] = 0xff - c;
+		shockwave.shaderRGBA.rgba[2] = 0xff - c;
+		shockwave.shaderRGBA.rgba[3] = 0xff - c;
 
 		trap_R_AddRefEntityToScene( &shockwave );
 	}
@@ -594,10 +650,10 @@ void CG_AddKamikaze( localEntity_t *le ) {
 		// explosion and implosion
 		c = ( le->endTime - cg.time ) * le->lifeRate;
 		c *= 0xff;
-		re->shaderRGBA[0] = le->color[0] * c;
-		re->shaderRGBA[1] = le->color[1] * c;
-		re->shaderRGBA[2] = le->color[2] * c;
-		re->shaderRGBA[3] = le->color[3] * c;
+		re->shaderRGBA.rgba[0] = le->color[0] * c;
+		re->shaderRGBA.rgba[1] = le->color[1] * c;
+		re->shaderRGBA.rgba[2] = le->color[2] * c;
+		re->shaderRGBA.rgba[3] = le->color[3] * c;
 
 		if( t < KAMI_IMPLODE_STARTTIME ) {
 			c = (float)(t - KAMI_EXPLODE_STARTTIME) / (float)(KAMI_IMPLODE_STARTTIME - KAMI_EXPLODE_STARTTIME);
@@ -653,10 +709,10 @@ void CG_AddKamikaze( localEntity_t *le ) {
 			c = 0;
 		}
 		c *= 0xff;
-		shockwave.shaderRGBA[0] = 0xff - c;
-		shockwave.shaderRGBA[1] = 0xff - c;
-		shockwave.shaderRGBA[2] = 0xff - c;
-		shockwave.shaderRGBA[3] = 0xff - c;
+		shockwave.shaderRGBA.rgba[0] = 0xff - c;
+		shockwave.shaderRGBA.rgba[1] = 0xff - c;
+		shockwave.shaderRGBA.rgba[2] = 0xff - c;
+		shockwave.shaderRGBA.rgba[3] = 0xff - c;
 
 		trap_R_AddRefEntityToScene( &shockwave );
 	}
@@ -713,7 +769,9 @@ void CG_AddRefEntity( localEntity_t *le ) {
 CG_AddScorePlum
 ===================
 */
-#define NUMBER_SIZE		8
+#define NUMBER_SIZE				8
+#define DAMAGE_DIGIT_SPACING	1.7
+#define DAMAGE_NARROW_SPACING	1.2  // tighter spacing for '1'
 
 void CG_AddScorePlum( localEntity_t *le ) {
 	refEntity_t	*re;
@@ -727,29 +785,29 @@ void CG_AddScorePlum( localEntity_t *le ) {
 
 	score = le->radius;
 	if (score < 0) {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0x11;
-		re->shaderRGBA[2] = 0x11;
+		re->shaderRGBA.rgba[0] = 0xff;
+		re->shaderRGBA.rgba[1] = 0x11;
+		re->shaderRGBA.rgba[2] = 0x11;
 	}
 	else {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0xff;
-		re->shaderRGBA[2] = 0xff;
+		re->shaderRGBA.rgba[0] = 0xff;
+		re->shaderRGBA.rgba[1] = 0xff;
+		re->shaderRGBA.rgba[2] = 0xff;
 		if (score >= 50) {
-			re->shaderRGBA[1] = 0;
+			re->shaderRGBA.rgba[1] = 0;
 		} else if (score >= 20) {
-			re->shaderRGBA[0] = re->shaderRGBA[1] = 0;
+			re->shaderRGBA.rgba[0] = re->shaderRGBA.rgba[1] = 0;
 		} else if (score >= 10) {
-			re->shaderRGBA[2] = 0;
+			re->shaderRGBA.rgba[2] = 0;
 		} else if (score >= 2) {
-			re->shaderRGBA[0] = re->shaderRGBA[2] = 0;
+			re->shaderRGBA.rgba[0] = re->shaderRGBA.rgba[2] = 0;
 		}
 
 	}
 	if (c < 0.25)
-		re->shaderRGBA[3] = 0xff * 4 * c;
+		re->shaderRGBA.rgba[3] = 0xff * 4 * c;
 	else
-		re->shaderRGBA[3] = 0xff;
+		re->shaderRGBA.rgba[3] = 0xff;
 
 	re->radius = NUMBER_SIZE / 2;
 
@@ -802,8 +860,8 @@ CG_AddDamagePlum
 void CG_AddDamagePlum( localEntity_t *le ) {
 	refEntity_t	*re;
 	vec3_t		origin, delta, dir, vec, up = {0, 0, 1};
-	float		c, len;
-	float		progress, fade, spread_x, spread_y, vertical_offset, peak_height, rise_progress, fall_progress;
+	float		c, len, distance;
+	float		progress, fade, spread_x, spread_y, vertical_offset, peak_height;
 	int			i, damage, digits[10], numdigits, negative;
 
 	re = &le->refEntity;
@@ -812,65 +870,78 @@ void CG_AddDamagePlum( localEntity_t *le ) {
 
 	damage = le->radius;
 
-	// Color based on damage amount - gradient from white to red
-	if (damage >= 50) {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0x00;
-		re->shaderRGBA[2] = 0x00;
-	} else if (damage >= 25) {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0x80;
-		re->shaderRGBA[2] = 0x00;
-	} else if (damage >= 10) {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0xff;
-		re->shaderRGBA[2] = 0x00;
+	// Color based on damage amount - gradient from blue to red
+	if (damage > 75) {
+		// Red
+		re->shaderRGBA.rgba[0] = 0xff;
+		re->shaderRGBA.rgba[1] = 0x00;
+		re->shaderRGBA.rgba[2] = 0x00;
+	} else if (damage > 50) {
+		// Orange
+		re->shaderRGBA.rgba[0] = 0xff;
+		re->shaderRGBA.rgba[1] = 0x80;
+		re->shaderRGBA.rgba[2] = 0x00;
+	} else if (damage > 25) {
+		// Yellow
+		re->shaderRGBA.rgba[0] = 0xff;
+		re->shaderRGBA.rgba[1] = 0xff;
+		re->shaderRGBA.rgba[2] = 0x00;
 	} else {
-		re->shaderRGBA[0] = 0xff;
-		re->shaderRGBA[1] = 0xff;
-		re->shaderRGBA[2] = 0xff;
+		// Blue
+		re->shaderRGBA.rgba[0] = 0x00;
+		re->shaderRGBA.rgba[1] = 0x80;
+		re->shaderRGBA.rgba[2] = 0xff;
 	}
 
-	// Fade out after 250ms (after peak at 25% progress)
-	progress = 1.0 - c;  // 0.0 at start, 1.0 at end
-	if (progress < 0.25) {
-		fade = 1.0;  // Full opacity for first 250ms
+	// Fade out after 75% of arc (750ms)
+	progress = 1.0f - c;  // 0.0 at start, 1.0 at end
+	if (progress < 0.75f) {
+		fade = 1.0f;  // Full opacity for first 750ms
 	} else {
-		fade = 1.0 - ((progress - 0.25) / 0.75);  // Fade out over remaining 750ms
+		fade = 1.0f - ((progress - 0.75f) / 0.25f);  // Fade out over remaining 250ms
 	}
-	re->shaderRGBA[3] = 0xff * fade;
-
-	re->radius = NUMBER_SIZE / 2;
+	re->shaderRGBA.rgba[3] = 0xff * fade;
 
 	VectorCopy(le->pos.trBase, origin);
 
-	spread_x = le->pos.trDelta[0] * 70.0 * progress;
-	spread_y = le->pos.trDelta[1] * 70.0 * progress;
-	origin[0] += spread_x;
-	origin[1] += spread_y;
-
-	peak_height = 30.0 * le->pos.trDelta[2];
-
-	if (progress < 0.25) {
-		rise_progress = progress / 0.25;
-		vertical_offset = peak_height * (1.0 - (1.0 - rise_progress) * (1.0 - rise_progress));
-	} else {
-		fall_progress = (progress - 0.25) / 0.75;
-		vertical_offset = peak_height - (peak_height + 48.0) * fall_progress * fall_progress;
-	}
-	origin[2] += vertical_offset;
-
-	VectorSubtract(cg.refdef.vieworg, origin, dir);
-	CrossProduct(dir, up, vec);
-	VectorNormalize(vec);
-
-	// if the view would be "inside" the sprite, kill the sprite
+	// Calculate distance to base origin for scaling sprite and arc
 	VectorSubtract( origin, cg.refdef.vieworg, delta );
-	len = VectorLength( delta );
-	if ( len < 20 ) {
+	len = VectorLengthSquared( delta );
+	if ( len < 20*20 ) {
+		// if the view would be "inside" the sprite, kill the sprite
 		CG_FreeLocalEntity( le );
 		return;
 	}
+
+	distance = sqrt(len);
+	re->radius = (NUMBER_SIZE / 1280.0f) * distance * tan(cg.refdef.fov_x * M_PI / 360.0f);
+
+	// Horizontal spread
+	spread_x = le->pos.trDelta[0] * 20.0f * re->radius * progress;
+	spread_y = le->pos.trDelta[1] * 20.0f * re->radius * progress;
+	origin[0] += spread_x;
+	origin[1] += spread_y;
+
+	// Vertical arc - symmetric rise and fall over the full duration
+	// Uses sine wave for smooth, even arc that peaks at 50% progress
+	peak_height = 15.0 * le->pos.trDelta[2] * re->radius;
+	vertical_offset = peak_height * sin(progress * M_PI);
+	origin[2] += vertical_offset;
+
+	VectorSubtract(cg.refdef.vieworg, origin, dir);
+	VectorNormalize(dir);
+
+	// Set up world-oriented sprite axis so digits don't roll with head tilt
+	// but still face the camera (including vertical tilt)
+	// axis[0] = forward (toward camera)
+	// axis[1] = left (horizontal, no roll)
+	// axis[2] = up (perpendicular to forward and left)
+	re->renderfx |= RF_WORLD_ORIENTED;
+	VectorCopy(dir, re->axis[0]);
+	CrossProduct(dir, up, vec);
+	VectorNormalize(vec);
+	VectorCopy(vec, re->axis[1]);
+	CrossProduct(vec, dir, re->axis[2]);  // Derive up from forward and left
 
 	negative = qfalse;
 	if (damage < 0) {
@@ -888,10 +959,38 @@ void CG_AddDamagePlum( localEntity_t *le ) {
 		numdigits++;
 	}
 
-	for (i = 0; i < numdigits; i++) {
-		VectorMA(origin, (float) (((float) numdigits / 2) - i) * NUMBER_SIZE, vec, re->origin);
-		re->customShader = cgs.media.numberShaders[digits[numdigits-1-i]];
-		trap_R_AddRefEntityToScene( re );
+	{
+		float total_width = 0;
+		float pos;
+		int digit, next_digit;
+
+		// First pass: calculate total width
+		for (i = 0; i < numdigits; i++) {
+			digit = digits[numdigits - 1 - i];
+			next_digit = (i + 1 < numdigits) ? digits[numdigits - 2 - i] : -1;
+			if (digit == 1 || next_digit == 1) {
+				total_width += re->radius * DAMAGE_NARROW_SPACING;
+			} else {
+				total_width += re->radius * DAMAGE_DIGIT_SPACING;
+			}
+		}
+
+		// Second pass: render digits from left to right, centered
+		pos = total_width / 2;
+		for (i = 0; i < numdigits; i++) {
+			digit = digits[numdigits - 1 - i];
+			next_digit = (i + 1 < numdigits) ? digits[numdigits - 2 - i] : -1;
+
+			VectorMA(origin, pos, vec, re->origin);
+			re->customShader = cgs.media.damagePlumShaders[digit];
+			trap_R_AddRefEntityToScene(re);
+
+			if (digit == 1 || next_digit == 1) {
+				pos -= re->radius * DAMAGE_NARROW_SPACING;
+			} else {
+				pos -= re->radius * DAMAGE_DIGIT_SPACING;
+			}
+		}
 	}
 }
 
@@ -963,6 +1062,10 @@ void CG_AddLocalEntities( void ) {
 
 		case LE_DAMAGEPLUM:
 			CG_AddDamagePlum( le );
+			break;
+
+		case LE_BLOOD_PARTICLE:
+			CG_AddBloodParticle( le );
 			break;
 
 #ifdef MISSIONPACK

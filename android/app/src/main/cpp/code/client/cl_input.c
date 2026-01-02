@@ -23,8 +23,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 
-#include "../vr/vr_input.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_input.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 unsigned	frame_msec;
 int			old_com_frameTime;
@@ -1101,8 +1101,6 @@ void CL_InitInput( void ) {
 
 	cl_nodelta = Cvar_Get ("cl_nodelta", "0", 0);
 	cl_debugMove = Cvar_Get ("cl_debugMove", "0", 0);
-
-	IN_VRInit();
 }
 
 /*

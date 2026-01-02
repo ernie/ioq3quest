@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cg_view.c -- setup all the parameters (position, angle, etc)
 // for a 3D rendering
 #include "cg_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 extern vr_clientinfo_t* vr;
 
@@ -789,10 +789,10 @@ static void CG_DamageBlendBlob( void ) {
 
 	ent.radius = cg.damageValue * 3;
 	ent.customShader = cgs.media.viewBloodShader;
-	ent.shaderRGBA[0] = 255;
-	ent.shaderRGBA[1] = 255;
-	ent.shaderRGBA[2] = 255;
-	ent.shaderRGBA[3] = 200 * ( 1.0 - ((float)t / maxTime) );
+	ent.shaderRGBA.rgba[0] = 255;
+	ent.shaderRGBA.rgba[1] = 255;
+	ent.shaderRGBA.rgba[2] = 255;
+	ent.shaderRGBA.rgba[3] = 200 * ( 1.0 - ((float)t / maxTime) );
 	trap_R_AddRefEntityToScene( &ent );
 }
 
@@ -800,27 +800,33 @@ static void CG_DamageBlendBlob( void ) {
 ===============
 CG_DamageBorderVignette
 
-Modern damage indicator using red-tinted borders
+Modern damage indicator using red-tinted borders.
+Uses 8-piece geometry (4 corners + 4 edges) with UV slicing for smooth gradients.
+Accounts for VR stereo FOV coverage and vertical asymmetry.
 ===============
 */
 void CG_DamageBorderVignette( void ) {
-	int			t;
-	int			maxTime;
-	float		alpha;
-	float		damageIntensity;
-	int			x, y, w, h;
+	int		t, maxTime;
+	float	alpha, damageIntensity, coverage;
+	int		borderBase;
+	int		leftBorder, rightBorder, topBorder, bottomBorder;
+	int		innerWidth, innerHeight;
+	float	leftWeight, rightWeight, topWeight, bottomWeight;
+	vec4_t	red;
+	int		x, y, w, h;
 
-	if (!cg_blood.integer) {
-		return;
-	}
+	// UV coordinates for slicing the vignette texture into 8 pieces (4 corners + 4 edges)
+	// The vignette texture has different gradient lengths: ~0.21 horizontal, ~0.30 vertical
+	const float UV_EDGE_H = 0.21f;  // Horizontal gradient extent
+	const float UV_EDGE_V = 0.30f;  // Vertical gradient extent
 
-	if ( !cg.damageValue ) {
+	if (!cg_blood.integer || !cg.damageValue) {
 		return;
 	}
 
 	maxTime = DAMAGE_TIME;
 	t = cg.time - cg.damageTime;
-	if ( t <= 0 || t >= maxTime ) {
+	if (t <= 0 || t >= maxTime) {
 		return;
 	}
 
@@ -829,124 +835,176 @@ void CG_DamageBorderVignette( void ) {
 
 	// Scale border thickness based on damage value
 	// cg.damageValue is clamped between 5 and 10 in CG_DamageFeedback (cg_playerstate.c)
-	// Normalize to 0-1 range: (value - min) / (max - min)
+	// Normalize to 0-1 range: (value - min) / (max - min), with a floor of 0.2
 	damageIntensity = (cg.damageValue - 5.0f) / 5.0f;
+	if (damageIntensity < 0.2f) {
+		damageIntensity = 0.2f;
+	}
 
-	// Damage intensity controls coverage area
-	float coverage = damageIntensity / 8.0f;
-	int percentX = (int)(coverage * cg.refdef.width);
-	int percentY = (int)(coverage * cg.refdef.height);
+	// Use height as reference for all borders to maintain consistent pixel thickness
+	// regardless of aspect ratio. This ensures left/right borders match top/bottom visually.
+	coverage = damageIntensity / 4.0f;
+	borderBase = (int)(coverage * cg.refdef.height);
 
 	// Apply directional weighting to borders based on damage direction
 	// cg.damageX and cg.damageY are normalized direction values (-1 to 1)
 	// Positive damageX = damage from RIGHT, negative = damage from LEFT
 	// Positive damageY = damage from TOP, negative = damage from BOTTOM
-	// Redistribute border thickness: thicken damage side, thin opposite side
-	// At damageX=-1 (full left): left=2.0, right=0.0
-	// At damageX=0 (center): left=1.0, right=1.0
-	// At damageX=+1 (full right): left=0.0, right=2.0
-	float leftWeight = 1.0f - cg.damageX;   // Damage from left increases this
-	float rightWeight = 1.0f + cg.damageX;  // Damage from right increases this
-	float topWeight = 1.0f + cg.damageY;    // Damage from top increases this
-	float bottomWeight = 1.0f - cg.damageY; // Damage from bottom increases this
+	leftWeight = 1.0f - cg.damageX;
+	rightWeight = 1.0f + cg.damageX;
+	topWeight = 1.0f + cg.damageY;
+	bottomWeight = 1.0f - cg.damageY;
 
-	// Calculate weighted border dimensions
-	int leftBorder = (int)(percentX * leftWeight);
-	int rightBorder = (int)(percentX * rightWeight);
-	int topBorder = (int)(percentY * topWeight);
-	int bottomBorder = (int)(percentY * bottomWeight);
+	// Calculate FOV asymmetry offsets
+	// OpenXR typically has asymmetric FOV (more down than up, offset horizontal per eye)
+	float projCenterX, projCenterY;
+	CG_GetProjectionCenter(&projCenterX, &projCenterY);
+	// projCenterY is in 640x480 coords where 240 is geometric center
+	// Positive offset means optical center is below geometric center
+	float verticalAsymmetryOffset = (projCenterY - 240.0f) / 480.0f * cg.refdef.height;
+	// projCenterX is in 640x480 coords where 320 is geometric center
+	// Positive offset means optical center is to the right of geometric center
+	float horizontalAsymmetryOffset = (projCenterX - 320.0f) / 640.0f * cg.refdef.width;
 
-	// Account for vertical offset when viewport is centered (e.g., virtual screen mode)
-	int yOffset = cg.refdef.y;
+	// Calculate weighted border dimensions with asymmetry adjustments
+	topBorder = (int)(borderBase * topWeight + verticalAsymmetryOffset);
+	bottomBorder = (int)(borderBase * bottomWeight - verticalAsymmetryOffset);
+	leftBorder = (int)(borderBase * leftWeight + horizontalAsymmetryOffset);
+	rightBorder = (int)(borderBase * rightWeight - horizontalAsymmetryOffset);
 
-	// Red color with fading alpha
-	vec4_t red = {1.0f, 0.0f, 0.0f, alpha * 0.8f};
+	// Clamp negative values
+	if (topBorder < 0) topBorder = 0;
+	if (bottomBorder < 0) bottomBorder = 0;
+	if (leftBorder < 0) leftBorder = 0;
+	if (rightBorder < 0) rightBorder = 0;
 
-	trap_R_SetColor( red );
+	// Calculate combined FOV scale for stereo coverage
+	float combinedFovScale = CG_GetCombinedFovScale();
+	float extraWidth = (cg.refdef.width * (combinedFovScale - 1.0f)) / 2.0f;
+	int leftEdge = (int)(-extraWidth);
+	int rightEdge = (int)(cg.refdef.width + extraWidth);
 
-	// Left
-	trap_R_DrawStretchPic( 0, yOffset, leftBorder, cg.refdef.height,
-		0, 0, 1, 1, cgs.media.whiteShader );
-	// Right
-	trap_R_DrawStretchPic( cg.refdef.width - rightBorder, yOffset, rightBorder, cg.refdef.height,
-		0, 0, 1, 1, cgs.media.whiteShader );
-	// Top
-	trap_R_DrawStretchPic( leftBorder, yOffset, cg.refdef.width - leftBorder - rightBorder, topBorder,
-		0, 0, 1, 1, cgs.media.whiteShader );
-	// Bottom
-	trap_R_DrawStretchPic( leftBorder, yOffset + cg.refdef.height - bottomBorder,
-		cg.refdef.width - leftBorder - rightBorder, bottomBorder,
-		0, 0, 1, 1, cgs.media.whiteShader );
+	// Dimensions for edge pieces (between corners)
+	innerWidth = cg.refdef.width - leftBorder - rightBorder;
+	innerHeight = cg.refdef.height - topBorder - bottomBorder;
 
-	// Draw vignette shader in the center for fade effect
-	x = leftBorder;
-	y = yOffset + topBorder;
-	w = cg.refdef.width - leftBorder - rightBorder;
-	h = cg.refdef.height - topBorder - bottomBorder;
+	// Red with fading alpha
+	red[0] = 1.0f;
+	red[1] = 0.0f;
+	red[2] = 0.0f;
+	red[3] = alpha * 0.8f;
 
-	trap_R_DrawStretchPic( x, y, w, h, 0, 0, 1, 1, cgs.media.vignetteShader );
+	trap_R_SetColor(red);
 
-	trap_R_SetColor( NULL );
+	// Screen base coordinates
+	x = cg.refdef.x;
+	y = cg.refdef.y;
+	w = cg.refdef.width;
+	h = cg.refdef.height;
+
+	// Extended widths for stereo FOV coverage
+	int leftExtension = x - leftEdge;
+	int rightExtension = rightEdge - (x + w);
+
+	// Draw 4 corners (from texture corners, extended for stereo)
+	// Top-left corner
+	if ((leftBorder + leftExtension) > 0 && topBorder > 0) {
+		trap_R_DrawStretchPic(leftEdge, y, leftBorder + leftExtension, topBorder,
+			0.0f, 0.0f, UV_EDGE_H, UV_EDGE_V, cgs.media.vignetteShader);
+	}
+	// Top-right corner
+	if ((rightBorder + rightExtension) > 0 && topBorder > 0) {
+		trap_R_DrawStretchPic(x + w - rightBorder, y, rightBorder + rightExtension, topBorder,
+			1.0f - UV_EDGE_H, 0.0f, 1.0f, UV_EDGE_V, cgs.media.vignetteShader);
+	}
+	// Bottom-left corner
+	if ((leftBorder + leftExtension) > 0 && bottomBorder > 0) {
+		trap_R_DrawStretchPic(leftEdge, y + h - bottomBorder, leftBorder + leftExtension, bottomBorder,
+			0.0f, 1.0f - UV_EDGE_V, UV_EDGE_H, 1.0f, cgs.media.vignetteShader);
+	}
+	// Bottom-right corner
+	if ((rightBorder + rightExtension) > 0 && bottomBorder > 0) {
+		trap_R_DrawStretchPic(x + w - rightBorder, y + h - bottomBorder, rightBorder + rightExtension, bottomBorder,
+			1.0f - UV_EDGE_H, 1.0f - UV_EDGE_V, 1.0f, 1.0f, cgs.media.vignetteShader);
+	}
+
+	// Draw 4 edges (stretched pieces from texture edge middles)
+	// Left edge (extended for stereo, and into missing corner spaces)
+	if ((leftBorder + leftExtension) > 0) {
+		// Extend into top corner space if top corner wasn't drawn
+		int edgeTop = (topBorder > 0) ? topBorder : 0;
+		// Extend into bottom corner space if bottom corner wasn't drawn
+		int edgeBottom = (bottomBorder > 0) ? bottomBorder : 0;
+		int edgeHeight = h - edgeTop - edgeBottom;
+		if (edgeHeight > 0) {
+			trap_R_DrawStretchPic(leftEdge, y + edgeTop, leftBorder + leftExtension, edgeHeight,
+				0.0f, UV_EDGE_V, UV_EDGE_H, 1.0f - UV_EDGE_V, cgs.media.vignetteShader);
+		}
+	}
+	// Right edge (extended for stereo, and into missing corner spaces)
+	if ((rightBorder + rightExtension) > 0) {
+		// Extend into top corner space if top corner wasn't drawn
+		int edgeTop = (topBorder > 0) ? topBorder : 0;
+		// Extend into bottom corner space if bottom corner wasn't drawn
+		int edgeBottom = (bottomBorder > 0) ? bottomBorder : 0;
+		int edgeHeight = h - edgeTop - edgeBottom;
+		if (edgeHeight > 0) {
+			trap_R_DrawStretchPic(x + w - rightBorder, y + edgeTop, rightBorder + rightExtension, edgeHeight,
+				1.0f - UV_EDGE_H, UV_EDGE_V, 1.0f, 1.0f - UV_EDGE_V, cgs.media.vignetteShader);
+		}
+	}
+	// Top edge (between top-left and top-right corners)
+	if (topBorder > 0 && innerWidth > 0) {
+		trap_R_DrawStretchPic(x + leftBorder, y, innerWidth, topBorder,
+			UV_EDGE_H, 0.0f, 1.0f - UV_EDGE_H, UV_EDGE_V, cgs.media.vignetteShader);
+	}
+	// Bottom edge (between bottom-left and bottom-right corners)
+	if (bottomBorder > 0 && innerWidth > 0) {
+		trap_R_DrawStretchPic(x + leftBorder, y + h - bottomBorder, innerWidth, bottomBorder,
+			UV_EDGE_H, 1.0f - UV_EDGE_V, 1.0f - UV_EDGE_H, 1.0f, cgs.media.vignetteShader);
+	}
+
+	trap_R_SetColor(NULL);
 }
 
 
 /*
 =================
-CG_CalculatePodiumPositionForVR
+CG_CalculateSPIntermissionHUD
 
-Calculates the podium position in VR (OpenXR) coordinates for UI quad placement.
+Calculates HUD sprite position for single-player intermission.
 Called during intermission when pm_type == PM_INTERMISSION.
-The position is relative to the intermission origin (camera position).
+Positions the HUD at the podium location so it's world-locked.
 =================
 */
-static void CG_CalculatePodiumPositionForVR( void )
+static void CG_CalculateSPIntermissionHUD( void )
 {
-	// Only calculate for single-player intermission
 	if ( cgs.gametype != GT_SINGLE_PLAYER ) {
 		return;
 	}
 
-	// Get intermission angle from player state
-	vec3_t intermissionAngle;
-	VectorCopy( cg.snap->ps.viewangles, intermissionAngle );
-
-	// targetOrigin: where the server intended the camera to be (used for podium placement)
-	vec3_t targetOrigin;
-	VectorCopy( cg.snap->ps.origin, targetOrigin );
-
-	// actualOrigin: where the camera actually is after wall trace
-	vec3_t actualOrigin;
-	VectorCopy( cg.refdef.vieworg, actualOrigin );
-
-	// Get podium distance cvars (with defaults matching g_arenas.c)
+	// Get podium placement cvars (defaults from g_main.c)
 	float podiumDist = trap_Cvar_VariableValue( "g_podiumDist" );
 	float podiumDrop = trap_Cvar_VariableValue( "g_podiumDrop" );
-	if ( podiumDist == 0 ) podiumDist = 80.0f;  // default from g_main.c
-	if ( podiumDrop == 0 ) podiumDrop = 70.0f;  // default from g_main.c
+	if ( podiumDist == 0 ) podiumDist = 80.0f;
+	if ( podiumDrop == 0 ) podiumDrop = 70.0f;
 
-	// Calculate podium center position (placed relative to targetOrigin)
+	// Calculate podium position from server's intended camera origin
 	vec3_t forward;
-	AngleVectors( intermissionAngle, forward, NULL, NULL );
+	AngleVectors( cg.snap->ps.viewangles, forward, NULL, NULL );
 
 	vec3_t podiumOrigin;
-	VectorMA( targetOrigin, podiumDist, forward, podiumOrigin );
+	VectorMA( cg.snap->ps.origin, podiumDist, forward, podiumOrigin );
 	podiumOrigin[2] -= podiumDrop;
 
-	// Calculate offset from actual camera position to podium
-	float worldscale = cg.worldscale;
-	if ( worldscale <= 0 ) worldscale = 32.0f;
+	// Position HUD slightly in front of podium, at eye level
+	VectorMA( podiumOrigin, -10.0f, forward, vr->sp_intermission_hud_origin );
+	vr->sp_intermission_hud_origin[2] += podiumDrop;
 
-	vec3_t offset;
-	VectorSubtract( podiumOrigin, actualOrigin, offset );
-
-	// The horizontal distance is the XY distance from actual camera to podium
-	float horizontalDist = sqrtf( offset[0] * offset[0] + offset[1] * offset[1] );
-	float verticalOffset = offset[2] + 60.0f;
-
-	// Convert to meters for OpenXR
-	vr->sp_intermission_podium_pos[0] = (horizontalDist - 10.0f) / worldscale;  // Forward distance
-	vr->sp_intermission_podium_pos[1] = verticalOffset / worldscale;  // Vertical offset
-	vr->sp_intermission_podium_pos[2] = 0.0f;  // No lateral offset
+	// Fixed radius based on distance from actual camera to HUD
+	vec3_t toHud;
+	VectorSubtract( vr->sp_intermission_hud_origin, cg.refdef.vieworg, toHud );
+	vr->sp_intermission_hud_radius = VectorLength( toHud ) * 0.8f;
 }
 
 /*
@@ -991,9 +1049,9 @@ static int CG_CalcViewValues( ) {
 		CG_Trace( &trace, ps->origin, mins, maxs, end, cg.predictedPlayerState.clientNum, MASK_SOLID );
 		VectorCopy(trace.endpos, cg.refdef.vieworg);
 
-		// Calculate podium position for VR UI placement
+		// Calculate HUD sprite position for SP intermission
 		// This must be done AFTER the trace so we know the actual camera position
-		CG_CalculatePodiumPositionForVR();
+		CG_CalculateSPIntermissionHUD();
 
 		VectorCopy(vr->hmdorientation, cg.refdefViewAngles);
         cg.refdefViewAngles[YAW] += (ps->viewangles[YAW] - hmdYaw);
@@ -1313,8 +1371,13 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
     trap_Cvar_Set( "vr_thirdPersonSpectator", (CG_IsDeathCam() ||
                                                cg.demoPlayback ||
                                                CG_IsThirdPersonFollowMode(VRFM_QUERY) ? "1" : "0" ));
-	// If user disabled HUD, respect that in all modes
-	if (trap_Cvar_VariableValue("vr_hudDrawStatus") == 0) {
+	// SP intermission: ALWAYS force mode 1 for world-locked podium HUD
+	// This must come FIRST so user can always see and interact with UI to proceed
+	if (cg.snap && cg.snap->ps.pm_type == PM_INTERMISSION &&
+	    cgs.gametype == GT_SINGLE_PLAYER) {
+		trap_Cvar_SetValue( "vr_currentHudDrawStatus", 1 );
+	} else if (trap_Cvar_VariableValue("vr_hudDrawStatus") == 0) {
+		// If user disabled HUD, respect that in all modes (except SP intermission above)
 		trap_Cvar_SetValue( "vr_currentHudDrawStatus", 0 );
 	} else if (vr->first_person_following) {
 		// draw mode 1 won't work with virtual screen at the moment

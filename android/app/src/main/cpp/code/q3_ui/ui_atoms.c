@@ -26,7 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 	User interface building blocks and support functions.
 **********************************************************************/
 #include "ui_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 uiStatic_t		uis;
 qboolean		m_entersound;		// after a frame, so caching won't disrupt the sound
@@ -59,6 +59,9 @@ float UI_GetXScale()
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uis.xscale;
+	} else if (vr->sp_intermission_active) {
+		// SP intermission: drawing to HUD buffer (1280x960), use 2x scale for 640->1280
+		return 2.0f;
 	} else {
 		return uis.xscale / 2.75f;
 	}
@@ -68,6 +71,9 @@ float UI_GetYScale()
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uis.yscale;
+	} else if (vr->sp_intermission_active) {
+		// SP intermission: drawing to HUD buffer (1280x960), use 2x scale for 480->960
+		return 2.0f;
 	} else {
 		return uis.yscale / 3.25f;
 	}
@@ -75,7 +81,8 @@ float UI_GetYScale()
 
 float UI_GetXOffset()
 {
-    if (vr == NULL || vr->virtual_screen) {
+    if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
+        // SP intermission: no offset, draw to full HUD buffer
         return 0;
     } else {
         return (uis.glconfig.vidWidth - (640 * UI_GetXScale())) / 2.0f;
@@ -84,7 +91,8 @@ float UI_GetXOffset()
 
 float UI_GetYOffset()
 {
-    if (vr == NULL || vr->virtual_screen) {
+    if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
+        // SP intermission: no offset, draw to full HUD buffer
         return 0;
     } else {
         return (uis.glconfig.vidHeight - (480 * UI_GetYScale())) / 2.0f;

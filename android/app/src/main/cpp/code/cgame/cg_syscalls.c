@@ -296,12 +296,12 @@ void	trap_R_HUDBufferEnd( void ) {
 	syscall( CG_R_HUDBUFFER_END );
 }
 
-void	trap_R_ScreenOverlayBufferStart( qboolean clear ) {
-	syscall( CG_R_SCREENOVERLAYBUFFER_START, clear );
+void	trap_R_BeginPostBloom2D( void ) {
+	syscall( CG_R_BEGIN_POST_BLOOM_2D );
 }
 
-void	trap_R_ScreenOverlayBufferEnd( void ) {
-	syscall( CG_R_SCREENOVERLAYBUFFER_END );
+void	trap_R_EndPostBloom2D( void ) {
+	syscall( CG_R_END_POST_BLOOM_2D );
 }
 
 void	trap_R_SetColor( const float *rgba ) {

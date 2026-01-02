@@ -16,14 +16,21 @@ APP_NAME=$(cat $SCRIPTDIR/app/src/main/res/values/strings.xml | grep "app_name" 
 APP_VERSION=$(cat $SCRIPTDIR/app/src/main/AndroidManifest.xml | grep "versionName" | cut -d\" -f2 | cut -d\" -f1 )
 APP_PACKAGE=$(cat $SCRIPTDIR/app/src/main/AndroidManifest.xml | grep "package" | cut -d\" -f2 | cut -d\" -f1 )
 
+# NDK paths
+NDK_VERSION=21.1.6352462
+NDK_PATH=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION
+TOOLCHAIN_FILE=$NDK_PATH/build/cmake/android.toolchain.cmake
+
 if [ "$1" == "release" ] || [ "$2" == "release" ] || [ "$3" == "release" ] || [ "$4" == "release" ]; then
   TARGET=release
   GRADLE_BUILD_TYPE=:app:assembleRelease
   APK_NAME=app-release-unsigned.apk
+  CMAKE_BUILD_TYPE=Release
 else
   TARGET=debug
   GRADLE_BUILD_TYPE=:app:assembleDebug
   APK_NAME=app-debug.apk
+  CMAKE_BUILD_TYPE=Debug
 fi
 
 APK_LOCATION="$SCRIPTDIR/app/build/outputs/apk/$TARGET"
@@ -43,7 +50,27 @@ echo "#define Q3QVERSION  \"$APP_VERSION"\" > $SCRIPTDIR/app/src/main/cpp/code/v
 
 cd $SCRIPTDIR/..
 
-make -j $(getconf _NPROCESSORS_ONLN) $TARGET
+# CMake configure (if needed)
+if [ ! -f "build/CMakeCache.txt" ]; then
+    echo "Configuring CMake build..."
+    cmake -B build -S android/app/src/main/cpp \
+        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
+        -DANDROID_ABI=arm64-v8a \
+        -DANDROID_PLATFORM=android-26 \
+        -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+        -DFULL_BUILD=ON \
+        -G "Ninja"
+
+    if [ $? -ne 0 ]; then
+        echo "Failed to configure CMake"
+        exit 1
+    fi
+fi
+
+# CMake build
+echo "Building with CMake..."
+cmake --build build -j $(getconf _NPROCESSORS_ONLN)
+
 if [ $? -ne 0 ]; then
 	echo "Failed to build ioq3"
 	exit 1

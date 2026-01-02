@@ -64,7 +64,7 @@ static SLObjectItf outputMixObject = NULL;
 // buffer queue player interfaces
 static SLObjectItf bqPlayerObject = NULL;
 static SLPlayItf bqPlayerPlay;
-#ifdef ANDROID_NDK
+#ifdef __ANDROID__
 static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 #else
 static SLBufferQueueItf bqPlayerBufferQueue;
@@ -251,7 +251,8 @@ qboolean SNDDMA_Init( void ) {
 	myassert(SL_RESULT_SUCCESS == result,"GetInterface AudioPlayer");
 
 	// get the buffer queue interface
-	result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_BUFFERQUEUE,
+	// Use SL_IID_ANDROIDSIMPLEBUFFERQUEUE to match the interface ID used in CreateAudioPlayer
+	result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
 			&bqPlayerBufferQueue);
 	myassert(SL_RESULT_SUCCESS == result,"GetInterface buffer queue");
 
@@ -319,6 +320,29 @@ void SNDDMA_BeginPainting( void ) {
 	//LOGI("SNDDMA_BeginPainting");
 	//pthread_mutex_lock(&dma_mutex);
 }
+
+#ifdef USE_VOIP
+void SNDDMA_StartCapture(void)
+{
+}
+
+int SNDDMA_AvailableCaptureSamples(void)
+{
+	return 0;
+}
+
+void SNDDMA_Capture(int samples, byte *data)
+{
+}
+
+void SNDDMA_StopCapture(void)
+{
+}
+
+void SNDDMA_MasterGain( float val )
+{
+}
+#endif
 
 /*
 ========================================================================

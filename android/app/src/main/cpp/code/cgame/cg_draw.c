@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // active (after loading) gameplay
 
 #include "cg_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 #ifdef MISSIONPACK
 #include "../ui/ui_shared.h"
@@ -290,10 +290,10 @@ void CG_Draw3DModel( float x, float y, float w, float h, qhandle_t model, qhandl
 	ent.customSkin = skin;
 	ent.renderfx = RF_NOSHADOW;		// no stencil shadows
 
-	ent.shaderRGBA[0] = 255;
-	ent.shaderRGBA[1] = 255;
-	ent.shaderRGBA[2] = 255;
-	ent.shaderRGBA[3] = 255;
+	ent.shaderRGBA.rgba[0] = 255;
+	ent.shaderRGBA.rgba[1] = 255;
+	ent.shaderRGBA.rgba[2] = 255;
+	ent.shaderRGBA.rgba[3] = 255;
 
 	refdef.rdflags = RDF_NOWORLDMODEL;
 
@@ -359,10 +359,10 @@ void CG_Draw3DModelColor( float x, float y, float w, float h, qhandle_t model, q
 
 	refdef.isHUD = qtrue;
 
-	ent.shaderRGBA[0] = color[0] * 255;
-	ent.shaderRGBA[1] = color[1] * 255;
-	ent.shaderRGBA[2] = color[2] * 255;
-	ent.shaderRGBA[3] = 255;
+	ent.shaderRGBA.rgba[0] = color[0] * 255;
+	ent.shaderRGBA.rgba[1] = color[1] * 255;
+	ent.shaderRGBA.rgba[2] = color[2] * 255;
+	ent.shaderRGBA.rgba[3] = 255;
 
 	trap_R_ClearScene();
 	trap_R_AddRefEntityToScene( &ent );
@@ -2057,9 +2057,9 @@ static void CG_CrosshairColorFromInt( int val, byte *color ) {
 		color[1] = 255;
 		color[2] = 255;
 	} else {
-		color[0] = (val & 1) ? 255 : 0;
+		color[0] = (val & 4) ? 255 : 0;
 		color[1] = (val & 2) ? 255 : 0;
-		color[2] = (val & 4) ? 255 : 0;
+		color[2] = (val & 1) ? 255 : 0;
 	}
 	color[3] = 255;
 }
@@ -2164,12 +2164,12 @@ static void CG_DrawCrosshair3D(void)
 	if ( cg_crosshairHealth.integer ) {
 		vec4_t hcolor;
 		CG_ColorForHealth( hcolor );
-		ent.shaderRGBA[0] = (byte)(hcolor[0] * 255);
-		ent.shaderRGBA[1] = (byte)(hcolor[1] * 255);
-		ent.shaderRGBA[2] = (byte)(hcolor[2] * 255);
-		ent.shaderRGBA[3] = (byte)(hcolor[3] * 255);
+		ent.shaderRGBA.rgba[0] = (byte)(hcolor[0] * 255);
+		ent.shaderRGBA.rgba[1] = (byte)(hcolor[1] * 255);
+		ent.shaderRGBA.rgba[2] = (byte)(hcolor[2] * 255);
+		ent.shaderRGBA.rgba[3] = (byte)(hcolor[3] * 255);
 	} else {
-		CG_CrosshairColorFromInt( cg_crosshairColor.integer, ent.shaderRGBA );
+		CG_CrosshairColorFromInt( cg_crosshairColor.integer, ent.shaderRGBA.rgba );
 	}
 
 	// ensure crosshair is aligned with world, not HMD/view
@@ -2253,10 +2253,11 @@ static void CG_DrawCrosshairNames( void ) {
 #ifdef MISSIONPACK
 	color[3] *= 0.5f;
 	w = CG_Text_Width(name, 0.3f, 0);
-	CG_Text_Paint( 320 - w / 2, 190, 0.3f, color, name, 0, 0, ITEM_TEXTSTYLE_SHADOWED);
+	CG_Text_Paint( 320 - w / 2, 190, 0.3f, color, name, 0, 0, ITEM_TEXTSTYLE_NORMAL);
 #else
 	w = CG_DrawStrlen( name ) * BIGCHAR_WIDTH;
-	CG_DrawBigString( 320 - w / 2, 170, name, color[3] * 0.5f );
+	color[3] *= 0.5f;
+	CG_DrawStringExt( 320 - w / 2, 170, name, color, qfalse, qfalse, BIGCHAR_WIDTH, BIGCHAR_HEIGHT, 0 );
 #endif
 	trap_R_SetColor( NULL );
 }
@@ -2816,9 +2817,11 @@ static void CG_DrawWeapReticle( void )
 
 	CG_AdjustFrom640( &x, &y, &w, &h );
 
-	// sides
-	CG_FillRect( 0, 0, (X_WIDTH * indentX), Y_HEIGHT, black );
-	CG_FillRect( X_WIDTH * (1 - indentX), 0, (X_WIDTH * indentX), Y_HEIGHT, black );
+	// sides - widen by asymmetry offset (scaled 2x for IPD compensation) to prevent world showing through
+	float asymmetryExtra = CG_GetMaxAsymmetryPixels() * 2.0f;
+	float sideWidth = (X_WIDTH * indentX) + asymmetryExtra;
+	CG_FillRect( -asymmetryExtra, 0, sideWidth, Y_HEIGHT, black );
+	CG_FillRect( X_WIDTH * (1 - indentX), 0, sideWidth, Y_HEIGHT, black );
 	// top/bottom
 	CG_FillRect( X_WIDTH * indentX, 0, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY) + reticleYOffset, black );
 	CG_FillRect( X_WIDTH * indentX, Y_HEIGHT * (1-indentY) + reticleYOffset, X_WIDTH * (1-2*indentX), (Y_HEIGHT * indentY), black );
@@ -2859,6 +2862,71 @@ CG_DrawVignette
 float currentComfortVignetteValue = 0.0f;
 float filteredViewYawDelta = 0.0f;
 
+/*
+==============
+CG_GetMaxAsymmetryPixels
+
+Returns the maximum horizontal asymmetry offset in pixels across both eyes.
+Used to widen vignettes so they cover the screen edges after per-eye shift.
+==============
+*/
+float CG_GetMaxAsymmetryPixels( void )
+{
+	int eye;
+	float maxOffset = 0.0f;
+
+	// Calculate max horizontal asymmetry offset across both eyes
+	// using per-eye FOV angles from vr structure
+	for (eye = 0; eye < 2; eye++) {
+		float tanLeft = tanf(vr->eye_fov_angle_left[eye]);
+		float tanRight = tanf(vr->eye_fov_angle_right[eye]);
+		float tanWidth = tanRight - tanLeft;
+		if (fabsf(tanWidth) > 0.001f) {
+			float m8 = (tanRight + tanLeft) / tanWidth;
+			float offset = fabsf(m8);
+			if (offset > maxOffset) maxOffset = offset;
+		}
+	}
+
+	// Convert normalized offset to pixels (m8 ranges roughly -1 to 1)
+	// and return as pixels of screen width
+	return maxOffset * cg.refdef.width / 2.0f;
+}
+
+/*
+==============
+CG_GetCombinedFovScale
+
+Returns the ratio of combined binocular horizontal FOV to single eye FOV.
+Used to scale vignette width to cover the full stereo view extent.
+Combined FOV spans from left eye's leftmost edge to right eye's rightmost edge.
+==============
+*/
+float CG_GetCombinedFovScale( void )
+{
+	// Get per-eye FOV angles (in radians)
+	// angleLeft is negative (pointing left), angleRight is positive (pointing right)
+	float leftEyeLeft = vr->eye_fov_angle_left[0];    // Left eye, left edge (negative)
+	float leftEyeRight = vr->eye_fov_angle_right[0];  // Left eye, right edge (positive)
+	float rightEyeLeft = vr->eye_fov_angle_left[1];   // Right eye, left edge (negative)
+	float rightEyeRight = vr->eye_fov_angle_right[1]; // Right eye, right edge (positive)
+
+	// Single eye horizontal extent (using left eye as reference)
+	// tanWidth = tan(rightAngle) - tan(leftAngle)
+	float singleEyeTanWidth = tanf(leftEyeRight) - tanf(leftEyeLeft);
+
+	// Combined binocular horizontal extent
+	// From left eye's leftmost to right eye's rightmost
+	float combinedTanWidth = tanf(rightEyeRight) - tanf(leftEyeLeft);
+
+	// Avoid division by zero
+	if (fabsf(singleEyeTanWidth) < 0.001f) {
+		return 1.0f;
+	}
+
+	return combinedTanWidth / singleEyeTanWidth;
+}
+
 static void CG_DrawVignette( void )
 {
 
@@ -2889,25 +2957,63 @@ static void CG_DrawVignette( void )
 
 	if (currentComfortVignetteValue > 0.0f && currentComfortVignetteValue <= 1.0f && !(vr->weapon_zoomed))
 	{
-		int x = (int)(0 + currentComfortVignetteValue * cg.refdef.width / 3.5f);
-		int w = (int)(cg.refdef.width - 2 * x);
-		int y = (int)(0 + currentComfortVignetteValue * cg.refdef.height / 3.5f);
-		int h = (int)(cg.refdef.height - 2 * y);
+		// Calculate combined FOV scale - the ratio of binocular FOV to single eye FOV
+		// This tells us how much wider the total view is than a single eye's view
+		float combinedFovScale = CG_GetCombinedFovScale();
+
+		// How much extra width on each side to cover the combined FOV
+		float extraWidth = (cg.refdef.width * (combinedFovScale - 1.0f)) / 2.0f;
+
+		// Calculate vertical FOV asymmetry offset
+		// OpenXR typically has more FOV below optical center than above
+		float projCenterX, projCenterY;
+		CG_GetProjectionCenter(&projCenterX, &projCenterY);
+		// projCenterY is in 640x480 coords where 240 is geometric center
+		// Convert to screen pixel offset: positive means optical center is below geometric center
+		float verticalAsymmetryOffset = (projCenterY - 240.0f) / 480.0f * cg.refdef.height;
+
+		// Base inset from the edges based on comfort vignette value
+		float baseInsetX = currentComfortVignetteValue * cg.refdef.width / 3.5f;
+		float baseInsetY = currentComfortVignetteValue * cg.refdef.height / 3.5f;
+
+		// Adjust top/bottom insets for vertical asymmetry
+		// verticalAsymmetryOffset is positive when optical center is below geometric center
+		// Adding it to top inset and subtracting from bottom shifts the opening upward
+		int insetTop = (int)(baseInsetY + verticalAsymmetryOffset);
+		int insetBottom = (int)(baseInsetY - verticalAsymmetryOffset);
+		if (insetTop < 0) insetTop = 0;
+		if (insetBottom < 0) insetBottom = 0;
+
+		int insetX = (int)baseInsetX;
+
+		// Vignette covers the normal viewport minus insets (not stretched into extended FOV)
+		int vignetteX = insetX;
+		int vignetteW = cg.refdef.width - 2 * insetX;
+		int vignetteH = cg.refdef.height - insetTop - insetBottom;
 
 		// Account for vertical offset when viewport is centered (e.g., virtual screen mode)
 		int yOffset = cg.refdef.y;
 
+		// Extended FOV edges
+		int leftEdge = (int)(-extraWidth);
+		int rightEdge = (int)(cg.refdef.width + extraWidth);
+
+		// Black borders to fill the solid black areas around the vignette
 		vec4_t black = {0.0, 0.0, 0.0, 1};
 		trap_R_SetColor( black );
 
-		// sides
-		trap_R_DrawStretchPic( 0, yOffset, x, cg.refdef.height, 0, 0, 1, 1, cgs.media.whiteShader );
-		trap_R_DrawStretchPic( cg.refdef.width - x, yOffset, x, cg.refdef.height, 0, 0, 1, 1, cgs.media.whiteShader );
-		// top/bottom
-		trap_R_DrawStretchPic( x, yOffset, cg.refdef.width - x, y, 0, 0, 1, 1, cgs.media.whiteShader );
-		trap_R_DrawStretchPic( x, yOffset + cg.refdef.height - y, cg.refdef.width - x, y, 0, 0, 1, 1, cgs.media.whiteShader );
-		// vignette
-		trap_R_DrawStretchPic( x, yOffset + y, w, h, 0, 0, 1, 1, cgs.media.vignetteShader );
+		// Left border: from extended left edge to vignette start
+		trap_R_DrawStretchPic( leftEdge, yOffset, vignetteX - leftEdge, cg.refdef.height, 0, 0, 1, 1, cgs.media.whiteShader );
+		// Right border: from vignette end to extended right edge
+		trap_R_DrawStretchPic( vignetteX + vignetteW, yOffset, rightEdge - (vignetteX + vignetteW), cg.refdef.height, 0, 0, 1, 1, cgs.media.whiteShader );
+
+		// Top border: between the side borders, above the vignette
+		trap_R_DrawStretchPic( vignetteX, yOffset, vignetteW, insetTop, 0, 0, 1, 1, cgs.media.whiteShader );
+		// Bottom border: between the side borders, below the vignette
+		trap_R_DrawStretchPic( vignetteX, yOffset + cg.refdef.height - insetBottom, vignetteW, insetBottom, 0, 0, 1, 1, cgs.media.whiteShader );
+
+		// Vignette shader - covers normal viewport minus insets
+		trap_R_DrawStretchPic( vignetteX, yOffset + insetTop, vignetteW, vignetteH, 0, 0, 1, 1, cgs.media.vignetteShader );
 
 		trap_R_SetColor( NULL );
 	}
@@ -3104,7 +3210,7 @@ static void CG_DrawScreen2D()
     }
 }
 
-
+#ifndef USE_VULKAN
 //
 // HACK HACK HACK
 //
@@ -3132,6 +3238,7 @@ static void CG_EmptySceneHackHackHack( void )
 	trap_R_ClearScene();
 	trap_R_RenderScene( &refdef );
 }
+#endif
 
 static void CG_WarmupEvents( void ) {
 
@@ -3397,60 +3504,95 @@ void CG_DrawActive( void ) {
 		}
 	}
 
-	//Now draw the HUD shader in the world
-    if (trap_Cvar_VariableValue("vr_currentHudDrawStatus") != 2.0f && !vr->weapon_zoomed && !vr->virtual_screen)
+	// Draw the HUD sprite in the world (HUD mode 1)
+	// Also used for SP intermission UI (world-locked at podium position)
+	qboolean isSPIntermission = (cg.snap->ps.pm_type == PM_INTERMISSION) &&
+	                            (trap_Cvar_VariableValue("g_gametype") == GT_SINGLE_PLAYER);
+	qboolean drawHUDSprite = (trap_Cvar_VariableValue("vr_currentHudDrawStatus") != 2.0f &&
+	                          !vr->weapon_zoomed && !vr->virtual_screen) || isSPIntermission;
+
+	if (drawHUDSprite)
 	{
 		refEntity_t ent;
-		trace_t trace;
-		vec3_t viewaxis[3];
-		vec3_t origin, endpos, angles;
-        vec3_t forward, right, up;
+		vec3_t endpos, angles;
+		vec3_t forward, right, up;
+		vec3_t spriteAxis[3];  // For world-oriented sprites
+		qboolean worldOrientedSprite = qfalse;
 
 		float scale = trap_Cvar_VariableValue("vr_worldscaleScaler");
-        float dist = (trap_Cvar_VariableValue("vr_currentHudDepth")+3) * 3 * scale;
-        float radius = (dist / 3.0f) * trap_Cvar_VariableValue("vr_hudScale");
+		float dist = (trap_Cvar_VariableValue("vr_currentHudDepth")+3) * 3 * scale;
+		float radius = (dist / 3.0f) * trap_Cvar_VariableValue("vr_hudScale");
 
-        if (cg.snap->ps.stats[STAT_HEALTH] > 0 &&
-                cg.snap->ps.pm_type != PM_INTERMISSION &&
-		        !(cg.demoPlayback || (cg.snap->ps.pm_flags & PMF_FOLLOW)))
-        {
-            static float hmd_yaw_x = 0.0f;
-            static float hmd_yaw_y = 1.0f;
-            static float prevPitch = 0.0f;
+		if (isSPIntermission)
+		{
+			// SP intermission: position HUD sprite at podium (world-locked)
+			// Use the absolute world position calculated in CG_CalculateSPIntermissionHUD
+			VectorCopy(vr->sp_intermission_hud_origin, endpos);
 
-            // Smooth only the HMD orientation
-            hmd_yaw_x = 0.95f * hmd_yaw_x + 0.05f * cosf(DEG2RAD(vr->hmdorientation[YAW]));
-            hmd_yaw_y = 0.95f * hmd_yaw_y + 0.05f * sinf(DEG2RAD(vr->hmdorientation[YAW]));
+			// Use pre-calculated fixed radius (computed once in CG_CalculateSPIntermissionHUD)
+			// This ensures the HUD doesn't resize when leaning forward/backward
+			radius = vr->sp_intermission_hud_radius;
 
-            if (vr->use_fake_6dof)
-            {
-                // Multiplayer: use clientviewangles logic
-                float viewYaw = SHORT2ANGLE(cg.predictedPlayerState.delta_angles[YAW]) +
-                                (vr->clientviewangles[YAW] - vr->hmdorientation[YAW]);
-                angles[YAW] = viewYaw + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
-            }
-            else
-            {
-                // Single player: use refdefViewAngles - HMD offset + smoothed HMD
-                angles[YAW] = cg.refdefViewAngles[YAW] - vr->hmdorientation[YAW] + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
-            }
-            angles[PITCH] = 0.95f * prevPitch + 0.05f * vr->hmdorientation[PITCH];
-            prevPitch = angles[PITCH];
-            angles[ROLL] = 0;
-            AngleVectors(angles, forward, right, up);
+			// Orient sprite to face the viewer
+			angles[YAW] = cg.snap->ps.viewangles[YAW];
+			angles[PITCH] = 0;
+			angles[ROLL] = 0;
+			AngleVectors(angles, forward, right, up);
 
-            VectorMA(cg.refdef.vieworg, dist, forward, endpos);
-            VectorMA(endpos, trap_Cvar_VariableValue("vr_hudYOffset") / 20, up, endpos);
-        }
-        else
-        {
-            //Lock to face
-            VectorMA(cg.refdef.vieworg, dist, cg.refdef.viewaxis[0], endpos);
-        }
+			// Store orientation for world-anchored rendering (fixed orientation, no billboarding)
+			worldOrientedSprite = qtrue;
+			VectorCopy(forward, spriteAxis[0]);
+			VectorNegate(right, spriteAxis[1]);  // Negate: sprite expects "left", not "right"
+			VectorCopy(up, spriteAxis[2]);
+		}
+		else if (cg.snap->ps.stats[STAT_HEALTH] > 0 &&
+		         cg.snap->ps.pm_type != PM_INTERMISSION &&
+		         !(cg.demoPlayback || (cg.snap->ps.pm_flags & PMF_FOLLOW)))
+		{
+			// Normal gameplay: account for the yaw of the player vs worldspace
+			static float hmd_yaw_x = 0.0f;
+			static float hmd_yaw_y = 1.0f;
+			static float prevPitch = 0.0f;
+
+			// Smooth only the HMD orientation
+			hmd_yaw_x = 0.95f * hmd_yaw_x + 0.05f * cosf(DEG2RAD(vr->hmdorientation[YAW]));
+			hmd_yaw_y = 0.95f * hmd_yaw_y + 0.05f * sinf(DEG2RAD(vr->hmdorientation[YAW]));
+
+			if (vr->use_fake_6dof)
+			{
+				// Multiplayer: use clientviewangles logic
+				float viewYaw = SHORT2ANGLE(cg.predictedPlayerState.delta_angles[YAW]) +
+				                (vr->clientviewangles[YAW] - vr->hmdorientation[YAW]);
+				angles[YAW] = viewYaw + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
+			}
+			else
+			{
+				// Single player: use refdefViewAngles - HMD offset + smoothed HMD
+				angles[YAW] = cg.refdefViewAngles[YAW] - vr->hmdorientation[YAW] + RAD2DEG(atan2(hmd_yaw_y, hmd_yaw_x));
+			}
+			angles[PITCH] = 0.95f * prevPitch + 0.05f * vr->hmdorientation[PITCH];
+			prevPitch = angles[PITCH];
+			angles[ROLL] = 0;
+			AngleVectors(angles, forward, right, up);
+
+			VectorMA(cg.refdef.vieworg, dist, forward, endpos);
+			VectorMA(endpos, trap_Cvar_VariableValue("vr_hudYOffset") / 20, up, endpos);
+		}
+		else
+		{
+			// Lock to face
+			VectorMA(cg.refdef.vieworg, dist, cg.refdef.viewaxis[0], endpos);
+		}
 
 		memset(&ent, 0, sizeof(ent));
 		ent.reType = RT_SPRITE;
 		ent.renderfx = RF_DEPTHHACK | RF_FIRST_PERSON;
+
+		if (worldOrientedSprite) {
+			// Use world-oriented rendering (fixed orientation, no billboarding)
+			ent.renderfx |= RF_WORLD_ORIENTED;
+			AxisCopy(spriteAxis, ent.axis);
+		}
 
 		VectorCopy(endpos, ent.origin);
 
@@ -3466,49 +3608,58 @@ void CG_DrawActive( void ) {
 
 	VectorCopy( baseOrg, cg.refdef.vieworg );
 
+	// Begin post-bloom 2D subpass
+	// All 2D content drawn after this point will NOT be subjected to bloom extraction.
+	// This protects screen overlays (vignette, damage, reticle) and HUD mode 2 from bloom.
+	trap_R_BeginPostBloom2D();
+
 	{
-        // Draw screen 2D overlays (vignette, damage effects, reticle) to overlay buffer
-        // for quad layer submission to avoid stereo offset
-        if (!vr->virtual_screen) {
-            trap_R_ScreenOverlayBufferStart(qtrue);
-        }
-        CG_DrawScreen2D();
+		float hudStatus = trap_Cvar_VariableValue( "vr_currentHudDrawStatus" );
 
-        if (!vr->virtual_screen || vr->first_person_following)
+		// Draw screen 2D stuff (vignette, damage effects, reticle) directly to main swapchain
+		// Stereo parallax is handled in vk_update_mvp() for 2D projection
+		CG_DrawScreen2D();
+
+		if (vr->weapon_zoomed)
 		{
-			float hudStatus = trap_Cvar_VariableValue( "vr_currentHudDrawStatus" );
+			// Weapon zoomed: render minimal HUD with scaled coordinates
+			// No stereo parallax applied during zoom for accurate aiming
+			cg.drawingHUD = qtrue;
+			cg.drawingZoomedHUD = qtrue;
+			CG_WarmupEvents();
+			CG_DrawHUD2DMinimal();
+			cg.drawingZoomedHUD = qfalse;
+			cg.drawingHUD = qfalse;
+		}
+		else if (hudStatus == 2 && !vr->virtual_screen)
+		{
+			// HUD mode 2: render directly to main swapchain with stereo parallax
+			cg.drawingHUD = qtrue;
+			trap_R_HUDBufferStart(qfalse);
+			CG_WarmupEvents();
+			CG_DrawHUD2D();
+			trap_R_HUDBufferEnd();
+			cg.drawingHUD = qfalse;
+		}
 
-			if (vr->weapon_zoomed)
+		// HUD mode 1 rendering
+		if (!vr->weapon_zoomed && (!vr->virtual_screen || vr->first_person_following))
+		{
+			if (hudStatus != 0)
 			{
-				// Weapon zoomed: render minimal HUD with scaled coordinates
-				cg.drawingHUD = qtrue;
-				cg.drawingZoomedHUD = qtrue;
-
-				//Tell renderer we want to draw to the HUD buffer
-				trap_R_HUDBufferStart(qtrue);
-
-				CG_WarmupEvents();
-				CG_DrawHUD2DMinimal();
-
-				trap_R_HUDBufferEnd();
-
-				cg.drawingZoomedHUD = qfalse;
-				cg.drawingHUD = qfalse;
-			}
-			else if (hudStatus != 0)
-			{
 				cg.drawingHUD = qtrue;
 
-				if (hudStatus == 2 && !vr->virtual_screen)
+				if (hudStatus == 2 && vr->first_person_following)
 				{
-					// HUD mode 2 outside virtual screen: render to overlay buffer (quad layer)
-					// Don't clear, append to existing screen overlays
+					// HUD mode 2 in first person following: direct-to-screen with stereo offset
+					trap_R_HUDBufferStart(qfalse);
 					CG_WarmupEvents();
 					CG_DrawHUD2D();
+					trap_R_HUDBufferEnd();
 				}
-				else
+				else if (hudStatus == 1)
 				{
-					// HUD mode 1 or virtual screen: use existing HUD buffer (floating in-world)
+					// HUD mode 1: use existing HUD buffer (floating in-world)
 					trap_R_HUDBufferStart(qtrue);
 					CG_WarmupEvents();
 					CG_DrawHUD2D();
@@ -3524,13 +3675,15 @@ void CG_DrawActive( void ) {
 				trap_R_HUDBufferEnd();
 			}
 		}
-
-		if (!vr->virtual_screen) {
-			trap_R_ScreenOverlayBufferEnd();
-		}
 	}
 
+	// End post-bloom 2D subpass
+	// This completes the render pass and runs blur passes for next frame's bloom
+	trap_R_EndPostBloom2D();
+
+#ifndef USE_VULKAN
 	CG_EmptySceneHackHackHack();
+#endif
 }
 
 

@@ -7,8 +7,10 @@
 #include <client/keycodes.h>
 #include <qcommon/q_shared.h>
 #include <qcommon/qcommon.h>
-#include <vr/vr_base.h>
-#include <vr/vr_renderer.h>
+#include <vrcommon/vr_base.h>
+#include <vrcommon/vr_input.h>
+#include <vrcommon/vr_instance.h>
+#include <vrcommon/vr_renderer.h>
 #include <unistd.h>
 
 #include <SDL.h>
@@ -59,36 +61,38 @@ static void ioq3_logfn(const char* msg)
 	LOGI("%s", msg);
 }
 
-static ovrJava engine_get_ovrJava() {
-	ovrJava java;
-	java.Vm = g_JavaVM;
-	java.ActivityObject = g_ActivityObject;
-	(*java.Vm)->AttachCurrentThread(java.Vm, &java.Env, NULL);
-	return java;
-}
-
 int main(int argc, char* argv[]) {
-	ovrJava java = engine_get_ovrJava();
-	engine_t* engine = NULL;
-	engine = VR_Init(java);
+	// Attach current thread to Java VM
+	JNIEnv* env = NULL;
+	(*g_JavaVM)->AttachCurrentThread(g_JavaVM, &env, NULL);
 
-	//sleep(30);
+	// Set Android context for OpenXR initialization
+	VR_SetAndroidContext(g_JavaVM, g_ActivityObject);
 
-	//First set up resolution cached values
+	// Initialize VR engine
+	VR_Engine* engine = VR_Init();
+	if (!engine) {
+		LOGE("VR_Init failed!");
+		return -1;
+	}
+
+	// Get resolution for cached values
 	int width, height;
-	VR_GetResolution( engine,  &width, &height );
-	
+	VR_GetResolution(engine, &width, &height);
+
 	CON_LogcatFn(&ioq3_logfn);
 
     char *args = (char*)getenv("commandline");
 
     Com_Init(args);
-    NET_Init( );
+    NET_Init();
 
 	LOGI("Calling VR_EnterVR");
-	VR_EnterVR(engine, java);
+	VR_EnterVR(engine);
 	LOGI("Calling VR_InitRenderer");
 	VR_InitRenderer(engine);
+	LOGI("Calling VR_InitSessionInput");
+	VR_InitSessionInput(engine);
 	LOGI("VR initialization complete, entering main loop");
 
 	qboolean hasFocus = qtrue;
@@ -96,12 +100,12 @@ int main(int argc, char* argv[]) {
 	while (1) {
 		if (hasFocus != g_HasFocus) {
 			hasFocus = g_HasFocus;
-			if (!hasFocus && VR_isPauseable()) {
+			if (!hasFocus) {
+				// Lost focus - send ESC to pause
 				Com_QueueEvent( Sys_Milliseconds(), SE_KEY, K_ESCAPE, qtrue, 0, NULL );
-				//Com_QueueEvent( Sys_Milliseconds(), SE_KEY, K_CONSOLE, qtrue, 0, NULL );
 				paused = qtrue;
 			} else if (hasFocus && paused) {
-				//Com_QueueEvent( Sys_Milliseconds(), SE_KEY, K_CONSOLE, qtrue, 0, NULL );
+				// Regained focus - send ESC to unpause
 				Com_QueueEvent( Sys_Milliseconds(), SE_KEY, K_ESCAPE, qtrue, 0, NULL );
 				paused = qfalse;
 			}
@@ -113,7 +117,7 @@ int main(int argc, char* argv[]) {
 			switch (event.type)
 			{
 				case SDL_WINDOWEVENT_FOCUS_GAINED:
-					VR_EnterVR(engine, engine_get_ovrJava());
+					VR_EnterVR(engine);
 					break;
 
 				case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -122,7 +126,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		VR_DrawFrame(engine);
+		VR_ProcessFrame(engine);
 	}
 
 	VR_LeaveVR(engine);

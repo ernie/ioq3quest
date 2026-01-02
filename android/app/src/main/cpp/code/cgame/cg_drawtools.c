@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //
 // cg_drawtools.c -- helper functions called by cg_draw, cg_scoreboard, cg_info, etc
 #include "cg_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 int hudflags = 0;
 extern vr_clientinfo_t* vr;
@@ -72,6 +72,8 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 		*y = (*y / 480.0f) * 640.0f;
 
 		// Calculate optical centering offset (asymmetric FOV compensation)
+		// m9 is negative when optical center is above geometric center
+		// Positive opticalOffset shifts content down, negative shifts up
 		float opticalOffset = 0.0f;
 		float tanUp = tanf(vr->fov_angle_up);
 		float tanDown = tanf(vr->fov_angle_down);
@@ -116,6 +118,9 @@ void CG_AdjustFrom640( float *x, float *y, float *w, float *h )
 			screenYScale = cgs.screenXScale / 2.25f;
 
 			// Apply optical centering for HUD mode 2 (asymmetric FOV compensation)
+			// projCenterY is where the optical center is in 640x480 coords
+			// If projCenterY < 240, optical center is above geometric center, shift content UP (negative)
+			// If projCenterY > 240, optical center is below geometric center, shift content DOWN (positive)
 			float projCenterY;
 			CG_GetProjectionCenter(NULL, &projCenterY);
 			float opticalOffset = projCenterY - 240.0f;

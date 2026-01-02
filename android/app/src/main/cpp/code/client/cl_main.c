@@ -27,7 +27,35 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../sys/sys_local.h"
 #include "../sys/sys_loadlib.h"
 
-#include "../vr/vr_base.h"
+#include "../vrcommon/vr_base.h"
+#include "../vrcommon/vr_cvars.h"
+
+#include <SDL.h>
+
+#ifdef USE_VULKAN
+#include <vulkan/vulkan.h>
+#endif
+
+// VR Vulkan accessors - renderer pulls XR-created resources during init
+extern const void* VR_Vulkan_GetDeviceInfo(void);
+extern const void* VR_Vulkan_GetSwapchainInfo(void);
+extern qboolean VR_GetVirtualScreenMVP(float screenMVP[2][16], float floorMVP[2][16]);
+
+// Vulkan platform functions
+#ifdef USE_VULKAN
+extern void VKimp_Init(glconfig_t *config);
+extern void VKimp_Shutdown(qboolean unloadDLL);
+#endif
+
+// VR initialization (called from renderer after graphics init)
+extern void GLimp_InitVR(void);
+
+// OpenGL platform functions
+extern void GLimp_Init(qboolean fixedFunction);
+extern void GLimp_Shutdown(void);
+extern void GLimp_EndFrame(void);
+extern void GLimp_InitGamma(glconfig_t *config);
+extern void GLimp_SetGamma(unsigned char red[256], unsigned char green[256], unsigned char blue[256]);
 
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
@@ -1228,7 +1256,7 @@ void CL_ShutdownAll(qboolean shutdownRef)
 	if(shutdownRef)
 		CL_ShutdownRef();
 	else if(re.Shutdown)
-		re.Shutdown(qfalse);		// don't destroy window or context
+		re.Shutdown(REF_KEEP_CONTEXT);		// don't destroy window or context
 
 	cls.uiStarted = qfalse;
 	cls.cgameStarted = qfalse;
@@ -3108,7 +3136,7 @@ CL_ShutdownRef
 */
 void CL_ShutdownRef( void ) {
 	if ( re.Shutdown ) {
-		re.Shutdown( qtrue );
+		re.Shutdown( REF_DESTROY_WINDOW );
 	}
 
 	Com_Memset( &re, 0, sizeof( re ) );
@@ -3199,6 +3227,39 @@ int CL_ScaledMilliseconds(void) {
 
 /*
 ============
+CL_GLimp_Init_Wrapper
+============
+*/
+static void CL_GLimp_Init_Wrapper( glconfig_t *config ) {
+	// Quake3e passes glconfig pointer, ioq3quest's GLimp_Init takes fixedFunction boolean
+	// For VR, we use fixedFunction = qfalse (modern OpenGL)
+	GLimp_Init( qfalse );
+}
+
+static void CL_GLimp_Shutdown_Wrapper( qboolean unloadDLL ) {
+	// ioq3quest's GLimp_Shutdown takes no arguments
+	GLimp_Shutdown();
+}
+
+static void *CL_GL_GetProcAddress( const char *name ) {
+	// Forward to SDL
+	return SDL_GL_GetProcAddress( name );
+}
+
+// Wrapper for Com_RealTime - renderer expects void return, but actual function returns int
+static void CL_Com_RealTime_Wrapper( qtime_t *qtime ) {
+	Com_RealTime( qtime );
+}
+
+#ifdef USE_VULKAN
+// Wrapper for vkGetInstanceProcAddr - renderer expects void* return, but Vulkan returns PFN_vkVoidFunction
+static void *CL_VK_GetInstanceProcAddr_Wrapper( void *instance, const char *name ) {
+	return (void*)vkGetInstanceProcAddr( (VkInstance)instance, name );
+}
+#endif
+
+/*
+============
 CL_InitRef
 ============
 */
@@ -3273,6 +3334,24 @@ void CL_InitRef( void ) {
 	ri.Cvar_CheckRange = Cvar_CheckRange;
 	ri.Cvar_SetDescription = Cvar_SetDescription;
 	ri.Cvar_VariableIntegerValue = Cvar_VariableIntegerValue;
+	ri.Cvar_VariableString = Cvar_VariableString;
+	ri.Cvar_VariableStringBuffer = Cvar_VariableStringBuffer;
+	ri.Cvar_SetGroup = Cvar_SetGroup;
+	ri.Cvar_CheckGroup = Cvar_CheckGroup;
+	ri.Cvar_ResetGroup = Cvar_ResetGroup;
+
+	ri.Com_RealTime = CL_Com_RealTime_Wrapper;
+
+	// Memory cleanup (Quake3e pattern) - not used in ioq3quest
+	ri.FreeAll = NULL;
+
+	// OpenGL platform functions - using wrappers to match Quake3e signatures
+	ri.GLimp_Init = CL_GLimp_Init_Wrapper;
+	ri.GLimp_Shutdown = CL_GLimp_Shutdown_Wrapper;
+	ri.GLimp_EndFrame = GLimp_EndFrame;
+	ri.GLimp_InitGamma = GLimp_InitGamma;
+	ri.GLimp_SetGamma = GLimp_SetGamma;
+	ri.GL_GetProcAddress = CL_GL_GetProcAddress;
 
 	// cinematic stuff
 
@@ -3292,6 +3371,31 @@ void CL_InitRef( void ) {
 	ri.Sys_GLimpSafeInit = Sys_GLimpSafeInit;
 	ri.Sys_GLimpInit = Sys_GLimpInit;
 	ri.Sys_LowPhysicalMemory = Sys_LowPhysicalMemory;
+
+	// Vulkan platform functions
+#ifdef USE_VULKAN
+	Com_Printf( "CL_InitRef: USE_VULKAN defined, setting VKimp_Init\n" );
+	ri.VKimp_Init = VKimp_Init;
+	ri.VKimp_Shutdown = VKimp_Shutdown;
+	ri.VK_GetInstanceProcAddr = CL_VK_GetInstanceProcAddr_Wrapper;
+	ri.VK_CreateSurface = NULL;  // Quest doesn't need a surface - OpenXR provides swapchains
+#else
+	Com_Printf( "CL_InitRef: USE_VULKAN NOT defined, VKimp_Init = NULL\n" );
+	ri.VKimp_Init = NULL;
+	ri.VKimp_Shutdown = NULL;
+	ri.VK_GetInstanceProcAddr = NULL;
+	ri.VK_CreateSurface = NULL;
+#endif
+
+	// VR Vulkan accessors - renderer pulls XR-created resources during init
+	ri.VR_Vulkan_GetDeviceInfo = VR_Vulkan_GetDeviceInfo;
+	ri.VR_Vulkan_GetSwapchainInfo = VR_Vulkan_GetSwapchainInfo;
+
+	// Virtual screen state query - renderer pulls virtual screen MVP matrices
+	ri.VR_GetVirtualScreenState = VR_GetVirtualScreenMVP;
+
+	// VR session initialization (called from renderer after graphics init)
+	ri.GLimp_InitVR = GLimp_InitVR;
 
 	ret = GetRefAPI( REF_API_VERSION, &ri );
 

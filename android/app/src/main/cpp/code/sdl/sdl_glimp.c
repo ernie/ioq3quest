@@ -26,6 +26,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #	include <SDL.h>
 #endif
 
+#ifdef USE_VULKAN
+#include <vulkan/vulkan.h>
+#endif
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +38,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../renderercommon/tr_common.h"
 #include "../sys/sys_local.h"
 #include "sdl_icon.h"
-#include "../vr/vr_renderer.h"
+
+// Include VR headers (graphics-agnostic)
+#include "../vrcommon/vr_base.h"
+#include "../vrcommon/vr_input.h"
+#include "../vrcommon/vr_renderer.h"
+
+#ifdef USE_VULKAN
+// Vulkan-specific VR headers for swapchain management
+#include "../vrvk/vr_vk_swapchains.h"
+#endif
 
 typedef enum
 {
@@ -430,7 +443,7 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder, qbool
 
 	ri.Printf (PRINT_ALL, "...setting mode %d:", mode );
 
-	VR_GetResolution(0, &glConfig.vidWidth, &glConfig.vidHeight);
+	VR_GetResolution(VR_GetEngine(), &glConfig.vidWidth, &glConfig.vidHeight);
 	/*
 	if (mode == -2)
 	{
@@ -506,7 +519,7 @@ static int GLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder, qbool
 		depthBits = r_depthbits->value;
 
 	stencilBits = r_stencilbits->value;
-	samples = r_ext_multisample->value;
+	samples = 0;  // VR multisampling is handled by the XR swapchain, not SDL
 
 	for (i = 0; i < 16; i++)
 	{
@@ -1099,6 +1112,44 @@ success:
 
 /*
 ===============
+GLimp_InitVR
+
+Initialize VR session and renderer after graphics init.
+For ioq3quest, VR_EnterVR and VR_InitRenderer are called from main.c
+after Com_Init, so this is a no-op stub. The VR session creation
+happens in main() after the renderer is initialized.
+===============
+*/
+void GLimp_InitVR( void )
+{
+	VR_Engine* engine = VR_GetEngine();
+	if (!engine) {
+		ri.Printf( PRINT_WARNING, "GLimp_InitVR: No VR engine\n" );
+		return;
+	}
+
+#ifdef USE_VULKAN
+	// Recreate swapchains if they were destroyed during vid_restart.
+	// This ensures supersampling changes take effect with new resolution.
+	if (engine->appState.Session != XR_NULL_HANDLE &&
+		!engine->appState.Renderer.Swapchains)
+	{
+		ri.Printf( PRINT_ALL, "GLimp_InitVR: Recreating VR swapchains\n" );
+		engine->appState.Renderer.Swapchains = VR_VK_CreateSwapchains(
+			engine->appState.Instance,
+			engine->appState.SystemId,
+			engine->appState.Session);
+
+		if (!engine->appState.Renderer.Swapchains) {
+			ri.Printf( PRINT_WARNING, "GLimp_InitVR: Failed to create swapchains\n" );
+		}
+	}
+#endif
+}
+
+
+/*
+===============
 GLimp_EndFrame
 
 Responsible for doing a swapbuffers
@@ -1147,3 +1198,108 @@ void GLimp_EndFrame( void )
 	}
 #endif
 }
+
+
+#ifdef USE_VULKAN
+/*
+===============
+VKimp_Init
+
+Initialize Vulkan for Quest VR.
+Quest is VR-only, so there's no desktop window to create.
+Vulkan instance/device are already created by the VR layer (OpenXR).
+We just need to fill in glConfig and initialize input.
+===============
+*/
+void VKimp_Init(glconfig_t *config)
+{
+	ri.Printf( PRINT_DEVELOPER, "VKimp_Init()\n" );
+
+	r_allowSoftwareGL = ri.Cvar_Get( "r_allowSoftwareGL", "0", CVAR_LATCH );
+	r_sdlDriver = ri.Cvar_Get( "r_sdlDriver", "", CVAR_ROM );
+	r_allowResize = ri.Cvar_Get( "r_allowResize", "0", CVAR_ARCHIVE | CVAR_LATCH );
+	r_centerWindow = ri.Cvar_Get( "r_centerWindow", "0", CVAR_ARCHIVE | CVAR_LATCH );
+
+	if( ri.Cvar_VariableIntegerValue( "com_abnormalExit" ) )
+	{
+		ri.Cvar_Set( "r_mode", va( "%d", R_MODE_FALLBACK ) );
+		ri.Cvar_Set( "r_fullscreen", "0" );
+		ri.Cvar_Set( "r_centerWindow", "0" );
+		ri.Cvar_Set( "com_abnormalExit", "0" );
+	}
+
+	ri.Sys_GLimpInit();
+
+	// Initialize SDL video subsystem (needed for input)
+	if (!SDL_WasInit(SDL_INIT_VIDEO))
+	{
+		if (SDL_Init(SDL_INIT_VIDEO) != 0)
+		{
+			ri.Error( ERR_FATAL, "SDL_Init( SDL_INIT_VIDEO ) FAILED (%s)", SDL_GetError());
+			return;
+		}
+
+		ri.Printf( PRINT_ALL, "SDL using driver \"%s\"\n", SDL_GetCurrentVideoDriver() );
+	}
+
+	// Get VR resolution for glConfig
+	VR_GetResolution(VR_GetEngine(), &glConfig.vidWidth, &glConfig.vidHeight);
+	glConfig.windowAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+
+	ri.Printf( PRINT_ALL, "VR resolution: %d x %d\n", glConfig.vidWidth, glConfig.vidHeight);
+
+	// Fill in glConfig
+	glConfig.isFullscreen = qtrue;  // VR is always "fullscreen"
+	glConfig.driverType = GLDRV_ICD;
+	glConfig.hardwareType = GLHW_GENERIC;
+	glConfig.deviceSupportsGamma = qfalse;  // VR headsets handle gamma
+	glConfig.colorBits = 32;
+	glConfig.depthBits = 24;
+	glConfig.stencilBits = 8;
+
+	// Vulkan doesn't use these GL strings, but fill in something useful
+	Q_strncpyz(glConfig.vendor_string, "Vulkan VR", sizeof(glConfig.vendor_string));
+	Q_strncpyz(glConfig.renderer_string, "Quest Vulkan Renderer", sizeof(glConfig.renderer_string));
+	Q_strncpyz(glConfig.version_string, "Vulkan 1.1", sizeof(glConfig.version_string));
+	glConfig.extensions_string[0] = '\0';
+
+	// Copy to caller
+	*config = glConfig;
+
+	ri.Cvar_Get( "r_availableModes", "", CVAR_ROM );
+
+	// Initialize input (SDL_window is NULL on Quest, but that's OK for VR input)
+	ri.IN_Init( SDL_window );
+}
+
+
+/*
+===============
+VKimp_Shutdown
+
+Shutdown Vulkan for Quest VR.
+===============
+*/
+void VKimp_Shutdown(qboolean unloadDLL)
+{
+	(void)unloadDLL;  // Not used - DLL management handled elsewhere
+
+	ri.Printf( PRINT_DEVELOPER, "VKimp_Shutdown()\n" );
+
+	ri.IN_Shutdown();
+
+	// Destroy VR swapchains so they can be recreated with new resolution on vid_restart.
+	// This is called during vid_restart from Com_Frame, which is between xrBeginFrame
+	// and xrEndFrame. We must properly finish the XR frame before destroying swapchains.
+	VR_Engine* engine = VR_GetEngine();
+	if (engine && engine->appState.Renderer.Swapchains) {
+		// Finish any in-progress XR frame (releases swapchain images, calls xrEndFrame)
+		VR_Renderer_FinishFrame(engine);
+
+		// Now safe to destroy swapchains
+		VR_VK_DestroySwapchains(&engine->appState.Renderer.Swapchains);
+	}
+
+	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+}
+#endif // USE_VULKAN

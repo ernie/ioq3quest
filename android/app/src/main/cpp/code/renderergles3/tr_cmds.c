@@ -503,28 +503,59 @@ void RE_HUDBufferEnd( void )
     cmd->commandId = RC_HUD_BUFFER;
 }
 
+// Stub implementations for post-bloom 2D rendering (Vulkan-only feature)
+// GLES3 renderer doesn't use subpass-based bloom, so these are no-ops.
+void RE_BeginPostBloom2D( void )
+{
+    // No-op for GLES3 renderer
+}
+
+void RE_EndPostBloom2D( void )
+{
+    // No-op for GLES3 renderer
+}
+
 //#if __ANDROID__
-void R_Mat4Transpose( const float in[4][4], float* out ) {
+// Transpose a 4x4 matrix from row-major (ovrMatrix4f) to column-major (OpenGL)
+static void R_Mat4TransposeFlat( const float *in, float *out ) {
 	int i, j;
 	for (i = 0; i < 4; ++i) {
 		for (j = 0; j < 4; ++j) {
-			out[i * 4 + j] = in[j][i];
+			out[i * 4 + j] = in[j * 4 + i];
 		}
 	}
 }
 
-void RE_SetVRHeadsetParms( const float projectionMatrix[4][4],  const float nonVRProjectionMatrix[4][4],
-        int renderBuffer ) {
-	R_Mat4Transpose(projectionMatrix, tr.vrParms.projection);
-	R_Mat4Transpose(nonVRProjectionMatrix, tr.vrParms.monoVRProjection);
+void RE_SetVRHeadsetParms( const float projectionMatrix[16],
+						   const float nonVRProjectionMatrix[16],
+						   int renderBuffer,
+						   const float projectionEye0[16],
+						   const float projectionEye1[16],
+						   float combinedFovX,
+						   float halfIpdMeters ) {
+	// ovrMatrix4f uses row-major layout, OpenGL uses column-major, so transpose
+	R_Mat4TransposeFlat(projectionMatrix, tr.vrParms.projection);
+	R_Mat4TransposeFlat(nonVRProjectionMatrix, tr.vrParms.monoVRProjection);
 	tr.vrParms.renderBuffer = renderBuffer;
 	tr.vrParms.valid = qtrue;
+
+	// Additional parameters not used by GL ES renderer yet
+	(void)projectionEye0;
+	(void)projectionEye1;
+	(void)combinedFovX;
+	(void)halfIpdMeters;
 }
 
-void RE_SetScreenOverlayBuffer( int buffer, int width, int height ) {
-	tr.vrParms.screenOverlayBuffer = buffer;
+void RE_SetScreenOverlayBuffer( int overlayBuffer, int width, int height,
+								int mainSceneReadBuffer, int mainSceneWidth, int mainSceneHeight ) {
+	tr.vrParms.screenOverlayBuffer = overlayBuffer;
 	tr.vrParms.screenOverlayWidth = width;
 	tr.vrParms.screenOverlayHeight = height;
+
+	// Additional parameters not used by GL ES renderer yet
+	(void)mainSceneReadBuffer;
+	(void)mainSceneWidth;
+	(void)mainSceneHeight;
 }
 
 void RE_ScreenOverlayBufferStart( qboolean clear ) {

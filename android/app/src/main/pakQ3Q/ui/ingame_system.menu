@@ -296,14 +296,14 @@ itemDef {
     		type ITEM_TYPE_MULTI
 		text "Geometric Detail:"
 		cvar "r_lodbias"
-		cvarFloatList { "High" -1 "Medium" 1 "Low" 2 }
+		cvarFloatList { "Ultra" -2 "High" -1 "Medium" 1 "Low" 2 }
 		rect 0 190 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 133
       		textaligny 17
-		textscale .25        
+		textscale .25
       		forecolor 1 1 1 1
-      		visible 0 
+      		visible 0
 			action { uiScript glCustom ; uiScript update "r_lodbias" }
     		}
 

@@ -24,8 +24,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 
 #include "../botlib/botlib.h"
-#include "../vr/vr_base.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_base.h"
+#include "../vrcommon/vr_clientinfo.h"
+#include "../vrcommon/vr_input.h"
 
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
@@ -703,13 +704,12 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 	case CG_R_HUDBUFFER_END:
 		re.HUDBufferEnd();
 		return 0;
-	case CG_R_SCREENOVERLAYBUFFER_START:
-		re.ScreenOverlayBufferStart(args[1]);
+	case CG_R_BEGIN_POST_BLOOM_2D:
+		re.BeginPostBloom2D();
 		return 0;
-	case CG_R_SCREENOVERLAYBUFFER_END:
-		re.ScreenOverlayBufferEnd();
+	case CG_R_END_POST_BLOOM_2D:
+		re.EndPostBloom2D();
 		return 0;
-
 
 	default:
 	        assert(0);

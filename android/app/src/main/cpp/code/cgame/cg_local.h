@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../game/bg_public.h"
 #include "cg_public.h"
 
-#include "../vr/vr_types.h"
+#include "../vrcommon/vr_types.h"
 
 // The entire cgame module is unloaded and reloaded on each level change,
 // so there is NO persistant data between levels on the client side.
@@ -59,7 +59,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	MAX_STEP_CHANGE		32
 
 #define	MAX_VERTS_ON_POLY	10
-#define	MAX_MARK_POLYS		256
+#define	MAX_MARK_POLYS		512
 
 #define STAT_MINUS			10	// num frame for '-' stats digit
 
@@ -230,6 +230,7 @@ typedef enum {
 	LE_SCALE_FADE,
 	LE_SCOREPLUM,
 	LE_DAMAGEPLUM,
+	LE_BLOOD_PARTICLE,
 #ifdef MISSIONPACK
 	LE_KAMIKAZE,
 	LE_INVULIMPACT,
@@ -802,6 +803,7 @@ typedef struct {
 #endif
 
 	qhandle_t	numberShaders[11];
+	qhandle_t	damagePlumShaders[11];
 
 	qhandle_t	shadowMarkShader;
 
@@ -1231,6 +1233,7 @@ extern	vmCvar_t 		cg_forceModel;
 extern	vmCvar_t 		cg_buildScript;
 extern	vmCvar_t		cg_paused;
 extern	vmCvar_t		cg_blood;
+extern	vmCvar_t		cg_bloodParticles;
 extern	vmCvar_t		cg_damageEffect;
 extern	vmCvar_t		cg_predictItems;
 extern	vmCvar_t		cg_deferPlayers;
@@ -1389,6 +1392,7 @@ void CG_CenterPrint( const char *str, int y, int charWidth );
 void CG_DrawHead( float x, float y, float w, float h, int clientNum, vec3_t headAngles );
 void CG_DrawActive( void );
 void CG_DamageBorderVignette( void );
+float CG_GetMaxAsymmetryPixels( void );
 void CG_DrawFlagModel( float x, float y, float w, float h, int team, qboolean force2D );
 void CG_DrawTeamBackground( int x, int y, int w, int h, float alpha, int team );
 void CG_OwnerDraw(float x, float y, float w, float h, float text_x, float text_y, int ownerDraw, int ownerDrawFlags, int align, float special, float scale, vec4_t color, qhandle_t shader, int textStyle);
@@ -1414,6 +1418,7 @@ const char *CG_GameTypeString( void );
 qboolean CG_YourTeamHasFlag( void );
 qboolean CG_OtherTeamHasFlag( void );
 void CG_GetProjectionCenter( float *outX, float *outY );
+float CG_GetCombinedFovScale( void );
 qhandle_t CG_StatusHandle(int task);
 
 
@@ -1541,7 +1546,7 @@ void CG_DamagePlum( vec3_t org, int damage );
 void CG_GibPlayer( vec3_t playerOrigin );
 void CG_BigExplode( vec3_t playerOrigin );
 
-void CG_Bleed( vec3_t origin, int entityNum );
+void CG_Bleed( vec3_t origin, vec3_t dir, int entityNum, int weapon );
 
 localEntity_t *CG_MakeExplosion( vec3_t origin, vec3_t dir,
 								qhandle_t hModel, qhandle_t shader, int msec,
@@ -1737,8 +1742,8 @@ qboolean	trap_R_inPVS( const vec3_t p1, const vec3_t p2 );
 
 void		trap_R_HUDBufferStart( qboolean clear );
 void		trap_R_HUDBufferEnd( void );
-void		trap_R_ScreenOverlayBufferStart( qboolean clear );
-void		trap_R_ScreenOverlayBufferEnd( void );
+void		trap_R_BeginPostBloom2D( void );
+void		trap_R_EndPostBloom2D( void );
 
 // The glconfig_t will not change during the life of a cgame.
 // If it needs to change, the entire cgame will be restarted, because

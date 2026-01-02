@@ -34,7 +34,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../sys/sys_local.h"
 
 #if __ANDROID__
-#include "../vr/vr_input.h"
+#include "../vrcommon/vr_input.h"
 #endif
 
 static cvar_t *in_keyboardDebug     = NULL;
@@ -1202,7 +1202,7 @@ void IN_Frame( void )
 	IN_ProcessEvents( );
 
 #if __ANDROID__
-	IN_VRInputFrame( );
+	VR_ProcessInputActions( );
 #endif
 
 	// Set event time for next frame to earliest possible time an event could happen

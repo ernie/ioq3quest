@@ -31,7 +31,7 @@ MAIN MENU
 
 #include "ui_local.h"
 
-#include "../vr/vr_version.h"
+#include "../vrcommon/vr_version.h"
 
 
 #define ID_SINGLEPLAYER			10

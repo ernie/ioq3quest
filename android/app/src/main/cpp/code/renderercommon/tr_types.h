@@ -23,6 +23,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #ifndef __TR_TYPES_H
 #define __TR_TYPES_H
 
+#define MAX_VIDEO_HANDLES	16
+
+// myftol - used by renderervk for float-to-int conversion
+#define	myftol(x) ((int)(x))
 
 #define	MAX_DLIGHTS		32		// can't be increased, because bit flags are used on surfaces
 
@@ -44,6 +48,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 						// projection matrix won't be hacked to reduce the stereo separation as
 						// is done for the gun.
 
+#define RF_OVERBRIGHT		0x0020		// apply overbright scaling to diffuse lighting
+
 #define	RF_NOSHADOW		0x0040		// don't add stencil shadows
 
 #define RF_LIGHTING_ORIGIN	0x0080		// use refEntity->lightingOrigin instead of refEntity->origin
@@ -54,6 +60,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	RF_SHADOW_PLANE		0x0100		// use refEntity->shadowPlane
 #define	RF_WRAP_FRAMES		0x0200		// mod the model frames by the maxframes to allow continuous
 										// animation without needing to know the frame count
+#define RF_WORLD_ORIENTED	0x0400		// sprite uses entity axis instead of billboarding toward camera
 
 // refdef flags
 #define RDF_NOWORLDMODEL	0x0001		// used for player configuration screen
@@ -111,7 +118,7 @@ typedef struct {
 	qhandle_t	customShader;		// use one image for the entire thing
 
 	// misc
-	byte		shaderRGBA[4];		// colors used by rgbgen entity shaders
+	color4ub_t	shaderRGBA;			// colors used by rgbgen entity shaders
 	float		shaderTexCoord[2];	// texture coordinates used by tcMod entity modifiers
 	float		shaderTime;			// subtracted from refdef time to control effect start times
 

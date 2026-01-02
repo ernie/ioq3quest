@@ -22,9 +22,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //
 // cg_players.c -- handle the media and animation for player entities
 #include "cg_local.h"
-#include "../vr/vr_clientinfo.h"
+#include "../vrcommon/vr_clientinfo.h"
 
 #define PM_SKIN "pm"
+#define FB_SKIN "fb"
 
 extern vr_clientinfo_t* vr;
 extern vmCvar_t	cg_firstPersonBodyScale;
@@ -83,27 +84,34 @@ sfxHandle_t	CG_CustomSound( int clientNum, const char *soundName ) {
 
 /*
 ====================
-CG_ColorFromChar
+CG_ColorFromString
 ====================
 */
-static void CG_ColorFromChar( char v, vec3_t color ) {
+static void CG_ColorFromString( const char *v, vec3_t color ) {
 	int val;
 
-	val = v - '0';
+	VectorClear( color );
+
+	if ( !v || !v[0] ) {
+		VectorSet( color, 1, 1, 1 );
+		return;
+	}
+
+	val = v[0] - '0';
 
 	if ( val < 1 || val > 7 ) {
-		VectorSet( color, 1.0f, 1.0f, 1.0f );
-	} else {
-		VectorClear( color );
-		if ( val & 1 ) {
-			color[0] = 1.0f;
-		}
-		if ( val & 2 ) {
-			color[1] = 1.0f;
-		}
-		if ( val & 4 ) {
-			color[2] = 1.0f;
-		}
+		VectorSet( color, 1, 1, 1 );
+		return;
+	}
+
+	if ( val & 1 ) {
+		color[2] = 1.0f;
+	}
+	if ( val & 2 ) {
+		color[1] = 1.0f;
+	}
+	if ( val & 4 ) {
+		color[0] = 1.0f;
 	}
 }
 
@@ -121,24 +129,24 @@ static void CG_SetColorInfo( const char *color, clientInfo_t *info )
 
 	if ( !color[0] )
 		return;
-	CG_ColorFromChar( color[0], info->headColor );
+	CG_ColorFromString( color, info->headColor );
 
 	if ( !color[1] )
 		return;
-	CG_ColorFromChar( color[1], info->bodyColor );
+	CG_ColorFromString( &color[1], info->bodyColor );
 
 	if ( !color[2] )
 		return;
-	CG_ColorFromChar( color[2], info->legsColor );
+	CG_ColorFromString( &color[2], info->legsColor );
 
 	// override color1/color2 if specified
 	if ( !color[3] )
 		return;
-	CG_ColorFromChar( color[3], info->color1 );
+	CG_ColorFromString( &color[3], info->color1 );
 
 	if ( !color[4] )
 		return;
-	CG_ColorFromChar( color[4], info->color2 );
+	CG_ColorFromString( &color[4], info->color2 );
 }
 
 
@@ -471,6 +479,9 @@ static qboolean	CG_FindClientModelFile( char *filename, int length, clientInfo_t
 	if ( ci->coloredSkin && !Q_stricmp( skinName, PM_SKIN ) ) {
 		team = PM_SKIN;
 	}
+	if ( ci->coloredSkin && !Q_stricmp( skinName, FB_SKIN ) ) {
+		team = FB_SKIN;
+	}
 
 	charactersFolder = "";
 	while(1) {
@@ -551,6 +562,9 @@ static qboolean	CG_FindClientHeadFile( char *filename, int length, clientInfo_t 
 	// colored skins
 	if ( ci->coloredSkin && !Q_stricmp( ci->headSkinName, PM_SKIN ) ) {
 		team = PM_SKIN;
+	}
+	if ( ci->coloredSkin && !Q_stricmp( ci->headSkinName, FB_SKIN ) ) {
+		team = FB_SKIN;
 	}
 
 	if ( headModelName[0] == '*' ) {
@@ -1009,11 +1023,13 @@ static void CG_SetSkinAndModel( clientInfo_t *newInfo,
 	char newSkin[ MAX_QPATH * 2 ];
 	char *skin, *slash;
 	qboolean	pm_model;
+	qboolean	fb_model;
 	team_t		team;
 	const char	*colors;
 
 	team = newInfo->team;
 	pm_model = ( Q_stricmp( cg_enemyModel.string, PM_SKIN ) == 0 ) ? qtrue : qfalse;
+	fb_model = ( Q_stricmp( cg_enemyModel.string, FB_SKIN ) == 0 ) ? qtrue : qfalse;
 
 	if ( cg_forceModel.integer || cg_enemyModel.string[0] || cg_teamModel.string[0] )
 	{
@@ -1021,18 +1037,29 @@ static void CG_SetSkinAndModel( clientInfo_t *newInfo,
 		{
 			// enemy model
 			if ( cg_enemyModel.string[0] && team != myTeam && team != TEAM_SPECTATOR ) {
-				if ( pm_model )
+				if ( pm_model || fb_model ) {
 					Q_strncpyz( modelName, infomodel, modelNameSize );
-				else
+					skin = strchr( modelName, '/' );
+					// force skin
+					if ( pm_model )
+						strcpy( newSkin, PM_SKIN );
+					else
+						strcpy( newSkin, FB_SKIN );
+					if ( skin )
+						*skin = '\0';
+				}
+				else {
 					Q_strncpyz( modelName, cg_enemyModel.string, modelNameSize );
+					skin = strchr( modelName, '/' );
+					if ( !skin ) {
+						Q_strncpyz( newSkin, PM_SKIN, sizeof( newSkin ) );
+					} else {
+						Q_strncpyz( newSkin, skin + 1, sizeof( newSkin ) );
+						*skin = '\0';
+					}
+				}
 
-				skin = strchr( modelName, '/' );
-				// force skin
-				strcpy( newSkin, PM_SKIN );
-				if ( skin )
-					*skin = '\0';
-
-				if ( pm_model && !CG_IsKnownModel( modelName ) ) {
+				if ( ( pm_model || fb_model ) && !CG_IsKnownModel( modelName ) ) {
 					// revert to default model if specified skin is not known
 					Q_strncpyz( modelName, "sarge", modelNameSize );
 				}
@@ -1051,19 +1078,30 @@ static void CG_SetSkinAndModel( clientInfo_t *newInfo,
 			} else if ( cg_teamModel.string[0] && team == myTeam && team != TEAM_SPECTATOR && clientNum != myClientNum ) {
 				// teammodel
 				pm_model = ( Q_stricmp( cg_teamModel.string, PM_SKIN ) == 0 ) ? qtrue : qfalse;
+				fb_model = ( Q_stricmp( cg_teamModel.string, FB_SKIN ) == 0 ) ? qtrue : qfalse;
 
-				if ( pm_model )
+				if ( pm_model || fb_model ) {
 					Q_strncpyz( modelName, infomodel, modelNameSize );
-				else
+					skin = strchr( modelName, '/' );
+					// force skin
+					if ( pm_model )
+						strcpy( newSkin, PM_SKIN );
+					else
+						strcpy( newSkin, FB_SKIN );
+					if ( skin )
+						*skin = '\0';
+				} else {
 					Q_strncpyz( modelName, cg_teamModel.string, modelNameSize );
+					skin = strchr( modelName, '/' );
+					if ( !skin ) {
+						Q_strncpyz( newSkin, PM_SKIN, sizeof( newSkin ) );
+					} else {
+						Q_strncpyz( newSkin, skin + 1, sizeof( newSkin ) );
+						*skin = '\0';
+					}
+				}
 
-				skin = strchr( modelName, '/' );
-				// force skin
-				strcpy( newSkin, PM_SKIN );
-				if ( skin )
-					*skin = '\0';
-
-				if ( pm_model && !CG_IsKnownModel( modelName ) ) {
+				if ( ( pm_model || fb_model ) && !CG_IsKnownModel( modelName ) ) {
 					// revert to default model if specified skin is not known
 					Q_strncpyz( modelName, "sarge", modelNameSize );
 				}
@@ -1106,17 +1144,18 @@ static void CG_SetSkinAndModel( clientInfo_t *newInfo,
 			}
 		} else { // not team game
 
-			if ( pm_model && myClientNum != clientNum && cgs.gametype != GT_SINGLE_PLAYER ) {
+			if ( ( pm_model || fb_model ) && myClientNum != clientNum && cgs.gametype != GT_SINGLE_PLAYER ) {
 				Q_strncpyz( modelName, infomodel, modelNameSize );
 
 				// strip skin name from model name
 				slash = strchr( modelName, '/' );
-				if ( !slash ) {
+				if ( pm_model ) {
 					Q_strncpyz( skinName, PM_SKIN, skinNameSize );
 				} else {
-					Q_strncpyz( skinName, PM_SKIN, skinNameSize );
-					*slash = '\0';
+					Q_strncpyz( skinName, FB_SKIN, skinNameSize );
 				}
+				if ( slash )
+					*slash = '\0';
 
 				if ( !CG_IsKnownModel( modelName ) )
 					Q_strncpyz( modelName, "sarge", modelNameSize );
@@ -1253,10 +1292,10 @@ void CG_NewClientInfo( int clientNum ) {
 
 	// colors
 	v = Info_ValueForKey( configstring, "c1" );
-	CG_ColorFromChar( v[0], newInfo.color1 );
+	CG_ColorFromString( v, newInfo.color1 );
 
 	v = Info_ValueForKey( configstring, "c2" );
-	CG_ColorFromChar( v[0], newInfo.color2 );
+	CG_ColorFromString( v, newInfo.color2 );
 
 	VectorSet( newInfo.headColor, 1.0, 1.0, 1.0 );
 	VectorSet( newInfo.bodyColor, 1.0, 1.0, 1.0 );
@@ -1347,9 +1386,9 @@ void CG_NewClientInfo( int clientNum ) {
 				colors = CG_GetTeamColors( cg_teamColors.string, newInfo.team );
 				len = strlen( colors );
 				if ( len >= 4 )
-					CG_ColorFromChar( colors[3], newInfo.color1 );
+					CG_ColorFromString( &colors[3], newInfo.color1 );
 				if ( len >= 5 )
-					CG_ColorFromChar( colors[4], newInfo.color2 );
+					CG_ColorFromString( &colors[4], newInfo.color2 );
 			}
 		}
 	}
@@ -2308,10 +2347,10 @@ static void CG_PlayerFloatSprite( centity_t *cent, qhandle_t shader ) {
 	ent.customShader = shader;
 	ent.radius = 10;
 	ent.renderfx = rf;
-	ent.shaderRGBA[0] = 255;
-	ent.shaderRGBA[1] = 255;
-	ent.shaderRGBA[2] = 255;
-	ent.shaderRGBA[3] = 255;
+	ent.shaderRGBA.rgba[0] = 255;
+	ent.shaderRGBA.rgba[1] = 255;
+	ent.shaderRGBA.rgba[2] = 255;
+	ent.shaderRGBA.rgba[3] = 255;
 	trap_R_AddRefEntityToScene( &ent );
 }
 
@@ -2759,15 +2798,15 @@ void CG_Player( centity_t *cent ) {
 
 	// colored skin
 	if ( cg_deadBodyDarken.integer && cent->currentState.eFlags & EF_DEAD ) {
-		legs.shaderRGBA[0] = 85;
-		legs.shaderRGBA[1] = 85;
-		legs.shaderRGBA[2] = 85;
+		legs.shaderRGBA.rgba[0] = 85;
+		legs.shaderRGBA.rgba[1] = 85;
+		legs.shaderRGBA.rgba[2] = 85;
 	} else {
-		legs.shaderRGBA[0] = ci->legsColor[0] * 255;
-		legs.shaderRGBA[1] = ci->legsColor[1] * 255;
-		legs.shaderRGBA[2] = ci->legsColor[2] * 255;
+		legs.shaderRGBA.rgba[0] = ci->legsColor[0] * 255;
+		legs.shaderRGBA.rgba[1] = ci->legsColor[1] * 255;
+		legs.shaderRGBA.rgba[2] = ci->legsColor[2] * 255;
 	}
-	legs.shaderRGBA[3] = 255;
+	legs.shaderRGBA.rgba[3] = 255;
 
 	CG_AddRefEntityWithPowerups( &legs, &cent->currentState, ci->team );
 
@@ -2795,15 +2834,15 @@ void CG_Player( centity_t *cent ) {
 
 	// colored skin
 	if ( cg_deadBodyDarken.integer && cent->currentState.eFlags & EF_DEAD ) {
-		torso.shaderRGBA[0] = 85;
-		torso.shaderRGBA[1] = 85;
-		torso.shaderRGBA[2] = 85;
+		torso.shaderRGBA.rgba[0] = 85;
+		torso.shaderRGBA.rgba[1] = 85;
+		torso.shaderRGBA.rgba[2] = 85;
 	} else {
-		torso.shaderRGBA[0] = ci->bodyColor[0] * 255;
-		torso.shaderRGBA[1] = ci->bodyColor[1] * 255;
-		torso.shaderRGBA[2] = ci->bodyColor[2] * 255;
+		torso.shaderRGBA.rgba[0] = ci->bodyColor[0] * 255;
+		torso.shaderRGBA.rgba[1] = ci->bodyColor[1] * 255;
+		torso.shaderRGBA.rgba[2] = ci->bodyColor[2] * 255;
 	}
-	torso.shaderRGBA[3] = 255;
+	torso.shaderRGBA.rgba[3] = 255;
 
 	CG_AddRefEntityWithPowerups( &torso, &cent->currentState, ci->team );
 
@@ -3000,16 +3039,16 @@ void CG_Player( centity_t *cent ) {
 		powerup.origin[2] += -24 + (float) t * 80 / 500;
 		if ( t > 400 ) {
 			c = (float) (t - 1000) * 0xff / 100;
-			powerup.shaderRGBA[0] = 0xff - c;
-			powerup.shaderRGBA[1] = 0xff - c;
-			powerup.shaderRGBA[2] = 0xff - c;
-			powerup.shaderRGBA[3] = 0xff - c;
+			powerup.shaderRGBA.rgba[0] = 0xff - c;
+			powerup.shaderRGBA.rgba[1] = 0xff - c;
+			powerup.shaderRGBA.rgba[2] = 0xff - c;
+			powerup.shaderRGBA.rgba[3] = 0xff - c;
 		}
 		else {
-			powerup.shaderRGBA[0] = 0xff;
-			powerup.shaderRGBA[1] = 0xff;
-			powerup.shaderRGBA[2] = 0xff;
-			powerup.shaderRGBA[3] = 0xff;
+			powerup.shaderRGBA.rgba[0] = 0xff;
+			powerup.shaderRGBA.rgba[1] = 0xff;
+			powerup.shaderRGBA.rgba[2] = 0xff;
+			powerup.shaderRGBA.rgba[3] = 0xff;
 		}
 		trap_R_AddRefEntityToScene( &powerup );
 	}
@@ -3033,15 +3072,15 @@ void CG_Player( centity_t *cent ) {
 
 	// colored skin
 	if ( cg_deadBodyDarken.integer && cent->currentState.eFlags & EF_DEAD ) {
-		head.shaderRGBA[0] = 85;
-		head.shaderRGBA[1] = 85;
-		head.shaderRGBA[2] = 85;
+		head.shaderRGBA.rgba[0] = 85;
+		head.shaderRGBA.rgba[1] = 85;
+		head.shaderRGBA.rgba[2] = 85;
 	} else {
-		head.shaderRGBA[0] = ci->headColor[0] * 255;
-		head.shaderRGBA[1] = ci->headColor[1] * 255;
-		head.shaderRGBA[2] = ci->headColor[2] * 255;
+		head.shaderRGBA.rgba[0] = ci->headColor[0] * 255;
+		head.shaderRGBA.rgba[1] = ci->headColor[1] * 255;
+		head.shaderRGBA.rgba[2] = ci->headColor[2] * 255;
 	}
-	head.shaderRGBA[3] = 255;
+	head.shaderRGBA.rgba[3] = 255;
 
 	if (!firstPersonBody)
 	{

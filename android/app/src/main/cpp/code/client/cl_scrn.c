@@ -22,13 +22,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_scrn.c -- master for refresh, status bar, console, chat, notify, etc
 
 #include "client.h"
-#include "../vr/vr_clientinfo.h"
-#include "../vr/vr_renderer.h"
-#include "../vr/vr_base.h"
+#include "../vrcommon/vr_clientinfo.h"
+#include "../vrcommon/vr_renderer.h"
+#include "../vrcommon/vr_base.h"
 
 extern vr_clientinfo_t vr;
-extern cvar_t *vr_hudDrawStatus;
 extern cvar_t *vr_currentHudDrawStatus;
+
+extern VR_Engine* VR_GetEngine( void );
 
 qboolean	scr_initialized;		// ready to draw
 
@@ -58,6 +59,33 @@ void SCR_DrawNamedPic( float x, float y, float width, float height, const char *
 
 /*
 ================
+SCR_GetViewable4x3Dimensions
+
+Calculate the maximum 4:3 area that fits within the framebuffer.
+For ultra-wide headsets (e.g., Pimax 8KX with ~2:1 ratio), we may be height-limited
+rather than width-limited.
+================
+*/
+static void SCR_GetViewable4x3Dimensions(float *outWidth, float *outHeight) {
+	float fbWidth = cls.glconfig.vidWidth;
+	float fbHeight = cls.glconfig.vidHeight;
+
+	float heightFromWidth = fbWidth * 0.75f;  // 4:3 height if we use full width
+	float widthFromHeight = fbHeight * (4.0f / 3.0f); // 4:3 width if we use full height
+
+	if (heightFromWidth <= fbHeight) {
+		// Normal case: width-limited, full width fits with 4:3 height
+		*outWidth = fbWidth;
+		*outHeight = heightFromWidth;
+	} else {
+		// Ultra-wide case: height-limited, constrain width to fit 4:3
+		*outHeight = fbHeight;
+		*outWidth = widthFromHeight;
+	}
+}
+
+/*
+================
 SCR_AdjustFrom640
 
 Adjusted for resolution and screen aspect ratio
@@ -79,8 +107,9 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 	yscale = cls.glconfig.vidHeight / 480.0;
 
 	if (vr.virtual_screen) {
-		// In virtual screen mode (menus, loading, first-person follow), scale to full framebuffer
-		// No optical offset needed - cylinder layer handles positioning in 3D space
+		// In virtual screen mode, use non-uniform scaling to fill the full framebuffer.
+		// The OpenXR cylinder layer handles 4:3 cropping/display, so we should NOT
+		// pre-correct for aspect ratio here. This matches how UI code works.
 		if (x) {
 			*x *= xscale;
 		}
@@ -238,8 +267,8 @@ static void SCR_DrawChar( int x, int y, float size, int ch ) {
 	size = 0.0625;
 
 	re.DrawStretchPic( ax, ay, aw, ah,
-					   fcol, frow, 
-					   fcol + size, frow + size, 
+					   fcol, frow,
+					   fcol + size, frow + size,
 					   cls.charSetShader );
 }
 
@@ -365,7 +394,6 @@ void SCR_DrawStringExt( int x, int y, float size, const char *string, float *set
 	}
 	re.SetColor( NULL );
 }
-
 
 /*
 ==================
@@ -493,6 +521,7 @@ void SCR_DrawSmallStringExtScaled( int x, int y, const char *string, float *setC
 }
 
 
+
 /*
 ** SCR_Strlen -- skips color escape codes
 */
@@ -514,7 +543,7 @@ static int SCR_Strlen( const char *str ) {
 
 /*
 ** SCR_GetBigStringWidth
-*/ 
+*/
 int	SCR_GetBigStringWidth( const char *str ) {
 	return SCR_Strlen( str ) * BIGCHAR_WIDTH;
 }
@@ -626,7 +655,7 @@ void SCR_DrawDebugGraph (void)
 	x = 0;
 	y = cls.glconfig.vidHeight;
 	re.SetColor( g_color_table[0] );
-	re.DrawStretchPic(x, y - cl_graphheight->integer, 
+	re.DrawStretchPic(x, y - cl_graphheight->integer,
 		w, cl_graphheight->integer, 0, 0, 0, 0, cls.whiteShader );
 	re.SetColor( NULL );
 
@@ -635,7 +664,7 @@ void SCR_DrawDebugGraph (void)
 		i = (ARRAY_LEN(values)+current-1-(a % ARRAY_LEN(values))) % ARRAY_LEN(values);
 		v = values[i];
 		v = v * cl_graphscale->integer + cl_graphshift->integer;
-		
+
 		if (v < 0)
 			v += cl_graphheight->integer * (1+(int)(-v / cl_graphheight->integer));
 		h = (int)v % cl_graphheight->integer;
@@ -734,21 +763,21 @@ void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 
 	// the menu draws next
 	if ( Key_GetCatcher( ) & KEYCATCH_UI && uivm ) {
-		// During SP intermission, render UI to overlay buffer to avoid stereo doubling
-		// The 3D scene (podium) renders normally, but UI needs to be head-locked
+		// During SP intermission, render UI to HUD buffer for world-locked display at podium
+		// The HUD sprite is positioned at the podium location for this
 		qboolean isSPIntermission = (cl.snap.ps.pm_type == PM_INTERMISSION) &&
 		                            (Cvar_VariableValue("g_gametype") == GT_SINGLE_PLAYER);
 		if (isSPIntermission) {
-			re.ScreenOverlayBufferStart(qfalse);  // Don't clear - append to existing
+			re.HUDBufferStart(qtrue);  // Clear for fresh UI render
 		}
 		VM_Call( uivm, UI_REFRESH, cls.realtime );
 		if (isSPIntermission) {
-			re.ScreenOverlayBufferEnd();
+			re.HUDBufferEnd();
 		}
 	}
 
 	// console draws next
-	Con_DrawConsole ();
+	Con_DrawConsole();
 
 	// virtual keyboard draws on top of console/UI
 	VKeyboard_Draw();
@@ -783,15 +812,13 @@ void SCR_UpdateScreen( void ) {
 	// that case.
 	if( uivm || com_dedicated->integer )
 	{
-		// During loading states, set up VR framebuffer BEFORE rendering so loading screen
-		// gets drawn to the correct buffer for VR submission
-		VR_PrepareLoadingFrame( VR_GetEngine() );
-
+#if 0
 		// XXX
 		int in_anaglyphMode = Cvar_VariableIntegerValue("r_anaglyphMode");
 		// if running in stereo, we need to draw the frame twice
-		if ( qfalse )//cls.glconfig.stereoEnabled || in_anaglyphMode)
-		{
+		if ( cls.glconfig.stereoEnabled || in_anaglyphMode) {
+#endif
+		if (qfalse) {
 			SCR_DrawScreenField( STEREO_LEFT );
 			SCR_DrawScreenField( STEREO_RIGHT );
 		} else {
@@ -805,11 +832,10 @@ void SCR_UpdateScreen( void ) {
 		}
 
 		// During loading states (CA_LOADING/CA_PRIMED), SCR_UpdateScreen is called repeatedly
-		// from within CG_Init (before Com_Frame returns). We need to submit VR frames during
+		// from within CG_INIT (before Com_Frame returns). We need to submit VR frames during
 		// this time so the loading screen is visible in the headset.
-		VR_SubmitLoadingFrame( VR_GetEngine() );
+		VR_Renderer_SubmitLoadingFrame(VR_GetEngine());
 	}
 
 	recursive = 0;
 }
-

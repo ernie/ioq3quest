@@ -1531,9 +1531,9 @@ void R_Init( void ) {
 RE_Shutdown
 ===============
 */
-void RE_Shutdown( qboolean destroyWindow ) {	
+void RE_Shutdown( refShutdownCode_t code ) {
 
-	ri.Printf( PRINT_ALL, "RE_Shutdown( %i )\n", destroyWindow );
+	ri.Printf( PRINT_ALL, "RE_Shutdown( %i )\n", code );
 
 	ri.Cmd_RemoveCommand( "imagelist" );
 	ri.Cmd_RemoveCommand( "shaderlist" );
@@ -1567,7 +1567,7 @@ void RE_Shutdown( qboolean destroyWindow ) {
 	R_DoneFreeType();
 
 	// shut down platform specific OpenGL stuff
-	if ( destroyWindow ) {
+	if ( code >= REF_DESTROY_WINDOW ) {
 		GLimp_Shutdown();
 
 		Com_Memset( &glConfig, 0, sizeof( glConfig ) );
@@ -1659,6 +1659,8 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 	re.RenderScene = RE_RenderScene;
 	re.HUDBufferStart = RE_HUDBufferStart;
 	re.HUDBufferEnd = RE_HUDBufferEnd;
+	re.BeginPostBloom2D = RE_BeginPostBloom2D;
+	re.EndPostBloom2D = RE_EndPostBloom2D;
 
 	re.SetColor = RE_SetColor;
 	re.DrawStretchPic = RE_StretchPic;
