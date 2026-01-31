@@ -1465,7 +1465,9 @@ extern	cvar_t	*r_printShaders;
 extern cvar_t	*r_marksOnTriangleMeshes;
 
 extern cvar_t	*vr_currentHudDrawStatus;	// 0 - no hud, 1 - in-world hud, 2 - performance (overlay)
-extern cvar_t	*vr_currentHudDepth;		// Current HUD depth (0-20, copied from vr_hudDepth during gameplay)
+extern cvar_t	*vr_currentHudDepth;		// Current HUD depth (0-5, copied from vr_hudDepth during gameplay)
+extern cvar_t	*vr_hudScale;				// HUD scale factor
+extern cvar_t	*vr_hudYOffset;				// HUD vertical offset
 
 //====================================================================
 

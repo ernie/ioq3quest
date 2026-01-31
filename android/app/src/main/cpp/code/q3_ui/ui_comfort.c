@@ -51,8 +51,6 @@ COMFORT OPTIONS MENU
 
 #define ID_BACK					136
 
-#define	NUM_HUDDEPTH			6
-
 
 typedef struct {
 	menuframework_s		menu;
@@ -83,7 +81,7 @@ static void Comfort_SetMenuItems( void ) {
 	s_comfort.rollhit.curvalue				= trap_Cvar_VariableValue( "vr_rollWhenHit" ) != 0;
 	s_comfort.smoothfollow.curvalue			= trap_Cvar_VariableValue( "cg_smoothFollow" ) != 0;
 	s_comfort.hapticintensity.curvalue		= trap_Cvar_VariableValue( "vr_hapticIntensity" );
-	s_comfort.huddepth.curvalue				= (int)trap_Cvar_VariableValue( "vr_hudDepth" ) % NUM_HUDDEPTH;
+	s_comfort.huddepth.curvalue				= trap_Cvar_VariableValue( "vr_hudDepth" );
 	s_comfort.hudyoffset.curvalue			= trap_Cvar_VariableValue( "vr_hudYOffset" ) + 200;
 	s_comfort.hudscale.curvalue				= trap_Cvar_VariableValue( "vr_hudScale" );
 	s_comfort.screencurvature.curvalue		= trap_Cvar_VariableValue( "vr_screenCurvature" );
@@ -117,7 +115,7 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 			break;
 
 		case ID_HUDDEPTH:
-			trap_Cvar_SetValue( "vr_hudDepth", ((int)s_comfort.huddepth.curvalue % NUM_HUDDEPTH));
+			trap_Cvar_SetValue( "vr_hudDepth", s_comfort.huddepth.curvalue );
 			break;
 
 		case ID_HUDYOFFSET:

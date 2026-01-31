@@ -3520,7 +3520,8 @@ void CG_DrawActive( void ) {
 		qboolean worldOrientedSprite = qfalse;
 
 		float scale = trap_Cvar_VariableValue("vr_worldscaleScaler");
-		float dist = (trap_Cvar_VariableValue("vr_currentHudDepth")+3) * 3 * scale;
+		// Distance formula: depth 0-5 maps to 9-54 units (before worldscale)
+		float dist = (trap_Cvar_VariableValue("vr_currentHudDepth") + 1) * 9 * scale;
 		float radius = (dist / 3.0f) * trap_Cvar_VariableValue("vr_hudScale");
 
 		if (isSPIntermission)
