@@ -543,9 +543,11 @@ void main() {
 		base.rgb = mix(base.rgb, luma, post_bloom_greyscale);
 	}
 
-	// Gamma correction
+	// Gamma correction and overbright
 	if ( post_bloom_gamma != 1.0 ) {
 		base.rgb = pow(base.rgb, vec3(post_bloom_gamma)) * post_bloom_obScale;
+	} else {
+		base.rgb = base.rgb * post_bloom_obScale;
 	}
 
 	// Dithering (after gamma, matching gamma_subpass.frag order)
