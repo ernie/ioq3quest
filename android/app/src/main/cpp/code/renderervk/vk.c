@@ -132,11 +132,6 @@ static PFN_vkResetFences								qvkResetFences;
 static PFN_vkUnmapMemory								qvkUnmapMemory;
 static PFN_vkUpdateDescriptorSets						qvkUpdateDescriptorSets;
 static PFN_vkWaitForFences								qvkWaitForFences;
-static PFN_vkAcquireNextImageKHR						qvkAcquireNextImageKHR;
-static PFN_vkCreateSwapchainKHR							qvkCreateSwapchainKHR;
-static PFN_vkDestroySwapchainKHR						qvkDestroySwapchainKHR;
-static PFN_vkGetSwapchainImagesKHR						qvkGetSwapchainImagesKHR;
-static PFN_vkQueuePresentKHR							qvkQueuePresentKHR;
 
 static PFN_vkGetBufferMemoryRequirements2KHR			qvkGetBufferMemoryRequirements2KHR;
 static PFN_vkGetImageMemoryRequirements2KHR				qvkGetImageMemoryRequirements2KHR;
@@ -500,193 +495,6 @@ static void vk_set_object_name( uint64_t obj, const char *objName, VkDebugReport
 		info.pObjectName = objName;
 		qvkDebugMarkerSetObjectNameEXT( vk.device, &info );
 	}
-}
-
-
-static void vk_create_swapchain( VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface, VkSurfaceFormatKHR surface_format, VkSwapchainKHR *swapchain, qboolean verbose ) {
-	VkSurfaceCapabilitiesKHR surface_caps;
-	VkExtent2D image_extent;
-	uint32_t present_mode_count, i;
-	VkPresentModeKHR present_mode;
-	VkPresentModeKHR *present_modes;
-	uint32_t image_count;
-	VkSwapchainCreateInfoKHR desc;
-	qboolean mailbox_supported = qfalse;
-	qboolean immediate_supported = qfalse;
-	qboolean fifo_relaxed_supported = qfalse;
-	int v;
-
-	// Quest/Android: no desktop surface, no swapchain needed (XR provides swapchains)
-	if ( surface == VK_NULL_HANDLE ) {
-		*swapchain = VK_NULL_HANDLE;
-		return;
-	}
-
-	VK_CHECK( qvkGetPhysicalDeviceSurfaceCapabilitiesKHR( physical_device, surface, &surface_caps ) );
-
-	image_extent = surface_caps.currentExtent;
-	if ( image_extent.width == 0xffffffff && image_extent.height == 0xffffffff ) {
-		image_extent.width = MIN( surface_caps.maxImageExtent.width, MAX( surface_caps.minImageExtent.width, (uint32_t) glConfig.vidWidth ) );
-		image_extent.height = MIN( surface_caps.maxImageExtent.height, MAX( surface_caps.minImageExtent.height, (uint32_t) glConfig.vidHeight ) );
-	}
-
-	// Validate extent - can be 0x0 when window is minimized or in invalid state
-	if ( image_extent.width == 0 || image_extent.height == 0 ) {
-		if ( verbose ) {
-			ri.Printf( PRINT_WARNING, "Invalid swapchain extent %ux%u, deferring creation\n",
-				image_extent.width, image_extent.height );
-		}
-		*swapchain = VK_NULL_HANDLE;
-		return;
-	}
-
-	vk.clearAttachment = qtrue;
-
-	// determine present mode and swapchain image count
-	VK_CHECK(qvkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, NULL));
-
-	present_modes = (VkPresentModeKHR *) ri.Malloc( present_mode_count * sizeof( VkPresentModeKHR ) );
-	VK_CHECK(qvkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_mode_count, present_modes));
-
-	if ( verbose ) {
-		ri.Printf( PRINT_ALL, "...presentation modes:" );
-	}
-	for ( i = 0; i < present_mode_count; i++ ) {
-		if ( verbose ) {
-			ri.Printf( PRINT_ALL, " %s", pmode_to_str( present_modes[i] ) );
-		}
-		if ( present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR )
-			mailbox_supported = qtrue;
-		else if ( present_modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR )
-			immediate_supported = qtrue;
-		else if ( present_modes[i] == VK_PRESENT_MODE_FIFO_RELAXED_KHR )
-			fifo_relaxed_supported = qtrue;
-	}
-	if ( verbose ) {
-		ri.Printf( PRINT_ALL, "\n" );
-	}
-
-	ri.Free( present_modes );
-
-	if ( ( v = ri.Cvar_VariableIntegerValue( "r_swapInterval" ) ) != 0 ) {
-		if ( v == 2 && mailbox_supported )
-			present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-		else if ( fifo_relaxed_supported )
-			present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-		else
-			present_mode = VK_PRESENT_MODE_FIFO_KHR;
-		image_count = MAX( MIN_SWAPCHAIN_IMAGES_FIFO, surface_caps.minImageCount );
-	} else {
-		if ( immediate_supported ) {
-			present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-			image_count = MAX( MIN_SWAPCHAIN_IMAGES_IMM, surface_caps.minImageCount );
-		} else if ( mailbox_supported ) {
-			present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-			image_count = MAX( MIN_SWAPCHAIN_IMAGES_MAILBOX, surface_caps.minImageCount );
-		} else if ( fifo_relaxed_supported ) {
-			present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-			image_count = MAX( MIN_SWAPCHAIN_IMAGES_FIFO, surface_caps.minImageCount );
-		} else {
-			present_mode = VK_PRESENT_MODE_FIFO_KHR;
-			image_count = MAX( MIN_SWAPCHAIN_IMAGES_FIFO, surface_caps.minImageCount );
-		}
-	}
-
-	if ( image_count < 2 ) {
-		image_count = 2;
-	}
-
-	if ( surface_caps.maxImageCount == 0 && present_mode == VK_PRESENT_MODE_FIFO_KHR ) {
-		image_count = MAX( MIN_SWAPCHAIN_IMAGES_FIFO_0, surface_caps.minImageCount );
-	} else if ( surface_caps.maxImageCount > 0 ) {
-		image_count = MIN( MIN( image_count, surface_caps.maxImageCount ), MAX_SWAPCHAIN_IMAGES );
-	}
-
-	if ( verbose ) {
-		ri.Printf( PRINT_ALL, "...selected presentation mode: %s, image count: %i\n", pmode_to_str( present_mode ), image_count );
-	}
-
-	// create swap chain
-	desc.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-	desc.pNext = NULL;
-	desc.flags = 0;
-	desc.surface = surface;
-	desc.minImageCount = image_count;
-	desc.imageFormat = surface_format.format;
-	desc.imageColorSpace = surface_format.colorSpace;
-	desc.imageExtent = image_extent;
-	desc.imageArrayLayers = 1;
-	desc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-	// Always add transfer bits - needed for:
-	// - TRANSFER_DST_BIT: vkCmdClearColorImage (r_clear) and blit destination (VR mirror)
-	// - TRANSFER_SRC_BIT: screenshots
-	desc.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-	desc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	desc.queueFamilyIndexCount = 0;
-	desc.pQueueFamilyIndices = NULL;
-	desc.preTransform = surface_caps.currentTransform;
-	//desc.compositeAlpha = get_composite_alpha( surface_caps.supportedCompositeAlpha );
-	desc.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	desc.presentMode = present_mode;
-	desc.clipped = VK_TRUE;
-	desc.oldSwapchain = VK_NULL_HANDLE;
-
-	ri.Printf( PRINT_ALL, "...creating swapchain: %dx%d, format %d\n", image_extent.width, image_extent.height, surface_format.format );
-	ri.Printf( PRINT_ALL, "   surface=%p, device=%p, queueFamily=%d\n", (void*)surface, (void*)device, vk.queue_family_index );
-	fflush( stdout );
-	fflush( stderr );
-	if ( qvkCreateSwapchainKHR == NULL ) {
-		ri.Error( ERR_FATAL, "qvkCreateSwapchainKHR is NULL!" );
-		return;
-	}
-	{
-		VkResult swapResult = qvkCreateSwapchainKHR( device, &desc, NULL, swapchain );
-		ri.Printf( PRINT_ALL, "...swapchain creation returned: %d\n", swapResult );
-		fflush( stdout );
-		if ( swapResult != VK_SUCCESS ) {
-			ri.Error( ERR_FATAL, "vkCreateSwapchainKHR failed: %s", vk_result_string( swapResult ) );
-			return;
-		}
-	}
-
-	ri.Printf( PRINT_ALL, "...getting swapchain images\n" );
-	fflush( stdout );
-	VK_CHECK( qvkGetSwapchainImagesKHR( vk.device, vk.swapchain, &vk.swapchain_image_count, NULL ) );
-	vk.swapchain_image_count = MIN( vk.swapchain_image_count, MAX_SWAPCHAIN_IMAGES );
-	VK_CHECK( qvkGetSwapchainImagesKHR( vk.device, vk.swapchain, &vk.swapchain_image_count, vk.swapchain_images ) );
-	ri.Printf( PRINT_ALL, "...got %d swapchain images\n", vk.swapchain_image_count );
-	fflush( stdout );
-
-	for ( i = 0; i < vk.swapchain_image_count; i++ ) {
-		SET_OBJECT_NAME( vk.swapchain_images[i], va( "swapchain image %i", i ), VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT );
-	}
-
-	ri.Printf( PRINT_ALL, "...creating swapchain semaphores\n" );
-	fflush( stdout );
-	for ( i = 0; i < vk.swapchain_image_count; i++ ) {
-		VkSemaphoreCreateInfo s;
-		s.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-		s.pNext = NULL;
-		s.flags = 0;
-		VK_CHECK( qvkCreateSemaphore( vk.device, &s, NULL, &vk.swapchain_rendering_finished[i] ) );
-		SET_OBJECT_NAME( vk.swapchain_rendering_finished[i], va( "swapchain_rendering_finished semaphore %i", i ), VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT );
-	}
-	ri.Printf( PRINT_ALL, "...swapchain semaphores created\n" );
-	fflush( stdout );
-
-	if ( vk.initSwapchainLayout != VK_IMAGE_LAYOUT_UNDEFINED ) {
-		VkCommandBuffer command_buffer = begin_command_buffer();
-
-		for ( i = 0; i < vk.swapchain_image_count; i++ ) {
-			record_image_layout_transition( command_buffer, vk.swapchain_images[i],
-				VK_IMAGE_ASPECT_COLOR_BIT,
-				VK_IMAGE_LAYOUT_UNDEFINED, vk.initSwapchainLayout, 0, 0 );
-		}
-
-		end_command_buffer( command_buffer, __func__ );
-	}
-	ri.Printf( PRINT_ALL, "...swapchain creation complete\n" );
-	fflush( stdout );
 }
 
 
@@ -2644,11 +2452,6 @@ static void init_vulkan_library( void )
 	INIT_DEVICE_FUNCTION(vkUnmapMemory)
 	INIT_DEVICE_FUNCTION(vkUpdateDescriptorSets)
 	INIT_DEVICE_FUNCTION(vkWaitForFences)
-	INIT_DEVICE_FUNCTION(vkAcquireNextImageKHR)
-	INIT_DEVICE_FUNCTION(vkCreateSwapchainKHR)
-	INIT_DEVICE_FUNCTION(vkDestroySwapchainKHR)
-	INIT_DEVICE_FUNCTION(vkGetSwapchainImagesKHR)
-	INIT_DEVICE_FUNCTION(vkQueuePresentKHR)
 
 	if ( vk.dedicatedAllocation ) {
 		INIT_DEVICE_FUNCTION_EXT(vkGetBufferMemoryRequirements2KHR);
@@ -2804,11 +2607,6 @@ static void deinit_device_functions( void )
 	qvkUnmapMemory								= NULL;
 	qvkUpdateDescriptorSets						= NULL;
 	qvkWaitForFences							= NULL;
-	qvkAcquireNextImageKHR						= NULL;
-	qvkCreateSwapchainKHR						= NULL;
-	qvkDestroySwapchainKHR						= NULL;
-	qvkGetSwapchainImagesKHR					= NULL;
-	qvkQueuePresentKHR							= NULL;
 
 	qvkGetBufferMemoryRequirements2KHR			= NULL;
 	qvkGetImageMemoryRequirements2KHR			= NULL;
@@ -2855,6 +2653,30 @@ static void vk_create_layout_binding( int binding, VkDescriptorType type, VkShad
 	desc.pBindings = &bind;
 
 	VK_CHECK( qvkCreateDescriptorSetLayout(vk.device, &desc, NULL, layout ) );
+}
+
+
+static void vk_create_4sampler_layout( VkDescriptorSetLayout *layout )
+{
+	VkDescriptorSetLayoutBinding bindings[4];
+	VkDescriptorSetLayoutCreateInfo desc;
+	int i;
+
+	for ( i = 0; i < 4; i++ ) {
+		bindings[i].binding = i;
+		bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[i].descriptorCount = 1;
+		bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[i].pImmutableSamplers = NULL;
+	}
+
+	desc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	desc.pNext = NULL;
+	desc.flags = 0;
+	desc.bindingCount = 4;
+	desc.pBindings = bindings;
+
+	VK_CHECK( qvkCreateDescriptorSetLayout( vk.device, &desc, NULL, layout ) );
 }
 
 
@@ -3057,6 +2879,48 @@ void vk_update_attachment_descriptors( void ) {
 			qvkUpdateDescriptorSets( vk.device, 1, &desc, 0, NULL );
 		}
 	}
+}
+
+
+static void vk_update_bloom_blur_combined_descriptor( void )
+{
+	VkDescriptorImageInfo imageInfo[4];
+	VkWriteDescriptorSet writes[4];
+	Vk_Sampler_Def samplerDef;
+	int i;
+	int blurResultIndices[4] = { 1, 3, 5, 7 };  // Blur outputs at odd indices
+
+	if ( vk.bloom_blur_combined_descriptor == VK_NULL_HANDLE )
+		return;
+
+	Com_Memset( &samplerDef, 0, sizeof( samplerDef ) );
+	samplerDef.gl_mag_filter = GL_LINEAR;
+	samplerDef.gl_min_filter = GL_LINEAR;
+	samplerDef.address_mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerDef.max_lod_1_0 = qtrue;
+	samplerDef.noAnisotropy = qtrue;
+
+	for ( i = 0; i < 4; i++ ) {
+		int idx = blurResultIndices[i];
+		if ( vk.bloom_image_view[idx] == VK_NULL_HANDLE )
+			return;  // Not ready yet
+
+		Com_Memset( &imageInfo[i], 0, sizeof( imageInfo[i] ) );
+		imageInfo[i].sampler = vk_find_sampler( &samplerDef );
+		imageInfo[i].imageView = vk.bloom_image_view[idx];
+		imageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		Com_Memset( &writes[i], 0, sizeof( writes[i] ) );
+		writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[i].dstSet = vk.bloom_blur_combined_descriptor;
+		writes[i].dstBinding = i;
+		writes[i].dstArrayElement = 0;
+		writes[i].descriptorCount = 1;
+		writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		writes[i].pImageInfo = &imageInfo[i];
+	}
+
+	qvkUpdateDescriptorSets( vk.device, 4, writes, 0, NULL );
 }
 
 
@@ -4366,19 +4230,6 @@ static void vk_destroy_framebuffers( void ) {
 }
 
 
-static void vk_destroy_swapchain( void ) {
-	uint32_t i;
-
-	for ( i = 0; i < vk.swapchain_image_count; i++ ) {
-		if ( vk.swapchain_rendering_finished[i] != VK_NULL_HANDLE ) {
-			qvkDestroySemaphore( vk.device, vk.swapchain_rendering_finished[i], NULL );
-			vk.swapchain_rendering_finished[i] = VK_NULL_HANDLE;
-		}
-	}
-
-	qvkDestroySwapchainKHR( vk.device, vk.swapchain, NULL );
-}
-
 static void vk_destroy_attachments( void );
 static void vk_destroy_render_passes( void );
 static void vk_destroy_pipelines( qboolean resetCount );
@@ -4696,21 +4547,21 @@ void vk_initialize( void )
 	// Descriptor pool.
 	//
 	{
-		VkDescriptorPoolSize pool_size[3];
+		VkDescriptorPoolSize pool_size[4];
 		VkDescriptorPoolCreateInfo desc;
 		uint32_t i, maxSets;
 
 		pool_size[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + VK_NUM_BLOOM_PASSES * 2; // color, screenmap, bloom descriptors
+		pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + VK_NUM_BLOOM_PASSES * 2 + 4; // color, screenmap, bloom descriptors, +4 for combined blur descriptor
 
 		pool_size[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		pool_size[1].descriptorCount = NUM_COMMAND_BUFFERS;
 
-		//pool_size[2].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		//pool_size[2].descriptorCount = NUM_COMMAND_BUFFERS;
+		pool_size[2].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		pool_size[2].descriptorCount = NUM_COMMAND_BUFFERS;
 
-		pool_size[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-		pool_size[2].descriptorCount = 1;
+		pool_size[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+		pool_size[3].descriptorCount = 1;
 
 		for ( i = 0, maxSets = 0; i < ARRAY_LEN( pool_size ); i++ ) {
 			maxSets += pool_size[i].descriptorCount;
@@ -4733,6 +4584,7 @@ void vk_initialize( void )
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_uniform );
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage );
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_input_attachment );
+	vk_create_4sampler_layout( &vk.set_layout_4samplers );
 
 	//
 	// Pipeline layouts.
@@ -4820,14 +4672,11 @@ void vk_initialize( void )
 		// Gamma-only subpass: just input attachment
 		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_subpass_gamma ) );
 
-		// Composite subpass: input attachment + 4 bloom samplers + push constant for bloom UV offset
+		// Composite subpass: input attachment + combined 4-sampler bloom layout + push constant for bloom UV offset
 		set_layouts[0] = vk.set_layout_input_attachment;
-		set_layouts[1] = vk.set_layout_sampler; // blur 0
-		set_layouts[2] = vk.set_layout_sampler; // blur 1
-		set_layouts[3] = vk.set_layout_sampler; // blur 2
-		set_layouts[4] = vk.set_layout_sampler; // blur 3
+		set_layouts[1] = vk.set_layout_4samplers; // all 4 blur results in one descriptor set
 
-		desc.setLayoutCount = 5;
+		desc.setLayoutCount = 2;
 
 		// Push constant for bloom UV reprojection offset (vec2)
 		push_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -5107,7 +4956,7 @@ void vk_shutdown( refShutdownCode_t code )
 {
 	int i, j, k, l;
 
-	if ( qvkQueuePresentKHR == NULL ) { // not fully initialized
+	if ( !vk.active ) { // not fully initialized
 		goto __cleanup;
 	}
 
@@ -5122,8 +4971,6 @@ void vk_shutdown( refShutdownCode_t code )
 	vk_destroy_render_passes();
 
 	vk_destroy_attachments();
-
-	vk_destroy_swapchain();
 
 	if ( vk.pipelineCache != VK_NULL_HANDLE ) {
 		qvkDestroyPipelineCache( vk.device, vk.pipelineCache, NULL );
@@ -5140,6 +4987,10 @@ void vk_shutdown( refShutdownCode_t code )
 	if ( vk.set_layout_input_attachment != VK_NULL_HANDLE ) {
 		qvkDestroyDescriptorSetLayout(vk.device, vk.set_layout_input_attachment, NULL);
 		vk.set_layout_input_attachment = VK_NULL_HANDLE;
+	}
+	if ( vk.set_layout_4samplers != VK_NULL_HANDLE ) {
+		qvkDestroyDescriptorSetLayout(vk.device, vk.set_layout_4samplers, NULL);
+		vk.set_layout_4samplers = VK_NULL_HANDLE;
 	}
 
 	qvkDestroyPipelineLayout(vk.device, vk.pipeline_layout, NULL);
@@ -8634,7 +8485,7 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 	if ( vk.depth_image != VK_NULL_HANDLE ) {
 		record_image_layout_transition( vk.cmd->command_buffer,
 			vk.depth_image,
-			VK_IMAGE_ASPECT_DEPTH_BIT,
+			VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 			0, 0 );
@@ -8664,7 +8515,7 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 		// Transition XR depth swapchain image
 		record_image_layout_transition( vk.cmd->command_buffer,
 			vk.xr.depthInfo->images[depthIndex],
-			VK_IMAGE_ASPECT_DEPTH_BIT,
+			VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 			0, 0 );
@@ -9195,18 +9046,15 @@ void vk_finish_subpass_post( void )
 		qvkCmdBindPipeline( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			vk.final_composite_subpass_pipeline );
 
-		// Bind input attachment (set 0) and bloom blur textures (sets 1-4)
+		// Bind input attachment (set 0) and combined bloom blur textures (set 1)
 		// Note: We use previous frame's blur results (one-frame latency, acceptable at 72+ Hz)
 		{
-			VkDescriptorSet descriptorSets[5];
+			VkDescriptorSet descriptorSets[2];
 			descriptorSets[0] = vk.transient.input_descriptor;
-			descriptorSets[1] = vk.bloom_image_descriptor[1];  // blur pass 0 result
-			descriptorSets[2] = vk.bloom_image_descriptor[3];  // blur pass 1 result
-			descriptorSets[3] = vk.bloom_image_descriptor[5];  // blur pass 2 result
-			descriptorSets[4] = vk.bloom_image_descriptor[7];  // blur pass 3 result
+			descriptorSets[1] = vk.bloom_blur_combined_descriptor;
 
 			qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-				vk.pipeline_layout_subpass_composite, 0, 5, descriptorSets, 0, NULL );
+				vk.pipeline_layout_subpass_composite, 0, 2, descriptorSets, 0, NULL );
 		}
 
 		// Push bloom UV reprojection offset to compensate for head rotation
@@ -9926,13 +9774,13 @@ qboolean vk_create_hud_buffer( void )
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, 0 );
 
 		// Initialize depth image: transition to TRANSFER_DST and clear to 0.0 (reversed depth)
-		record_image_layout_transition( cmdBuf, xr->hudDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+		record_image_layout_transition( cmdBuf, xr->hudDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, 0 );
 
 		clearDepth.depth = 0.0f;  // USE_REVERSED_DEPTH: 0.0 = farthest
 		clearDepth.stencil = 0;
 
-		range.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		range.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
 		qvkCmdClearDepthStencilImage( cmdBuf, xr->hudDepthImage,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearDepth, 1, &range );
@@ -9941,7 +9789,7 @@ qboolean vk_create_hud_buffer( void )
 		// The render pass requires initialLayout=DEPTH_STENCIL_ATTACHMENT_OPTIMAL because
 		// the HUD pass may run multiple times per frame (cgame + console notify), and
 		// subsequent passes need the image in the correct layout
-		record_image_layout_transition( cmdBuf, xr->hudDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT,
+		record_image_layout_transition( cmdBuf, xr->hudDepthImage, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 0, 0 );
 
 		VK_CHECK( qvkEndCommandBuffer( cmdBuf ) );
@@ -10282,6 +10130,19 @@ static qboolean vk_create_xr_bloom_descriptors( void )
 		qvkUpdateDescriptorSets( vk.device, 1, &writeSet, 0, NULL );
 	}
 
+	// Allocate combined 4-sampler descriptor for composite subpass
+	{
+		VkDescriptorSetAllocateInfo combAllocInfo;
+		Com_Memset( &combAllocInfo, 0, sizeof( combAllocInfo ) );
+		combAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		combAllocInfo.descriptorPool = vk.descriptor_pool;
+		combAllocInfo.descriptorSetCount = 1;
+		combAllocInfo.pSetLayouts = &vk.set_layout_4samplers;
+		VK_CHECK( qvkAllocateDescriptorSets( vk.device, &combAllocInfo, &vk.bloom_blur_combined_descriptor ) );
+	}
+
+	vk_update_bloom_blur_combined_descriptor();
+
 	ri.Printf( PRINT_ALL, "...bloom chain descriptors created\n" );
 	return qtrue;
 }
@@ -10343,6 +10204,19 @@ static qboolean vk_reallocate_xr_fbo_descriptors( void )
 
 				qvkUpdateDescriptorSets( vk.device, 1, &writeSet, 0, NULL );
 			}
+
+			// Reallocate combined blur descriptor
+			{
+				VkDescriptorSetAllocateInfo combAllocInfo;
+				Com_Memset( &combAllocInfo, 0, sizeof( combAllocInfo ) );
+				combAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+				combAllocInfo.descriptorPool = vk.descriptor_pool;
+				combAllocInfo.descriptorSetCount = 1;
+				combAllocInfo.pSetLayouts = &vk.set_layout_4samplers;
+				VK_CHECK( qvkAllocateDescriptorSets( vk.device, &combAllocInfo, &vk.bloom_blur_combined_descriptor ) );
+			}
+
+			vk_update_bloom_blur_combined_descriptor();
 		}
 	}
 

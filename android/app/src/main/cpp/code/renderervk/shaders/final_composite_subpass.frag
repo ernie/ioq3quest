@@ -5,10 +5,11 @@
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput sceneColor;
 
 // Bloom blur samplers (from previous frame's blur passes)
+// All 4 blur textures in one descriptor set with different bindings (Quest 2 compat)
 layout(set = 1, binding = 0) uniform sampler2DArray texture0;  // blur 0
-layout(set = 2, binding = 0) uniform sampler2DArray texture1;  // blur 1
-layout(set = 3, binding = 0) uniform sampler2DArray texture2;  // blur 2
-layout(set = 4, binding = 0) uniform sampler2DArray texture3;  // blur 3
+layout(set = 1, binding = 1) uniform sampler2DArray texture1;  // blur 1
+layout(set = 1, binding = 2) uniform sampler2DArray texture2;  // blur 2
+layout(set = 1, binding = 3) uniform sampler2DArray texture3;  // blur 3
 
 // Push constant for bloom UV reprojection (compensates for head rotation)
 layout(push_constant) uniform PushConstants {

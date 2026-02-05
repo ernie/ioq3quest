@@ -474,6 +474,7 @@ typedef struct {
 	VkDescriptorSetLayout set_layout_uniform;	// dynamic uniform buffer
 	VkDescriptorSetLayout set_layout_storage;	// feedback buffer
 	VkDescriptorSetLayout set_layout_input_attachment;	// subpass input attachment
+	VkDescriptorSetLayout set_layout_4samplers;			// 4 combined image samplers for bloom blur
 
 	VkPipelineLayout pipeline_layout;			// main shaders (128-byte push constants for per-eye MVP)
 	VkPipelineLayout pipeline_layout_storage;	// flare test shader layout
@@ -493,6 +494,7 @@ typedef struct {
 	VkImageView bloom_image_view[1+VK_NUM_BLOOM_PASSES*2];
 
 	VkDescriptorSet bloom_image_descriptor[1+VK_NUM_BLOOM_PASSES*2];
+	VkDescriptorSet bloom_blur_combined_descriptor;		// Combined descriptor for all 4 blur results
 
 	VkImage depth_image;
 	VkImageView depth_image_view;

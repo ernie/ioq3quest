@@ -8,9 +8,6 @@
 
 // IMPORTANT: Vulkan headers and XR_USE_GRAPHICS_API_VULKAN must be defined
 // BEFORE any OpenXR includes (including through vr_types.h via vr_vk.h)
-#ifdef _WIN32
-#define VK_USE_PLATFORM_WIN32_KHR
-#endif
 #include <vulkan/vulkan.h>
 #define XR_USE_GRAPHICS_API_VULKAN
 
@@ -231,14 +228,6 @@ XrResult VR_Vulkan_CreateInstance(XrInstance xrInstance, XrSystemId systemId)
     const char* extensions[4];  // Max possible extensions
     uint32_t extensionCount = 0;
 
-#ifndef __ANDROID__
-    // Desktop: Need surface extensions for mirror window
-    extensions[extensionCount++] = VK_KHR_SURFACE_EXTENSION_NAME;
-#ifdef _WIN32
-    extensions[extensionCount++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-#endif
-#endif
-
 #ifdef _DEBUG
     // Check if validation layer is available before requesting debug extension
     uint32_t layerCount = 0;
@@ -435,11 +424,7 @@ XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
 {
     // Our required extensions - runtime will add any additional ones via xrCreateVulkanDeviceKHR
     const char* extensions[] = {
-        VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering
-#ifdef _WIN32
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // For desktop mirror window (PCVR only)
-        VK_KHR_MAINTENANCE_4_EXTENSION_NAME,  // Relaxes push constant validation
-#endif
+        VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering 
     };
     uint32_t extensionCount = sizeof(extensions) / sizeof(extensions[0]);
 
