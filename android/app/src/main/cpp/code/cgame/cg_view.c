@@ -1533,6 +1533,9 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 		CG_AddLocalEntities();
 	}
 
+	// Process weapon adjustment mode (reads thumbstick, updates cvars)
+	CG_WeaponAdjustFrame();
+
 	CG_AddViewWeapon( &cg.predictedPlayerState );
 
 	// add buffered sounds

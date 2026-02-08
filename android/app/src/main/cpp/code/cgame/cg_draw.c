@@ -3226,6 +3226,9 @@ static void CG_DrawScreen2D()
             CG_DrawWeapReticle();
         }
     }
+
+	// Weapon adjustment overlay (drawn regardless of team/health since we auto-exit on those)
+	CG_WeaponAdjustDraw();
 }
 
 #ifndef USE_VULKAN
