@@ -66,8 +66,12 @@ if(FULL_BUILD)
 
     set(CMAKE_C_STANDARD 99)
     set(CMAKE_C_STANDARD_REQUIRED ON)
-    # Keep default lib prefix for engine library (libioquake3_opengl2.so)
-    # Game modules override this with their own output names
+    # Engine library name depends on renderer
+    if(BUILD_RENDERER_VK)
+        set(ENGINE_BINARY "ioquake3_vulkan")
+    else()
+        set(ENGINE_BINARY "ioquake3_opengl2")
+    endif()
 
     # Source directory
     set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/code)
@@ -159,9 +163,8 @@ if(FULL_BUILD)
         endif()
 
         #############################################################################
-        # Engine library (libioquake3_opengl2.so)
+        # Engine library
         #############################################################################
-        set(ENGINE_BINARY "ioquake3_opengl2")
 
         add_library(${ENGINE_BINARY} SHARED ${ENGINE_SOURCES})
 
@@ -255,6 +258,16 @@ else()
 
     set(${CMAKE_C_FLAGS}, "${CMAKE_C_FLAGS}")
 
+    # USE_VULKAN is passed from Gradle via cmake arguments
+    option(USE_VULKAN "Use Vulkan renderer" OFF)
+
+    # Engine library name matches what the full build produced
+    if(USE_VULKAN)
+        set(ENGINE_BINARY "ioquake3_vulkan")
+    else()
+        set(ENGINE_BINARY "ioquake3_opengl2")
+    endif()
+
     # Build directory where full CMake build outputs libraries
     set(FULL_BUILD_DIR "${CMAKE_SOURCE_DIR}/../../../../../build")
 
@@ -266,7 +279,7 @@ else()
 
     # Copy libraries from full build to jniLibs
     add_custom_target(copy_libs
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libioquake3_opengl2.so" "${JNILIBS_DIR}/libioquake3_opengl2.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/lib${ENGINE_BINARY}.so" "${JNILIBS_DIR}/lib${ENGINE_BINARY}.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libSDL2.so" "${JNILIBS_DIR}/libSDL2.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libopenxr_loader.so" "${JNILIBS_DIR}/libopenxr_loader.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libcurl.so" "${JNILIBS_DIR}/libcurl.so"
@@ -300,9 +313,6 @@ else()
         ${CMAKE_SOURCE_DIR}/code/vrvk
     )
 
-    # USE_VULKAN is passed from Gradle via cmake arguments
-    option(USE_VULKAN "Use Vulkan renderer" OFF)
-
     target_compile_definitions(main PRIVATE
         ARCH_STRING=android
         $<$<BOOL:${USE_VULKAN}>:USE_VULKAN>
@@ -312,7 +322,7 @@ else()
 
     target_link_libraries(main
         android
-        ioquake3_opengl2
+        ${ENGINE_BINARY}
         SDL2
         openxr_loader
         ${log-lib}

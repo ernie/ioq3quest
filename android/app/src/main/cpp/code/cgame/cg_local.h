@@ -78,7 +78,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	NUM_CROSSHAIRS		10
 
 //multiplying size you go to when dead looking down on the match
-#define SPECTATOR2_WORLDSCALE_MULTIPLIER			30
+#define SPECTATOR2_WORLDSCALE_MULTIPLIER			15
 #define SPECTATOR_WORLDSCALE_MULTIPLIER		10
 
 #define PLAYER_HEIGHT           48
@@ -559,6 +559,11 @@ typedef struct {
 	float		smoothFollow_pitch;			// vertical angle (elevation)
 	float		smoothFollow_hmdYawOffset;	// HMD yaw captured at recenter
 	qboolean	smoothFollow_initialized;	// set once camera state has been seeded
+
+	// VR first-person head view smoothing
+	float		vrViewPitch;
+	float		vrViewYaw;
+	qboolean	vrViewInitialized;
 
 	// zoom key
 	qboolean	zoomed;
@@ -1333,6 +1338,7 @@ void CG_ZoomUp_f( void );
 void CG_AddBufferedSound( sfxHandle_t sfx);
 qboolean CG_IsThirdPersonFollowMode( vrFollowMode_t followMode );
 qboolean CG_IsDeathCam( void );
+qboolean CG_IsVRFollow( void );
 
 void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demoPlayback );
 

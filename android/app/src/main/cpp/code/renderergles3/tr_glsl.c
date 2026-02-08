@@ -1741,9 +1741,25 @@ void GLSL_PrepareUniformBuffers(void)
                 tr.vrParms.projection);
     }
 
-    //Mirror VR projection matrix
-	GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[MIRROR_VR_PROJECTION],
-                                         tr.vrParms.mirrorProjection);
+    //Mirror VR projection matrix - apply aspect correction for virtual screen mode
+    if (vr.virtual_screen)
+    {
+        float adjustedMirrorProjection[16];
+        memcpy(adjustedMirrorProjection, tr.vrParms.mirrorProjection, sizeof(adjustedMirrorProjection));
+
+        float viewportAspect = 4.0f / 3.0f;
+        float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+        float aspectCorrection = viewportAspect / nativeAspect;
+        adjustedMirrorProjection[5] *= aspectCorrection;
+
+        GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[MIRROR_VR_PROJECTION],
+                                             adjustedMirrorProjection);
+    }
+    else
+    {
+        GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[MIRROR_VR_PROJECTION],
+                                             tr.vrParms.mirrorProjection);
+    }
 
     //Used for drawing models
     GLSL_ProjectionMatricesUniformBuffer(projectionMatricesBuffer[MONO_VR_PROJECTION],

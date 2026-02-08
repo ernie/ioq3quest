@@ -7438,7 +7438,19 @@ void vk_update_mvp( const float *m ) {
 				// Virtual screen renders mono - use mono modelview with oblique projection
 				// backEnd.viewParms.projectionMatrix already has oblique clipping from R_SetupProjection
 				float mvp[16];
-				myGlMultMatrix( vk_world.modelview_transform, backEnd.viewParms.projectionMatrix, mvp );
+				float proj[16];
+				Com_Memcpy( proj, backEnd.viewParms.projectionMatrix, sizeof(proj) );
+
+				// In virtual screen mode, apply the same aspect correction as normal
+				// virtual screen rendering to prevent vertically squished mirror reflections
+				if ( vr.virtual_screen ) {
+					float viewportAspect = 4.0f / 3.0f;
+					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+					float aspectCorrection = viewportAspect / nativeAspect;
+					proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
+				}
+
+				myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
 				Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
 				Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
 			} else {
