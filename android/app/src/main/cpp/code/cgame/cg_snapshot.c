@@ -371,6 +371,22 @@ void CG_ProcessSnapshots( void ) {
 
 			// if time went backwards, we have a level restart
 			if ( cg.nextSnap->serverTime < cg.snap->serverTime ) {
+				if ( cgs.tvPlayback ) {
+					// TV seek backward: clear entity state
+					memset( cg_entities, 0, sizeof( cg_entities ) );
+					memset( &cg.predictedPlayerEntity, 0, sizeof( cg.predictedPlayerEntity ) );
+					cg.validPPS = qfalse;
+
+					// Set time BEFORE CG_SetInitialSnapshot so
+					// BG_EvaluateTrajectory uses the correct time
+					cg.time = cg.nextSnap->serverTime;
+					cg.oldTime = cg.nextSnap->serverTime;
+
+					// The server command `tv_seek_sync` will get processed here and reset other state.
+					CG_SetInitialSnapshot( cg.nextSnap );
+					cg.nextSnap = NULL;
+					continue;
+				}
 				CG_Error( "CG_ProcessSnapshots: Server time went backwards" );
 			}
 		}

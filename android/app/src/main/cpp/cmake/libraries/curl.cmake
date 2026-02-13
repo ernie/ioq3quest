@@ -12,7 +12,7 @@ message(STATUS "Configuring cURL (dynamic loading)")
 set(CURL_DIR ${SOURCE_DIR}/curl-8.11.0)
 
 # cURL is loaded dynamically at runtime via dlopen
-list(APPEND CLIENT_DEFINITIONS USE_CURL USE_CURL_DLOPEN)
+list(APPEND CLIENT_DEFINITIONS USE_HTTP USE_CURL_DLOPEN)
 list(APPEND CLIENT_INCLUDE_DIRS ${CURL_DIR}/include)
 
 # Deploy the library for runtime loading

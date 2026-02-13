@@ -885,23 +885,68 @@ CG_DrawTimer
 =================
 */
 static float CG_DrawTimer( float y ) {
-	char		*s;
+	const char	*s;
 	int			w;
-	int			mins, seconds, tens;
+	int			mins, seconds;
 	int			msec;
+	vec4_t		color;
 
 	msec = cg.time - cgs.levelStartTime;
+	Vector4Copy( colorWhite, color );
 
-	seconds = msec / 1000;
-	mins = seconds / 60;
-	seconds -= mins * 60;
-	tens = seconds / 10;
-	seconds -= tens * 10;
+	if ( cg.warmup > 0 ) {
+		// warmup: count down to match start
+		int remaining = cg.warmup - cg.time;
+		if ( remaining < 0 ) remaining = 0;
+		seconds = ( remaining + 999 ) / 1000;
+		mins = seconds / 60;
+		seconds -= mins * 60;
+		s = va( "%i:%02i", mins, seconds );
+	} else if ( cgs.timelimit > 0 && !cg.warmup ) {
+		int timelimitMsec = cgs.timelimit * 60 * 1000;
+		int overtimeElapsed = msec - timelimitMsec;
 
-	s = va( "%i:%i%i", mins, tens, seconds );
+		if ( overtimeElapsed > 0 ) {
+			if ( cgs.overtimelimit > 0 ) {
+				// overtime with limit: count down
+				int remaining = ( cgs.overtimelimit * 60 * 1000 ) - overtimeElapsed;
+				if ( remaining < 0 ) remaining = 0;
+				seconds = ( remaining + 999 ) / 1000;
+				mins = seconds / 60;
+				seconds -= mins * 60;
+				s = va( "OT %i:%02i", mins, seconds );
+				if ( remaining < 30000 ) {
+					Vector4Copy( ( cg.time / 500 ) & 1 ? colorRed : colorWhite, color );
+				} else {
+					Vector4Copy( colorYellow, color );
+				}
+			} else {
+				// unlimited overtime: count up from OT start
+				seconds = overtimeElapsed / 1000;
+				mins = seconds / 60;
+				seconds -= mins * 60;
+				s = va( "OT %i:%02i", mins, seconds );
+				Vector4Copy( colorYellow, color );
+			}
+		} else {
+			// regulation: count down to timelimit
+			int remaining = timelimitMsec - msec;
+			if ( remaining < 0 ) remaining = 0;
+			seconds = ( remaining + 999 ) / 1000;
+			mins = seconds / 60;
+			seconds -= mins * 60;
+			s = va( "%i:%02i", mins, seconds );
+		}
+	} else {
+		// no timelimit: count up
+		seconds = msec / 1000;
+		mins = seconds / 60;
+		seconds -= mins * 60;
+		s = va( "%i:%02i", mins, seconds );
+	}
+
 	w = CG_DrawStrlen( s ) * BIGCHAR_WIDTH;
-
-	CG_DrawBigString( 635 - w, y + 2, s, 1.0F);
+	CG_DrawBigStringColor( 635 - w, y + 2, s, color );
 
 	return y + BIGCHAR_HEIGHT + 4;
 }
@@ -2509,6 +2554,226 @@ static void CG_DrawIntermission( void ) {
 
 /*
 =================
+CG_DrawDownloadProgress
+
+Draws a download progress indicator in the upper-left during active downloads.
+Shows a completion animation (pulse + fade) when the download ends.
+=================
+*/
+static void CG_DrawDownloadProgress( void ) {
+	float	x, y;
+	int		size, count;
+	float	charW = 4, charH = 8;
+	float	barW = 160.0f, barH = 6.0f;
+	vec4_t	barBg = { 0.0f, 0.0f, 0.0f, 0.5f };
+	vec4_t	barFg = { 0.8f, 0.8f, 0.2f, 0.7f };
+	vec4_t	textColor;
+
+	x = 4;
+	y = 24;
+
+	// active download
+	if ( cg_downloadName.string[0] != '\0' ) {
+		float	pct;
+		const char *s;
+
+		cg.downloadActive = qtrue;
+		Q_strncpyz( cg.downloadFinishName, cg_downloadName.string, sizeof( cg.downloadFinishName ) );
+
+		size = cg_downloadSize.integer;
+		count = cg_downloadCount.integer;
+
+		Vector4Copy( colorWhite, textColor );
+
+		if ( size > 0 ) {
+			// overflow-safe percentage (matches ui_connect.c)
+			if ( size > 0x200000 ) {
+				pct = 100.0f * ( count >> 8 ) / ( size >> 8 );
+			} else {
+				pct = 100.0f * count / size;
+			}
+			if ( pct > 100.0f ) pct = 100.0f;
+			if ( pct < 0.0f ) pct = 0.0f;
+
+			s = va( "%s (%d%%)", cg_downloadName.string, (int)pct );
+			CG_DrawString( x, y, s, textColor, charW, charH, 0, DS_SHADOW );
+
+			// progress bar
+			CG_FillRect( x, y + charH + 1, barW, barH, barBg );
+			CG_FillRect( x, y + charH + 1, barW * pct / 100.0f, barH, barFg );
+		} else {
+			// unknown size - show bytes received
+			if ( count >= 1024 * 1024 ) {
+				s = va( "%s", cg_downloadName.string );
+				CG_DrawString( x, y, s, textColor, charW, charH, 0, DS_SHADOW );
+				s = va( "%d.%d MB received", count / (1024 * 1024), ( count % (1024 * 1024) ) * 10 / (1024 * 1024) );
+			} else {
+				s = va( "%s", cg_downloadName.string );
+				CG_DrawString( x, y, s, textColor, charW, charH, 0, DS_SHADOW );
+				s = va( "%d KB received", count / 1024 );
+			}
+			CG_DrawString( x, y + charH + 1, s, textColor, charW, charH, 0, DS_SHADOW );
+		}
+		return;
+	}
+
+	// transition: download just ended
+	if ( cg.downloadActive ) {
+		cg.downloadActive = qfalse;
+		size = cg_downloadSize.integer;
+		count = cg_downloadCount.integer;
+		cg.downloadFinishError = ( size > 0 && count < size ) ? qtrue : qfalse;
+		cg.downloadFinishTime = cg.time;
+	}
+
+	// completion animation
+	if ( cg.downloadFinishTime != 0 ) {
+		int		t;
+		float	alpha, pulseFrac;
+
+		t = cg.time - cg.downloadFinishTime;
+		if ( t >= 1500 ) {
+			cg.downloadFinishTime = 0;
+			return;
+		}
+
+		if ( t < 500 ) {
+			// pulse phase: 2 full oscillations over 500ms
+			pulseFrac = sin( t * M_PI / 125.0f );
+			alpha = 0.75f + 0.25f * pulseFrac;
+		} else {
+			// fade phase: linear fade from 1.0 to 0.0 over 1000ms
+			alpha = 1.0f - (float)( t - 500 ) / 1000.0f;
+			if ( alpha < 0.0f ) alpha = 0.0f;
+		}
+
+		if ( cg.downloadFinishError ) {
+			barFg[0] = 0.8f; barFg[1] = 0.2f; barFg[2] = 0.2f; barFg[3] = 0.7f * alpha;
+		} else {
+			barFg[0] = 0.8f; barFg[1] = 0.8f; barFg[2] = 0.2f; barFg[3] = 0.7f * alpha;
+		}
+		barBg[3] = 0.5f * alpha;
+		textColor[0] = 1.0f; textColor[1] = 1.0f; textColor[2] = 1.0f; textColor[3] = alpha;
+
+		if ( cg.downloadFinishError ) {
+			CG_DrawString( x, y, va( "%s (failed)", cg.downloadFinishName ), textColor,
+				charW, charH, 0, DS_SHADOW );
+		} else {
+			CG_DrawString( x, y, va( "%s (100%%)", cg.downloadFinishName ), textColor,
+				charW, charH, 0, DS_SHADOW );
+		}
+
+		CG_FillRect( x, y + charH + 1, barW, barH, barBg );
+		CG_FillRect( x, y + charH + 1, barW, barH, barFg );
+	}
+}
+
+
+/*
+=================
+CG_DrawTVTimeline
+=================
+*/
+static void CG_DrawTVTimeline( void ) {
+	int		time, duration;
+	float	frac;
+	int		timeSec, durationSec;
+	vec4_t	bgColor = { 0.0f, 0.0f, 0.0f, 0.5f };
+	vec4_t	fgColor = { 0.8f, 0.8f, 0.2f, 0.7f };
+
+	if ( !cgs.tvPlayback || !cg_tvTimeline.integer ) {
+		return;
+	}
+
+	// Auto-cancel scrub if input capture was lost
+	if ( cgs.tvScrubActive && !( trap_Key_GetCatcher() & KEYCATCH_CGAME ) ) {
+		cgs.tvScrubActive = qfalse;
+		vr->menuYawLocked = qfalse;
+		vr->menuYaw = cgs.tvScrubSavedMenuYaw;
+		if ( !cgs.score_catched ) {
+			vr->scoreboardCursorX = NULL;
+			vr->scoreboardCursorY = NULL;
+		}
+	}
+
+	time = cg_tvTime.integer;
+	duration = cg_tvDuration.integer;
+	if ( duration <= 0 ) {
+		return;
+	}
+
+	frac = (float)time / (float)duration;
+	if ( frac < 0.0f ) frac = 0.0f;
+	if ( frac > 1.0f ) frac = 1.0f;
+
+	// progress bar at screen bottom
+	CG_FillRect( 0, 474, 640, 6, bgColor );
+
+	// dim progress fill when scrubbing to emphasize scrub indicator
+	if ( cgs.tvScrubActive ) {
+		vec4_t dimFgColor = { 0.8f, 0.8f, 0.2f, 0.35f };
+		CG_FillRect( 0, 474, 640 * frac, 6, dimFgColor );
+	} else {
+		CG_FillRect( 0, 474, 640 * frac, 6, fgColor );
+	}
+
+	// time text above the bar (right-aligned)
+	timeSec = time / 1000;
+	durationSec = duration / 1000;
+	CG_DrawString( 636, 474 - SMALLCHAR_HEIGHT,
+		va( "%d:%02d / %d:%02d",
+			timeSec / 60, timeSec % 60,
+			durationSec / 60, durationSec % 60 ),
+		colorWhite, SMALLCHAR_WIDTH, SMALLCHAR_HEIGHT, 0,
+		DS_SHADOW | DS_RIGHT );
+
+	// scrub indicator (only when actively scrubbing)
+	if ( cgs.tvScrubActive ) {
+		vec4_t	lineColor = { 1.0f, 1.0f, 1.0f, 0.9f };
+		int		scrubX;
+		float	scrubFrac;
+		int		scrubMs, scrubSec;
+		float	textX;
+		int		flags;
+		const char *timeStr;
+		int		textWidth;
+
+		scrubX = cgs.cursorX;
+		if ( scrubX < 0 ) scrubX = 0;
+		if ( scrubX > 640 ) scrubX = 640;
+
+		// vertical line extending up from timeline
+		CG_FillRect( scrubX - 1, 454, 2, 26, lineColor );
+
+		// time label above the line, shifted to stay within screen bounds
+		scrubFrac = scrubX / 640.0f;
+		scrubMs = (int)( scrubFrac * duration );
+		scrubSec = scrubMs / 1000;
+		timeStr = va( "%d:%02d", scrubSec / 60, scrubSec % 60 );
+		textWidth = CG_DrawStrlen( timeStr ) * SMALLCHAR_WIDTH;
+
+		textX = (float)scrubX;
+		flags = DS_SHADOW;
+		if ( textX - textWidth / 2 < 0 ) {
+			// near left edge: left-align to avoid clipping
+			textX = 0;
+		} else if ( textX + textWidth / 2 > 640 ) {
+			// near right edge: right-align to avoid clipping
+			textX = 640;
+			flags |= DS_RIGHT;
+		} else {
+			flags |= DS_CENTER;
+		}
+
+		CG_DrawString( textX, 454 - SMALLCHAR_HEIGHT,
+			timeStr, colorWhite, SMALLCHAR_WIDTH, SMALLCHAR_HEIGHT, 0,
+			flags );
+	}
+}
+
+
+/*
+=================
 CG_DrawFollow
 =================
 */
@@ -2517,7 +2782,7 @@ static qboolean CG_DrawFollow( void ) {
 	vec4_t		color;
 	const char	*name;
 
-	if ( !(cg.snap->ps.pm_flags & PMF_FOLLOW) ) {
+	if ( !(cg.snap->ps.pm_flags & PMF_FOLLOW) && !cgs.tvPlayback ) {
 		return qfalse;
 	}
 	color[0] = 1;
@@ -3126,6 +3391,8 @@ static void CG_DrawHUD2D()
 	if ( !CG_DrawFollow() ) {
 		CG_DrawWarmup();
 	}
+	CG_DrawDownloadProgress();
+	CG_DrawTVTimeline();
 
 	// don't draw center string if scoreboard is up
 	cg.scoreBoardShowing = CG_DrawScoreboard();
@@ -3316,6 +3583,88 @@ static void CG_WarmupEvents( void ) {
 			break;
 	}
 }
+
+/*
+===============
+CG_ResetSeekState
+
+Clear all transient state that goes stale after a TVD seek.
+Most fields use (cg.time - startTime) comparisons in draw code;
+after a seek cg.time jumps discontinuously, so stale timestamps
+produce incorrect durations.  Other state (scoreboard flags,
+sound buffer, VR smoothing) is simply invalid in the new timeline.
+
+Called from the tv_seek_sync server command handler (all seeks)
+and the backward-seek detector in cg_snapshot.c.
+
+See also: CG_WarmupEvent (similar subset for warmup/client changes)
+          CG_ResetViewOffsets (view bob/damage, called internally)
+===============
+*/
+void CG_ResetSeekState( void ) {
+
+	// -- HUD display timers --
+
+	// Medal display — CG_DrawReward: CG_FadeColor(rewardTime, 3000)
+	cg.rewardStack = 0;
+	cg.rewardTime = 0;
+
+	// Center print — CG_DrawCenterString: CG_FadeColor(centerPrintTime, 1000*cg_centertime)
+	cg.centerPrintTime = 0;
+
+	// Item pickup notification — CG_DrawPickupItem: CG_FadeColorTime(itemPickupTime, 3000, 250)
+	cg.itemPickupTime = 0;
+	cg.itemPickupBlendTime = 0;
+
+	// Weapon select bar — CG_DrawWeaponSelect: CG_FadeColor(weaponSelectTime, 1400)
+	cg.weaponSelectTime = 0;
+
+	// Attacker head — CG_DrawAttacker: (cg.time - attackerTime) vs 10000
+	cg.attackerTime = 0;
+
+	// Killer name display
+	cg.killerTime = 0;
+
+	// Crosshair target name — CG_DrawCrosshairNames: CG_FadeColor(crosshairClientTime, 1000)
+	cg.crosshairClientTime = 0;
+
+	// Powerup icon pulse — CG_DrawStatusBar: (cg.time - powerupTime) vs PULSE_TIME
+	cg.powerupTime = 0;
+
+	// Voice chat menu — CG_DrawTimedMenus: (cg.time - voiceTime) vs 2500
+	cg.voiceTime = 0;
+
+	// Download finish animation — (cg.time - downloadFinishTime) vs 1500
+	cg.downloadFinishTime = 0;
+
+	// Auto-follow killer — CG_DrawActiveFrame: (followTime < cg.time)
+	// Shouldn't actually be used during TV playback, but technically stale.
+	cg.followTime = 0;
+
+	// Low ammo warning — not time-based but stale across seeks
+	cg.lowAmmoWarning = 0;
+
+	// Damage vignette — CG_DamageBlendBlob: (cg.time - damageTime) vs DAMAGE_TIME
+	cg.damageTime = 0;
+
+	// Scoreboard
+	cg.showScores = qfalse;
+	cg.scoreFadeTime = 0;
+	cg.scoreBoardShowing = qfalse;
+	CG_SetScoreCatcher( qfalse );
+
+	// -- Non-HUD time-dependent state --
+
+	// View bob, damage kick, weapon kick offsets
+	CG_ResetViewOffsets();
+
+	// Flush queued announcer sounds (e.g. stale "Excellent!")
+	CG_AddBufferedSound( -1 );
+
+	// Force VR head-tracking EMA to re-seed from the new timeline
+	cg.vrViewInitialized = qfalse;
+}
+
 
 void CG_WarmupEvent( void ) {
 

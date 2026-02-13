@@ -30,13 +30,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../cgame/cg_public.h"
 #include "../game/bg_public.h"
 
-#ifdef USE_CURL
-#include "cl_curl.h"
-#endif /* USE_CURL */
+#ifdef USE_HTTP
+#include "cl_http.h"
+#endif /* USE_HTTP */
 
 #ifdef USE_VOIP
 #include <opus.h>
 #endif
+
+#include "zstd.h"
 
 // file full of random crap that gets used to create cl_guid
 #define QKEY_FILE "qkey"
@@ -148,6 +150,81 @@ extern	clientActive_t		cl;
 /*
 =============================================================================
 
+TV demo playback
+
+=============================================================================
+*/
+
+#define MAX_TV_MSGLEN		(256*1024)
+#define TVD_ZSTD_IN_BUF_SIZE	(128*1024)
+#define TVD_ZSTD_OUT_BUF_SIZE	(256*1024)
+
+typedef struct {
+	qboolean		active;
+	fileHandle_t	file;
+
+	// Header
+	int				svFps;
+	int				maxclients;
+
+	// Running state buffers
+	entityState_t	entities[MAX_GENTITIES];
+	byte			entityBitmask[MAX_GENTITIES/8];
+	playerState_t	players[MAX_CLIENTS];
+	byte			playerBitmask[MAX_CLIENTS/8];
+
+	// Frame tracking
+	int				serverTime;
+
+	// Double-buffered snapshots for cgame interpolation
+	clSnapshot_t	snapshots[2];
+	int				snapCount;
+
+	// Entities for the two snapshots
+	entityState_t	snapEntities[2][MAX_ENTITIES_IN_SNAPSHOT];
+
+	// Viewpoint
+	int				viewpoint;
+	vec3_t			viewOrigin;		// updated by cgame via respatialize trap
+
+	// Server commands for cgame delivery
+	int				cmdSequence;
+	char			cmds[MAX_RELIABLE_COMMANDS][MAX_STRING_CHARS];
+
+	// Read buffer
+	byte			msgBuf[MAX_TV_MSGLEN];
+
+	// Duration info
+	int				totalDuration;		// from header, in msec
+	int				firstServerTime;
+	int				lastServerTime;
+
+	// EOF tracking
+	qboolean		atEnd;
+
+	// Seek state
+	qboolean		seeking;
+
+	// Saved initial state for seeking (configstrings are delta-encoded from header)
+	long			firstFrameOffset;
+	gameState_t		initialGameState;
+
+	// Zstd streaming decompression
+	ZSTD_DStream	*dstream;
+	byte			zstdInBuf[TVD_ZSTD_IN_BUF_SIZE];
+	size_t			zstdInSize;
+	size_t			zstdInPos;
+	byte			zstdOutBuf[TVD_ZSTD_OUT_BUF_SIZE];
+	size_t			zstdOutSize;
+	size_t			zstdOutPos;
+	qboolean		zstdStreamEnded;
+} tvPlayback_t;
+
+extern tvPlayback_t tvPlay;
+
+/*
+=============================================================================
+
 the clientConnection_t structure is wiped when disconnecting from a server,
 either to go to a full screen console, play a demo, or connect to a different server
 
@@ -198,14 +275,11 @@ typedef struct {
 	fileHandle_t download;
 	char		downloadTempName[MAX_OSPATH];
 	char		downloadName[MAX_OSPATH];
-#ifdef USE_CURL
-	qboolean	cURLEnabled;
-	qboolean	cURLUsed;
-	qboolean	cURLDisconnected;
+#ifdef USE_HTTP
+	qboolean	httpUsed;
+	qboolean	disconnectedForHttpDownload;
 	char		downloadURL[MAX_OSPATH];
-	CURL		*downloadCURL;
-	CURLM		*downloadCURLM;
-#endif /* USE_CURL */
+#endif /* USE_HTTP */
 	int		sv_allowDownload;
 	char		sv_dlURL[MAX_CVAR_VALUE_STRING];
 	int			downloadNumber;
@@ -268,6 +342,10 @@ typedef struct {
 
 	// VR support
 	qboolean	serverSupportsVR;	// Server has vr_support=1 in serverinfo
+
+	// TV demo download
+	char		tvDemoFile[MAX_QPATH]; // pending TV demo remote path for HTTP download
+	char		tvDemoMap[MAX_QPATH];  // map name for local filename generation
 
 	// big stuff at end of structure so most offsets are 15 bits or less
 	netchan_t	netchan;
@@ -493,6 +571,29 @@ qboolean CL_CDKeyValidate( const char *key, const char *checksum );
 int CL_ServerStatus( char *serverAddress, char *serverStatusString, int maxLen );
 
 qboolean CL_CheckPaused(void);
+
+//
+// cl_tv.c
+//
+extern	cvar_t	*cl_tvViewpoint;
+extern	cvar_t	*cl_tvTime;
+extern	cvar_t	*cl_tvDuration;
+extern	cvar_t	*cl_tvDownload;
+
+void CL_TV_Init( void );
+qboolean CL_TV_Open( const char *filename );
+void CL_TV_Close( void );
+void CL_TV_ReadFrame( void );
+void CL_TV_BuildSnapshot( int which );
+void CL_TV_Seek( int targetTime );
+qboolean CL_TV_GetSnapshot( int snapshotNumber, snapshot_t *snapshot );
+void CL_TV_GetCurrentSnapshotNumber( int *snapshotNumber, int *serverTime );
+qboolean CL_TV_GetServerCommand( int serverCommandNumber );
+
+#ifdef USE_HTTP
+void CL_TV_DownloadFrame( void );
+void CL_TV_CleanupDownload( void );
+#endif
 
 //
 // cl_input

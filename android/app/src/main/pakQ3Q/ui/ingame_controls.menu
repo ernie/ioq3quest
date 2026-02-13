@@ -334,9 +334,39 @@ itemDef {
 	itemDef {
       		name controls
 		group grpControls
+      		type ITEM_TYPE_YESNO
+		text "Weapon Adjustment:"
+		cvar "vr_weaponAdjust"
+		rect 30 218 200 20
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 143
+      		textaligny 17
+		textscale .25
+      		forecolor 1 1 1 1
+      		visible 1
+		mouseEnter { show message_weaponadjust }
+		mouseExit { hide message_weaponadjust }
+    		}
+
+	itemDef {
+		name message_weaponadjust
+		text "Hold both grips for 1s to adjust"
+		rect 10 235 360 14
+		textalign ITEM_ALIGN_CENTER
+		textalignx 180
+		textaligny 12
+		textscale .2
+		forecolor 1 .75 0 1
+		visible 0
+		decoration
+		}
+
+	itemDef {
+      		name controls
+		group grpControls
       	style 1
 		text "Comfort Options"
-		rect 100 231 100 20
+		rect 100 247 100 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -351,7 +381,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Comfort Vignette:"
 		cvarfloat "vr_comfortVignette" 0.2 0 1
-		rect 30 251 200 20
+		rect 30 267 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -365,7 +395,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Height Adjust:"
 		cvarfloat "vr_heightAdjust" 0.2 0 1
-		rect 30 271 200 20
+		rect 30 287 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -379,7 +409,7 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Roll When Hit:"
 		cvar "vr_rollWhenHit"
-		rect 30 291 200 20
+		rect 30 307 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -393,7 +423,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Haptic Intensity:"
 		cvarfloat "vr_hapticIntensity" 0.2 0 1
-		rect 30 311 200 20
+		rect 30 327 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -407,7 +437,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "HUD Depth:"
 		cvarfloat "vr_hudDepth" 1 0 5
-		rect 30 331 200 20
+		rect 30 347 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17
@@ -421,7 +451,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "HUD Vertical Position:"
 		cvarfloat "vr_hudYOffset" 20 -200 200
-		rect 30 351 200 20
+		rect 30 367 200 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 143
       		textaligny 17

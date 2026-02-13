@@ -719,6 +719,12 @@ static void SV_SendClientGameState( client_t *client ) {
 	client->pureAuthentic = 0;
 	client->gotCP = qfalse;
 
+	// send TV demo download notification if this client was in the previous match
+	if ( client->tvDemoPending && tv.lastRecordedFile[0] ) {
+		SV_AddServerCommand( client, va( "tvdemo \"%s/%s\" \"%s\"", FS_GetCurrentGameDir(), tv.lastRecordedFile, tv.lastRecordedMap ) );
+		client->tvDemoPending = qfalse;
+	}
+
 	// when we receive the first packet from the client, we will
 	// notice that it is from a different serverid and that the
 	// gamestate message was not just sent, forcing a retransmit

@@ -951,7 +951,7 @@ void VR_DrawFrame( engine_t* engine ) {
         }
     } else {
         // Capture menuYaw on FIRST FRAME of virtual screen mode (not during gameplay)
-        if (!fullscreenMode) {
+        if (!fullscreenMode && !vr.menuYawLocked) {
             vr.menuYaw = vr.hmdorientation[YAW];
         }
         fullscreenMode = qtrue;

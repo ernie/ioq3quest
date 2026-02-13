@@ -50,8 +50,9 @@ CONTROLS OPTIONS MENU
 #define ID_UTURN				135
 #define ID_CONTROLSCHEMA		136
 #define ID_SWITCHTHUMBSTICKS	137
+#define ID_WEAPONADJUST			138
 
-#define ID_BACK					138
+#define ID_BACK					139
 
 #define	NUM_DIRECTIONMODE		2
 
@@ -74,6 +75,7 @@ typedef struct {
 	menulist_s			weaponselectormode;
 	menulist_s          controlschema;
 	menuradiobutton_s	switchthumbsticks;
+	menuradiobutton_s	weaponadjust;
 
 	menubitmap_s		back;
 } controls3_t;
@@ -93,8 +95,13 @@ static void Controls3_SetMenuItems( void ) {
     s_controls3.weaponselectormode.curvalue	= (int)trap_Cvar_VariableValue( "vr_weaponSelectorMode" ) % 2;
     s_controls3.controlschema.curvalue		= (int)trap_Cvar_VariableValue( "vr_controlSchema" ) % 3;
     s_controls3.switchthumbsticks.curvalue	= trap_Cvar_VariableValue( "vr_switchThumbsticks" ) != 0;
+    s_controls3.weaponadjust.curvalue		= trap_Cvar_VariableValue( "vr_weaponAdjust" ) != 0;
 }
 
+
+static void Controls3_WeaponAdjustStatusBar( void *self ) {
+	UI_DrawString( SCREEN_WIDTH * 0.50, SCREEN_HEIGHT * 0.80, "Hold both grips for 1s to enter weapon adjustment mode", UI_SMALLFONT|UI_CENTER, colorWhite );
+}
 
 static void Controls3_MenuEvent( void* ptr, int notification ) {
 	if( notification != QM_ACTIVATED ) {
@@ -211,6 +218,10 @@ static void Controls3_MenuEvent( void* ptr, int notification ) {
 		}
         trap_Cvar_SetValue( "vr_controlSchema", s_controls3.controlschema.curvalue );
         break;
+
+	case ID_WEAPONADJUST:
+		trap_Cvar_SetValue( "vr_weaponAdjust", s_controls3.weaponadjust.curvalue );
+		break;
 
 	case ID_SWITCHTHUMBSTICKS:
 		{
@@ -417,6 +428,16 @@ static void Controls3_MenuInit( void ) {
 	s_controls3.controlschema.itemnames	        	= s_controlschema;
 	s_controls3.controlschema.numitems				= 3;
 
+	y += BIGCHAR_HEIGHT+2;
+	s_controls3.weaponadjust.generic.type        = MTYPE_RADIOBUTTON;
+	s_controls3.weaponadjust.generic.name	     = "Weapon Adjustment:";
+	s_controls3.weaponadjust.generic.flags	     = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_controls3.weaponadjust.generic.callback    = Controls3_MenuEvent;
+	s_controls3.weaponadjust.generic.id          = ID_WEAPONADJUST;
+	s_controls3.weaponadjust.generic.x	         = VR_X_POS;
+	s_controls3.weaponadjust.generic.y	         = y;
+	s_controls3.weaponadjust.generic.statusbar   = Controls3_WeaponAdjustStatusBar;
+
 	s_controls3.back.generic.type	    = MTYPE_BITMAP;
 	s_controls3.back.generic.name     = ART_BACK0;
 	s_controls3.back.generic.flags    = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -443,6 +464,7 @@ static void Controls3_MenuInit( void ) {
 	Menu_AddItem( &s_controls3.menu, &s_controls3.weaponselectormode );
 	Menu_AddItem( &s_controls3.menu, &s_controls3.controlschema );
 	Menu_AddItem( &s_controls3.menu, &s_controls3.switchthumbsticks );
+	Menu_AddItem( &s_controls3.menu, &s_controls3.weaponadjust );
 
 	Menu_AddItem( &s_controls3.menu, &s_controls3.back );
 

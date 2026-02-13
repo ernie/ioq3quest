@@ -171,6 +171,7 @@ void CG_ParseServerinfo( void ) {
 	trap_Cvar_Set("g_redTeam", cgs.redTeam);
 	Q_strncpyz( cgs.blueTeam, Info_ValueForKey( info, "g_blueTeam" ), sizeof(cgs.blueTeam) );
 	trap_Cvar_Set("g_blueTeam", cgs.blueTeam);
+	cgs.tvPlayback = atoi( Info_ValueForKey( info, "tv" ) ) ? qtrue : qfalse;
 }
 
 /*
@@ -1117,6 +1118,70 @@ static void CG_ServerCommand( void ) {
 	// the menu system during development
 	if ( !strcmp( cmd, "clientLevelShot" ) ) {
 		cg.levelShot = qtrue;
+		return;
+	}
+
+	if ( !strcmp( cmd, "tv_seek_sync" ) ) {
+		int i;
+		int newClientNum = atoi( CG_Argv(1) );
+		const char *str;
+
+		// Update clientNum from engine's viewpoint
+		if ( newClientNum >= 0 && newClientNum < MAX_CLIENTS ) {
+			cg.clientNum = newClientNum;
+		}
+
+		// Re-fetch entire gamestate after TV seek
+		trap_GetGameState( &cgs.gameState );
+		CG_ParseServerinfo();
+		CG_SetConfigValues();
+		CG_ParseWarmup();
+
+		// Re-register all models from configstrings
+		for ( i = 1; i < MAX_MODELS; i++ ) {
+			str = CG_ConfigString( CS_MODELS + i );
+			if ( !str[0] ) {
+				break;
+			}
+			cgs.gameModels[i] = trap_R_RegisterModel( str );
+		}
+
+		// Re-register all sounds from configstrings
+		for ( i = 1; i < MAX_SOUNDS; i++ ) {
+			str = CG_ConfigString( CS_SOUNDS + i );
+			if ( !str[0] ) {
+				break;
+			}
+			if ( str[0] != '*' ) {
+				cgs.gameSounds[i] = trap_S_RegisterSound( str, qfalse );
+			}
+		}
+
+		// Re-register all player info
+		for ( i = 0; i < MAX_CLIENTS; i++ ) {
+			str = CG_ConfigString( CS_PLAYERS + i );
+			if ( str[0] ) {
+				CG_NewClientInfo( i );
+			} else if ( cgs.clientinfo[i].infoValid ) {
+				memset( &cgs.clientinfo[i], 0, sizeof( cgs.clientinfo[i] ) );
+			}
+		}
+
+		// Re-register all items
+		for ( i = 1; i < bg_numItems; i++ ) {
+			CG_RegisterItemVisuals( i );
+		}
+
+		// Clear transient state
+		CG_InitLocalEntities();
+		CG_InitMarkPolys();
+		CG_ClearParticles();
+		trap_S_ClearLoopingSounds( qtrue );
+		trap_R_ClearScene();
+		memset( cg_entities, 0, sizeof( cg_entities ) );
+		memset( &cg.predictedPlayerEntity, 0, sizeof( cg.predictedPlayerEntity ) );
+		cg.validPPS = qfalse;
+		CG_ResetSeekState();
 		return;
 	}
 

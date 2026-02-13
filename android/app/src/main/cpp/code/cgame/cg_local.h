@@ -710,6 +710,12 @@ typedef struct {
 	int				followTime;
 	int				followClient;
 
+	// download progress tracking
+	qboolean		downloadActive;
+	char			downloadFinishName[MAX_QPATH];
+	qboolean		downloadFinishError;
+	int				downloadFinishTime;
+
 } cg_t;
 
 
@@ -1095,6 +1101,7 @@ typedef struct {
 	int				fraglimit;
 	int				capturelimit;
 	int				timelimit;
+	int				overtimelimit;
 	int				maxclients;
 	char			mapname[MAX_QPATH];
 	char			redTeam[MAX_QPATH];
@@ -1163,6 +1170,13 @@ typedef struct {
 	qboolean	score_catched;
 	int			score_key;
 	qboolean	filterKeyUpEvent;
+
+	// TV playback
+	qboolean	tvPlayback;			// playing back a TV demo (\tv\1 in serverinfo)
+	qboolean	tvScrubActive;		// currently scrubbing the timeline
+	int			tvScrubKey;			// keycode that activated scrub
+	qboolean	tvScrubFilterKeyUp;	// filter phantom -tv_scrub from catcher change
+	float		tvScrubSavedMenuYaw;	// menuYaw to restore when scrub ends
 
 } cgs_t;
 
@@ -1295,6 +1309,15 @@ extern  vmCvar_t		cg_recordSPDemoName;
 extern	vmCvar_t		cg_obeliskRespawnDelay;
 #endif
 
+extern	vmCvar_t		cg_tvTimeline;
+extern	vmCvar_t		cg_tvTime;
+extern	vmCvar_t		cg_tvDuration;
+extern	vmCvar_t		cg_tvSkip;
+extern	vmCvar_t		cg_downloadName;
+extern	vmCvar_t		cg_downloadSize;
+extern	vmCvar_t		cg_downloadCount;
+extern	vmCvar_t		cg_downloadTime;
+
 
 void CG_TrailItem( centity_t *cent, qhandle_t hModel, vec3_t offset, float scale );
 
@@ -1339,6 +1362,7 @@ void CG_AddBufferedSound( sfxHandle_t sfx);
 qboolean CG_IsThirdPersonFollowMode( vrFollowMode_t followMode );
 qboolean CG_IsDeathCam( void );
 qboolean CG_IsVRFollow( void );
+void CG_ResetViewOffsets( void );
 
 void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demoPlayback );
 
@@ -1421,6 +1445,7 @@ float CG_GetValue(int ownerDraw);
 qboolean CG_OwnerDrawVisible(int flags);
 void CG_RunMenuScript(char **args);
 void CG_ShowResponseHead( void );
+void CG_ResetSeekState( void );
 void CG_SetPrintString(int type, const char *p);
 void CG_InitTeamChat( void );
 void CG_GetTeamColor(vec4_t *color);

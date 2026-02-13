@@ -28,6 +28,11 @@ set(COMMON_SOURCES
     ${SOURCE_DIR}/qcommon/vm_none.c
 )
 
+# Zstandard compression library
+set(ZSTD_SOURCES
+    ${SOURCE_DIR}/libzstd/zstd.c
+)
+
 # System sources
 set(SYSTEM_SOURCES
     ${SOURCE_DIR}/sys/con_log.c
@@ -47,6 +52,7 @@ set(SERVER_SOURCES
     ${SOURCE_DIR}/server/sv_main.c
     ${SOURCE_DIR}/server/sv_net_chan.c
     ${SOURCE_DIR}/server/sv_snapshot.c
+    ${SOURCE_DIR}/server/sv_tv.c
     ${SOURCE_DIR}/server/sv_world.c
 )
 
@@ -96,7 +102,8 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_scrn.c
     ${SOURCE_DIR}/client/cl_ui.c
     ${SOURCE_DIR}/client/cl_avi.c
-    ${SOURCE_DIR}/client/cl_curl.c
+    ${SOURCE_DIR}/client/cl_http_curl.c
+    ${SOURCE_DIR}/client/cl_tv.c
     ${SOURCE_DIR}/client/snd_altivec.c
     ${SOURCE_DIR}/client/snd_adpcm.c
     ${SOURCE_DIR}/client/snd_dma.c
@@ -121,4 +128,5 @@ list(APPEND CLIENT_INCLUDE_DIRS
     ${SOURCE_DIR}/server
     ${SOURCE_DIR}/botlib
     ${SOURCE_DIR}/sys
+    ${SOURCE_DIR}/libzstd
 )

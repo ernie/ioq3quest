@@ -140,6 +140,7 @@ if(FULL_BUILD)
             ${SERVER_SOURCES}
             ${CLIENT_SOURCES}
             ${COMMON_SOURCES}
+            ${ZSTD_SOURCES}
             ${BOTLIB_SOURCES}
             ${SYSTEM_SOURCES}
             ${VR_SOURCES}

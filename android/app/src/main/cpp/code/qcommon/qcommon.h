@@ -512,6 +512,7 @@ void	Cvar_Update( vmCvar_t *vmCvar );
 // updates an interpreted modules' version of a cvar
 
 void 	Cvar_Set( const char *var_name, const char *value );
+void	Cvar_SetIntegerValue( const char *var_name, int value );
 // will create the variable with no flags if it doesn't exist
 
 cvar_t	*Cvar_Set2(const char *var_name, const char *value, qboolean force);

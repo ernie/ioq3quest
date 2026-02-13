@@ -3084,6 +3084,21 @@ static void UI_LoadDemos( void ) {
 		}
 	}
 
+	// Append TV demo (.tvd) files
+	if ( uiInfo.demoCount < MAX_DEMOS ) {
+		int count;
+		demoname = demolist;
+		count = trap_FS_GetFileList( "demos", "tvd", demolist, ARRAY_LEN(demolist) );
+		if ( uiInfo.demoCount + count > MAX_DEMOS )
+			count = MAX_DEMOS - uiInfo.demoCount;
+		demoname = demolist;
+		for ( j = 0; j < count; j++ ) {
+			len = strlen( demoname );
+			uiInfo.demoList[uiInfo.demoCount + j] = String_Alloc( demoname );
+			demoname += len + 1;
+		}
+		uiInfo.demoCount += count;
+	}
 }
 
 

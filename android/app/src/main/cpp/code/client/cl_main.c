@@ -139,6 +139,7 @@ cvar_t	*cl_activeAction;
 cvar_t	*cl_motdString;
 
 cvar_t	*cl_allowDownload;
+cvar_t	*cl_tvDownload;
 cvar_t	*cl_conXOffset;
 cvar_t	*cl_inGameVideo;
 
@@ -1117,7 +1118,33 @@ void CL_PlayDemo_f( void ) {
 
 	// open the demo file
 	Q_strncpyz( arg, Cmd_Argv(1), sizeof( arg ) );
-	
+
+	// check for .tvd extension
+	ext_test = strrchr(arg, '.');
+	if ( ext_test && !Q_stricmp( ext_test, ".tvd" ) ) {
+		Com_sprintf( name, sizeof( name ), "demos/%s", arg );
+
+		CL_Disconnect( qtrue );
+
+		clc.demoplaying = qtrue;
+		Con_Close();
+
+		if ( !CL_TV_Open( name ) ) {
+			Com_Printf( S_COLOR_YELLOW "couldn't open TV demo %s\n", name );
+			clc.demoplaying = qfalse;
+			return;
+		}
+
+		Q_strncpyz( clc.demoName, arg, sizeof( clc.demoName ) );
+		Q_strncpyz( clc.servername, arg, sizeof( clc.servername ) );
+		clc.state = CA_CONNECTED;
+		clc.lastPacketTime = cls.realtime;
+		clc.firstDemoFrameSkipped = qfalse;
+
+		CL_InitDownloads();
+		return;
+	}
+
 	CL_Disconnect( qtrue );
 
 	// check for an extension .DEMOEXT_?? (?? is protocol)
@@ -1242,9 +1269,6 @@ void CL_ShutdownAll(qboolean shutdownRef)
 	if(clc.demorecording)
 		CL_StopRecord_f();
 
-#ifdef USE_CURL
-	CL_cURL_Shutdown();
-#endif
 	// clear sounds
 	S_DisableSounds();
 	// shutdown CGame
@@ -1455,10 +1479,20 @@ void CL_Disconnect( qboolean showMainMenu ) {
 	Cmd_RemoveCommand ("voip");
 #endif
 
+	if ( tvPlay.active ) {
+		CL_TV_Close();
+	}
+
 	if ( clc.demofile ) {
 		FS_FCloseFile( clc.demofile );
 		clc.demofile = 0;
 	}
+
+#ifdef USE_HTTP
+	CL_TV_CleanupDownload();
+#endif
+	clc.tvDemoFile[0] = '\0';
+	clc.tvDemoMap[0] = '\0';
 
 	if ( uivm && showMainMenu ) {
 		VM_Call( uivm, UI_SET_ACTIVE_MENU, UIMENU_NONE );
@@ -2120,17 +2154,16 @@ Called when all downloading has been completed
 */
 void CL_DownloadsComplete( void ) {
 
-#ifdef USE_CURL
-	// if we downloaded with cURL
-	if(clc.cURLUsed) { 
-		clc.cURLUsed = qfalse;
-		CL_cURL_Shutdown();
-		if( clc.cURLDisconnected ) {
+#ifdef USE_HTTP
+	// if we downloaded with HTTP
+	if(clc.httpUsed) {
+		clc.httpUsed = qfalse;
+		if( clc.disconnectedForHttpDownload ) {
 			if(clc.downloadRestart) {
 				FS_Restart(clc.checksumFeed);
 				clc.downloadRestart = qfalse;
 			}
-			clc.cURLDisconnected = qfalse;
+			clc.disconnectedForHttpDownload = qfalse;
 			CL_Reconnect_f();
 			return;
 		}
@@ -2192,27 +2225,74 @@ Requests a file to download from the server.  Stores it in the current
 game directory.
 =================
 */
-void CL_BeginDownload( const char *localName, const char *remoteName ) {
-
-	Com_DPrintf("***** CL_BeginDownload *****\n"
-				"Localname: %s\n"
-				"Remotename: %s\n"
-				"****************************\n", localName, remoteName);
-
+/*
+=================
+CL_InitDownload
+=================
+*/
+static void CL_InitDownload( const char *localName ) {
 	Q_strncpyz ( clc.downloadName, localName, sizeof(clc.downloadName) );
 	Com_sprintf( clc.downloadTempName, sizeof(clc.downloadTempName), "%s.tmp", localName );
 
 	// Set so UI gets access to it
-	Cvar_Set( "cl_downloadName", remoteName );
+	Cvar_Set( "cl_downloadName", localName );
 	Cvar_Set( "cl_downloadSize", "0" );
 	Cvar_Set( "cl_downloadCount", "0" );
 	Cvar_SetValue( "cl_downloadTime", cls.realtime );
 
 	clc.downloadBlock = 0; // Starting new file
 	clc.downloadCount = 0;
+}
 
+/*
+=================
+CL_BeginDownload
+
+Requests a file to download from the server.  Stores it in the current
+game directory.
+=================
+*/
+static void CL_BeginDownload( const char *remoteName ) {
 	CL_AddReliableCommand(va("download %s", remoteName), qfalse);
 }
+
+#ifdef USE_HTTP
+/*
+=================
+CL_BeginHttpDownload
+=================
+*/
+static void CL_BeginHttpDownload( const char *remoteURL ) {
+	if(Q_strncmp(remoteURL, "http://", strlen("http://")) != 0 &&
+		Q_strncmp(remoteURL, "https://", strlen("https://")) != 0) {
+		Com_Error(ERR_DROP, "Download Error: %s is a malformed/"
+			"unsupported URL", remoteURL);
+	}
+
+	Com_Printf("URL: %s\n", remoteURL);
+
+	CL_HTTP_BeginDownload(remoteURL);
+	Q_strncpyz(clc.downloadURL, remoteURL, sizeof(clc.downloadURL));
+
+	clc.download = FS_SV_FOpenFileWrite(clc.downloadTempName);
+	if(!clc.download) {
+		Com_Error(ERR_DROP, "CL_BeginHTTPDownload: failed to open "
+			"%s for writing", clc.downloadTempName);
+	}
+
+	if(!(clc.sv_allowDownload & DLF_NO_DISCONNECT) &&
+		!clc.disconnectedForHttpDownload) {
+
+		CL_AddReliableCommand("disconnect", qtrue);
+		CL_WritePacket();
+		CL_WritePacket();
+		CL_WritePacket();
+		clc.disconnectedForHttpDownload = qtrue;
+	}
+
+	clc.httpUsed = qtrue;
+}
+#endif /* USE_HTTP */
 
 /*
 =================
@@ -2225,7 +2305,7 @@ void CL_NextDownload(void)
 {
 	char *s;
 	char *remoteName, *localName;
-	qboolean useCURL = qfalse;
+	qboolean usedHTTP = qfalse;
 
 	// A download has finished, check whether this matches a referenced checksum
 	if(*clc.downloadName)
@@ -2262,7 +2342,7 @@ void CL_NextDownload(void)
 			*s++ = 0;
 		else
 			s = localName + strlen(localName); // point at the nul byte
-#ifdef USE_CURL
+#ifdef USE_HTTP
 		if(!(cl_allowDownload->integer & DLF_NO_REDIRECT)) {
 			if(clc.sv_allowDownload & DLF_NO_REDIRECT) {
 				Com_Printf("WARNING: server does not "
@@ -2275,14 +2355,12 @@ void CL_NextDownload(void)
 					"download redirection, but does not "
 					"have sv_dlURL set\n");
 			}
-			else if(!CL_cURL_Init()) {
-				Com_Printf("WARNING: could not load "
-					"cURL library\n");
-			}
-			else {
-				CL_cURL_BeginDownload(localName, va("%s/%s",
+			else if(CL_HTTP_Available()) {
+				CL_InitDownload(localName);
+				CL_BeginHttpDownload(va("%s/%s",
 					clc.sv_dlURL, remoteName));
-				useCURL = qtrue;
+
+				usedHTTP = qtrue;
 			}
 		}
 		else if(!(clc.sv_allowDownload & DLF_NO_REDIRECT)) {
@@ -2291,17 +2369,18 @@ void CL_NextDownload(void)
 				"configuration (cl_allowDownload is %d)\n",
 				cl_allowDownload->integer);
 		}
-#endif /* USE_CURL */
-		if(!useCURL) {
+#endif /* USE_HTTP */
+		if(!usedHTTP) {
 			if((cl_allowDownload->integer & DLF_NO_UDP)) {
 				Com_Error(ERR_DROP, "UDP Downloads are "
 					"disabled on your client. "
 					"(cl_allowDownload is %d)",
 					cl_allowDownload->integer);
-				return;	
+				return;
 			}
 			else {
-				CL_BeginDownload( localName, remoteName );
+				CL_InitDownload( localName );
+				CL_BeginDownload( remoteName );
 			}
 		}
 		clc.downloadRestart = qtrue;
@@ -2899,7 +2978,11 @@ void CL_CheckTimeout( void ) {
 	//
 	// check timeout
 	//
-	if ( ( !CL_CheckPaused() || !sv_paused->integer ) 
+	if ( tvPlay.active ) {
+		clc.lastPacketTime = cls.realtime;
+		return;
+	}
+	if ( ( !CL_CheckPaused() || !sv_paused->integer )
 		&& clc.state >= CA_CONNECTED && clc.state != CA_CINEMATIC
 	    && cls.realtime - clc.lastPacketTime > cl_timeout->value*1000) {
 		if (++cl.timeoutcount > 5) {	// timeoutcount saves debugger
@@ -2954,6 +3037,61 @@ void CL_CheckUserinfo( void ) {
 	}
 }
 
+#ifdef USE_HTTP
+static qboolean tvDownloadActive = qfalse;
+
+void CL_TV_DownloadFrame( void ) {
+	// pump active TV download
+	if ( tvDownloadActive ) {
+		if ( CL_HTTP_TV_PerformDownload() ) {
+			tvDownloadActive = qfalse;
+		}
+		return;
+	}
+	// warn if tvdemo was received but HTTP is unavailable
+	if ( clc.state == CA_ACTIVE && clc.tvDemoFile[0]
+		&& cl_tvDownload->integer && !CL_HTTP_Available() ) {
+		Com_Printf( S_COLOR_YELLOW "TV: HTTP not available, cannot download demo\n" );
+		clc.tvDemoFile[0] = '\0';
+		clc.tvDemoMap[0] = '\0';
+		return;
+	}
+	// initiate TV demo download once the client has entered the game
+	if ( clc.state == CA_ACTIVE && clc.tvDemoFile[0]
+		&& cl_tvDownload->integer && CL_HTTP_Available() ) {
+		if ( clc.sv_dlURL[0] ) {
+			char url[MAX_OSPATH];
+			char localName[MAX_QPATH];
+			time_t now;
+			struct tm *tm_info;
+
+			Com_sprintf( url, sizeof( url ), "%s/%s", clc.sv_dlURL, clc.tvDemoFile );
+
+			now = time( NULL );
+			tm_info = localtime( &now );
+			if ( tm_info && clc.tvDemoMap[0] ) {
+				char timestamp[32];
+				strftime( timestamp, sizeof( timestamp ), "%Y%m%d_%H%M%S", tm_info );
+				Com_sprintf( localName, sizeof( localName ), "demos/%s_%s.tvd", timestamp, clc.tvDemoMap );
+			} else {
+				Q_strncpyz( localName, clc.tvDemoFile, sizeof( localName ) );
+			}
+
+			tvDownloadActive = CL_HTTP_TV_BeginDownload( localName, url );
+		} else {
+			Com_DPrintf( "TV: sv_dlURL not set, skipping demo download\n" );
+		}
+		clc.tvDemoFile[0] = '\0';
+		clc.tvDemoMap[0] = '\0';
+	}
+}
+
+void CL_TV_CleanupDownload( void ) {
+	CL_HTTP_TV_CleanupDownload();
+	tvDownloadActive = qfalse;
+}
+#endif
+
 /*
 ==================
 CL_Frame
@@ -2966,13 +3104,25 @@ void CL_Frame ( int msec ) {
 		return;
 	}
 
-#ifdef USE_CURL
-	if(clc.downloadCURLM) {
-		CL_cURL_PerformDownload();
+#ifdef USE_HTTP
+	if(clc.httpUsed) {
+		qboolean finished = CL_HTTP_PerformDownload();
+
+		if(finished) {
+			if(clc.download) {
+				FS_FCloseFile(clc.download);
+				clc.download = 0;
+			}
+
+			FS_SV_Rename(clc.downloadTempName, clc.downloadName, qfalse);
+			clc.downloadRestart = qtrue;
+			CL_NextDownload();
+		}
+
 		// we can't process frames normally when in disconnected
 		// download mode since the ui vm expects clc.state to be
 		// CA_CONNECTED
-		if(clc.cURLDisconnected) {
+		if(clc.disconnectedForHttpDownload) {
 			cls.realFrametime = msec;
 			cls.frametime = msec;
 			cls.realtime += cls.frametime;
@@ -2983,6 +3133,9 @@ void CL_Frame ( int msec ) {
 			return;
 		}
 	}
+
+	CL_HTTP_PerformInMemoryDownload();
+	CL_TV_DownloadFrame();
 #endif
 
 	if ( cls.cddialog ) {
@@ -3669,9 +3822,6 @@ void CL_Init( void ) {
 	cl_showMouseRate = Cvar_Get ("cl_showmouserate", "0", 0);
 
 	cl_allowDownload = Cvar_Get ("cl_allowDownload", "1", CVAR_ARCHIVE);
-#ifdef USE_CURL_DLOPEN
-	cl_cURLLib = Cvar_Get("cl_cURLLib", DEFAULT_CURL_LIB, CVAR_ARCHIVE | CVAR_PROTECTED);
-#endif
 
 	cl_conXOffset = Cvar_Get ("cl_conXOffset", "0", 0);
 #ifdef __APPLE__
@@ -3775,6 +3925,16 @@ void CL_Init( void ) {
 #endif
 
 
+#ifdef USE_HTTP
+	if(!CL_HTTP_Init()) {
+		Com_Printf("WARNING: couldn't initialize HTTP download support\n");
+	}
+	cl_tvDownload = Cvar_Get( "cl_tvDownload", "0", CVAR_ARCHIVE );
+	Cvar_SetDescription( cl_tvDownload, "Download TV demo recordings from server via HTTP at end of match." );
+#endif
+
+	CL_TV_Init();
+
 	// cgame might not be initialized before menu is used
 	Cvar_Get ("cg_viewsize", "100", CVAR_ARCHIVE );
 	// Make sure cg_stereoSeparation is zero as that variable is deprecated and should not be used anymore.
@@ -3859,6 +4019,10 @@ void CL_Shutdown(char *finalmsg, qboolean disconnect, qboolean quit)
 	
 	CL_ClearMemory(qtrue);
 	CL_Snd_Shutdown();
+
+#ifdef USE_HTTP
+	CL_HTTP_Shutdown();
+#endif
 
 	Cmd_RemoveCommand ("cmd");
 	Cmd_RemoveCommand ("configstrings");

@@ -199,6 +199,13 @@ void QDECL SV_SendServerCommand(client_t *cl, const char *fmt, ...) {
 		return;
 	}
 
+	// capture for TV recording
+	if ( cl != NULL ) {
+		SV_TV_CaptureServerCommand( cl - svs.clients, (char *)message );
+	} else {
+		SV_TV_CaptureServerCommand( -1, (char *)message );
+	}
+
 	if ( cl != NULL ) {
 		SV_AddServerCommand( cl, (char *)message );
 		return;
@@ -1142,6 +1149,9 @@ void SV_Frame( int msec ) {
 
 		// let everything in the world think and move
 		VM_Call (gvm, GAME_RUN_FRAME, sv.time);
+
+		// write TV demo frame after game has run
+		SV_TV_WriteFrame();
 	}
 
 	if ( com_speeds->integer ) {
