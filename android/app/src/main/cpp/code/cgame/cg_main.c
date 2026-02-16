@@ -1837,15 +1837,20 @@ static void CG_FeederSelection(float feederID, int index) {
 		clientNum = cg.scores[scoreIndex].client;
 	}
 
-	// Send follow command if spectating and a valid player was selected
+	// Send follow/view command if spectating and a valid player was selected
 	// Skip if we're already following this player
-	if ( clientNum >= 0 && cg.snap && !cg.demoPlayback ) {
+	if ( clientNum >= 0 && cg.snap ) {
 		qboolean spectator = cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR ||
-		                     ( cg.snap->ps.pm_flags & PMF_FOLLOW );
+		                     ( cg.snap->ps.pm_flags & PMF_FOLLOW ) ||
+		                     cg.demoPlayback || cgs.tvPlayback;
 		qboolean alreadyFollowing = (cg.snap->ps.pm_flags & PMF_FOLLOW) &&
 		                            (cg.snap->ps.clientNum == clientNum);
 		if ( spectator && !alreadyFollowing && cg.scores[cg.selectedScore].team != TEAM_SPECTATOR ) {
-			trap_SendClientCommand( va( "follow %i", clientNum ) );
+			if ( cgs.tvPlayback ) {
+				trap_SendConsoleCommand( va( "tv_view %i\n", clientNum ) );
+			} else if ( !cg.demoPlayback ) {
+				trap_SendClientCommand( va( "follow %i", clientNum ) );
+			}
 		}
 	}
 }
@@ -2155,8 +2160,12 @@ Called before every level change or subsystem restart
 =================
 */
 void CG_Shutdown( void ) {
-	// some mods may need to do cleanup work here,
-	// like closing files or archiving session data
+	// Clear VR pointers that reference cgame memory (cgs.cursorX/Y)
+	// to prevent dangling pointer access if cgame is reloaded
+	if (vr) {
+		vr->scoreboardCursorX = NULL;
+		vr->scoreboardCursorY = NULL;
+	}
 }
 
 

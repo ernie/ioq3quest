@@ -1778,6 +1778,11 @@ static void CG_DrawDisconnect( void ) {
 	const char		*s;
 	int			w;
 
+	// don't show during paused demo/TV playback
+	if ( ( cg.demoPlayback || cgs.tvPlayback ) && cg_timescale.value == 0.0f ) {
+		return;
+	}
+
 	// draw the phone jack if we are completely past our buffers
 	cmdNum = trap_GetCurrentCmdNumber() - CMD_BACKUP + 1;
 	trap_GetUserCmd( cmdNum, &cmd );
@@ -2438,7 +2443,7 @@ static qboolean CG_DrawScoreboard( void ) {
 		return qfalse;
 	}
 
-	if ( cg.showScores || cg.predictedPlayerState.pm_type == PM_DEAD || cg.predictedPlayerState.pm_type == PM_INTERMISSION ) {
+	if ( cg.showScores || (cg.predictedPlayerState.pm_type == PM_DEAD && !CG_IsThirdPersonFollowMode(VRFM_THIRDPERSON_2)) || cg.predictedPlayerState.pm_type == PM_INTERMISSION ) {
 	} else {
 		if ( !CG_FadeColor( cg.scoreFadeTime, FADE_TIME ) ) {
 			// next time scoreboard comes up, don't print killer
@@ -2494,7 +2499,7 @@ static qboolean CG_DrawScoreboard( void ) {
 
 	// VR scoreboard cursor for spectators (enables click-to-follow)
 	spectator = cg.snap && (cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR ||
-	            ( cg.snap->ps.pm_flags & PMF_FOLLOW ));
+	            ( cg.snap->ps.pm_flags & PMF_FOLLOW ) || cg.demoPlayback || cgs.tvPlayback);
 	if ( cg.showScores && spectator && !scoreboardCursorActive ) {
 		// Center cursor and link VR input to cgs cursor
 		cgs.cursorX = SCREEN_WIDTH / 2;

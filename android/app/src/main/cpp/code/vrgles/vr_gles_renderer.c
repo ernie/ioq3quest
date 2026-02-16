@@ -812,7 +812,7 @@ void VR_DrawFrame( engine_t* engine ) {
 
         engine->appState.Layers[engine->appState.LayerCount++].Projection = projection_layer;
 
-        // SP intermission overlay anchoring - track state for world-fixed UI
+        // SP intermission HUD anchoring - track state for world-fixed UI
         static XrPosef sp_intermission_anchor_pose;
         static qboolean sp_intermission_pose_captured = qfalse;
 
