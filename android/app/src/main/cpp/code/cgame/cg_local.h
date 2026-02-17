@@ -717,6 +717,9 @@ typedef struct {
 	qboolean		downloadFinishError;
 	int				downloadFinishTime;
 
+	// TVD download offer prompt (tvdOfferName[0] != '\0' means active)
+	char			tvdOfferName[MAX_QPATH];
+	int				tvdOfferTime;		// cg.time when offer started (for countdown)
 } cg_t;
 
 
@@ -1318,6 +1321,10 @@ extern	vmCvar_t		cg_downloadName;
 extern	vmCvar_t		cg_downloadSize;
 extern	vmCvar_t		cg_downloadCount;
 extern	vmCvar_t		cg_downloadTime;
+extern	vmCvar_t		cg_tvdTimeout;
+extern	vmCvar_t		cg_tvdOffer;
+extern	vmCvar_t		cg_voteYesKey;
+extern	vmCvar_t		cg_voteNoKey;
 
 
 void CG_TrailItem( centity_t *cent, qhandle_t hModel, vec3_t offset, float scale );

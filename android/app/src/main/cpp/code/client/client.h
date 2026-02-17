@@ -346,6 +346,8 @@ typedef struct {
 	// TV demo download
 	char		tvDemoFile[MAX_QPATH]; // pending TV demo remote path for HTTP download
 	char		tvDemoMap[MAX_QPATH];  // map name for local filename generation
+	char		tvDemoPendingUrl[MAX_OSPATH];   // pending offer URL
+	char		tvDemoPendingLocal[MAX_OSPATH]; // pending offer local path
 
 	// big stuff at end of structure so most offsets are 15 bits or less
 	netchan_t	netchan;
@@ -579,6 +581,9 @@ extern	cvar_t	*cl_tvViewpoint;
 extern	cvar_t	*cl_tvTime;
 extern	cvar_t	*cl_tvDuration;
 extern	cvar_t	*cl_tvDownload;
+extern	cvar_t	*cl_tvdOffer;
+extern	cvar_t	*cl_voteYesKey;
+extern	cvar_t	*cl_voteNoKey;
 
 void CL_TV_Init( void );
 qboolean CL_TV_Open( const char *filename );
