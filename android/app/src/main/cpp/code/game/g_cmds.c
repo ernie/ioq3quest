@@ -1405,7 +1405,7 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 		Com_sprintf( level.voteDisplayString, sizeof( level.voteDisplayString ), "%s", level.voteString );
 	}
 
-	trap_SendServerCommand( -1, va("print \"%s called a vote.\n\"", ent->client->pers.netname ) );
+	trap_SendServerCommand( -1, va("print \"%s^7 called a vote.\n\"", ent->client->pers.netname ) );
 
 	// start the voting, the caller automatically votes yes
 	level.voteTime = level.time;
@@ -1418,9 +1418,10 @@ void Cmd_CallVote_f( gentity_t *ent ) {
 	ent->client->ps.eFlags |= EF_VOTED;
 
 	trap_SetConfigstring( CS_VOTE_TIME, va("%i", level.voteTime ) );
-	trap_SetConfigstring( CS_VOTE_STRING, level.voteDisplayString );	
+	trap_SetConfigstring( CS_VOTE_STRING, level.voteDisplayString );
 	trap_SetConfigstring( CS_VOTE_YES, va("%i", level.voteYes ) );
-	trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );	
+	trap_SetConfigstring( CS_VOTE_NO, va("%i", level.voteNo ) );
+	trap_SetConfigstring( CS_VOTE_CALLER, va("%i", (int)(ent - g_entities) ) );
 }
 
 /*
@@ -1577,7 +1578,7 @@ void Cmd_CallTeamVote_f( gentity_t *ent ) {
 		if ( level.clients[i].pers.connected == CON_DISCONNECTED )
 			continue;
 		if (level.clients[i].sess.sessionTeam == team)
-			trap_SendServerCommand( i, va("print \"%s called a team vote.\n\"", ent->client->pers.netname ) );
+			trap_SendServerCommand( i, va("print \"%s^7 called a team vote.\n\"", ent->client->pers.netname ) );
 	}
 
 	// start the voting, the caller automatically votes yes
@@ -1595,6 +1596,7 @@ void Cmd_CallTeamVote_f( gentity_t *ent ) {
 	trap_SetConfigstring( CS_TEAMVOTE_STRING + cs_offset, level.teamVoteString[cs_offset] );
 	trap_SetConfigstring( CS_TEAMVOTE_YES + cs_offset, va("%i", level.teamVoteYes[cs_offset] ) );
 	trap_SetConfigstring( CS_TEAMVOTE_NO + cs_offset, va("%i", level.teamVoteNo[cs_offset] ) );
+	trap_SetConfigstring( CS_TEAMVOTE_CALLER + cs_offset, va("%i", (int)(ent - g_entities) ) );
 }
 
 /*

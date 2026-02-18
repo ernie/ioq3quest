@@ -1820,7 +1820,7 @@ void CheckVote( void ) {
 	}
 	level.voteTime = 0;
 	trap_SetConfigstring( CS_VOTE_TIME, "" );
-
+	trap_SetConfigstring( CS_VOTE_CALLER, "" );
 }
 
 /*
@@ -1944,7 +1944,7 @@ void CheckTeamVote( int team ) {
 	}
 	level.teamVoteTime[cs_offset] = 0;
 	trap_SetConfigstring( CS_TEAMVOTE_TIME + cs_offset, "" );
-
+	trap_SetConfigstring( CS_TEAMVOTE_CALLER + cs_offset, "" );
 }
 
 
