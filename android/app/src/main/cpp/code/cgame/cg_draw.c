@@ -2701,7 +2701,7 @@ static qboolean CG_DrawScoreboard( void ) {
 	}
 
 	// Update selection when followed player changes
-	if ( cg.snap && (cg.snap->ps.pm_flags & PMF_FOLLOW) ) {
+	if ( cg.snap && ((cg.snap->ps.pm_flags & PMF_FOLLOW) || cgs.tvPlayback) ) {
 		if ( cg.snap->ps.clientNum != lastFollowedClient ) {
 			CG_SetScoreSelection(menuScoreboard);
 			lastFollowedClient = cg.snap->ps.clientNum;
@@ -3630,6 +3630,7 @@ static void CG_DrawHUD2D()
 
 	if ( cg.snap->ps.pm_type == PM_INTERMISSION ) {
 		CG_DrawIntermission();
+		CG_DrawTVOverlay();
 		return;
 	}
 
