@@ -40,6 +40,7 @@ cvar_t *vr_screenCurvature = NULL;
 cvar_t *vr_thumbstickDeadzone = NULL;
 cvar_t *vr_thumbstickFullDeflection = NULL;
 cvar_t *vr_weaponAdjust = NULL;
+cvar_t *vr_triggerSensitivity = NULL;
 
 void VR_InitCvars( void )
 {
@@ -80,6 +81,8 @@ void VR_InitCvars( void )
 	vr_thumbstickDeadzone = Cvar_Get ("vr_thumbstickDeadzone", "0.15", CVAR_ARCHIVE);
 	vr_thumbstickFullDeflection = Cvar_Get ("vr_thumbstickFullDeflection", "0.85", CVAR_ARCHIVE);
 	vr_weaponAdjust = Cvar_Get ("vr_weaponAdjust", "0", CVAR_ARCHIVE);
+	vr_triggerSensitivity = Cvar_Get ("vr_triggerSensitivity", "0.25", CVAR_ARCHIVE);
+	Cvar_CheckRange( vr_triggerSensitivity, 0.1f, 0.9f, qfalse );
 
 	// Values are:  scale,right,up,forward,pitch,yaw,roll
 	// VALUES PROVIDED BY SkillFur - Thank-you!
