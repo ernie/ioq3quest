@@ -7444,7 +7444,7 @@ void vk_update_mvp( const float *m ) {
 				// In virtual screen mode, apply the same aspect correction as normal
 				// virtual screen rendering to prevent vertically squished mirror reflections
 				if ( vr.virtual_screen ) {
-					float viewportAspect = 4.0f / 3.0f;
+					float viewportAspect = (float)backEnd.viewParms.viewportWidth / (float)backEnd.viewParms.viewportHeight;
 					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
 					float aspectCorrection = viewportAspect / nativeAspect;
 					proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
@@ -7459,21 +7459,26 @@ void vk_update_mvp( const float *m ) {
 				myGlMultMatrix( backEnd.or.eyeViewMatrix[1], tr.vrParms.mirrorProjectionEye[1], &push_constants[16] );
 			}
 		} else if ( vr.virtual_screen ) {
-			// Virtual screen or weapon zoom mode
-			// Use VR projection with aspect correction for all content (including menu 3D models)
-			// Projection already has Vulkan conventions from vr_vk_renderer.c
+			// Virtual screen mode: mono rendering for menus and spectator follow
 			float mvp[16];
 			float proj[16];
 			Com_Memcpy( proj, tr.vrParms.projection, sizeof(proj) );
 
-			// In virtual screen mode, viewport is constrained to 4:3 aspect ratio.
-			// The projection matrix was designed for the full (roughly square) framebuffer,
-			// so we need to adjust Y scale to prevent vertical squishing.
-			if ( vr.virtual_screen ) {
-				float viewportAspect = 4.0f / 3.0f;
+			if ( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
+				// UI model scenes (player preview, 3D logo, etc.): build projection
+				// from the refdef's FOV so the UI code's framing is respected.
+				// Keep Z components from VR projection (reversed depth, Vulkan conventions).
+				proj[0] = 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f );
+				proj[5] = -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f );  // Vulkan Y-flip
+				proj[8] = 0.0f;  // Symmetric FOV (no asymmetric offset)
+				proj[9] = 0.0f;
+			} else {
+				// Full-screen virtual screen (spectator follow, etc.): use VR projection
+				// with aspect correction for the actual viewport dimensions.
+				float viewportAspect = (float)backEnd.viewParms.viewportWidth / (float)backEnd.viewParms.viewportHeight;
 				float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
 				float aspectCorrection = viewportAspect / nativeAspect;
-				proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
+				proj[5] *= aspectCorrection;
 			}
 
 			myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
