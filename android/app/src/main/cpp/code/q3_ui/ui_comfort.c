@@ -41,6 +41,7 @@ COMFORT OPTIONS MENU
 
 #define ID_COMFORTVIGNETTE		127
 #define ID_HEIGHTADJUST			128
+#define ID_SIXDOF			    120
 #define ID_ROLLHIT			    129
 #define ID_SMOOTHFOLLOW		    130
 #define ID_HAPTICINTENSITY	    131
@@ -61,6 +62,7 @@ typedef struct {
 
 	menuslider_s 		comfortvignette;
 	menuslider_s 		heightadjust;
+	menuradiobutton_s	sixdof;
 	menuradiobutton_s	rollhit;
 	menuradiobutton_s	smoothfollow;
 	menuslider_s 		hapticintensity;
@@ -75,9 +77,14 @@ typedef struct {
 static comfort_t s_comfort;
 
 
+static void Comfort_SixDofStatusBar( void *self ) {
+	UI_DrawString( SCREEN_WIDTH * 0.50, SCREEN_HEIGHT * 0.80, "Physical head movement controls in-game movement (SP only)", UI_SMALLFONT|UI_CENTER, colorWhite );
+}
+
 static void Comfort_SetMenuItems( void ) {
 	s_comfort.comfortvignette.curvalue		= trap_Cvar_VariableValue( "vr_comfortVignette" );
 	s_comfort.heightadjust.curvalue			= trap_Cvar_VariableValue( "vr_heightAdjust" );
+	s_comfort.sixdof.curvalue				= trap_Cvar_VariableValue( "vr_6dof" ) != 0;
 	s_comfort.rollhit.curvalue				= trap_Cvar_VariableValue( "vr_rollWhenHit" ) != 0;
 	s_comfort.smoothfollow.curvalue			= trap_Cvar_VariableValue( "cg_smoothFollow" ) != 0;
 	s_comfort.hapticintensity.curvalue		= trap_Cvar_VariableValue( "vr_hapticIntensity" );
@@ -100,6 +107,10 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 
 		case ID_HEIGHTADJUST:
 			trap_Cvar_SetValue( "vr_heightAdjust", s_comfort.heightadjust.curvalue );
+			break;
+
+		case ID_SIXDOF:
+			trap_Cvar_SetValue( "vr_6dof", s_comfort.sixdof.curvalue );
 			break;
 
 		case ID_ROLLHIT:
@@ -169,7 +180,7 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.framer.width  	   = 256;
 	s_comfort.framer.height  	   = 334;
 
-	y = 198;
+	y = 144;
 	s_comfort.comfortvignette.generic.type	     = MTYPE_SLIDER;
 	s_comfort.comfortvignette.generic.x			 = VR_X_POS;
     s_comfort.comfortvignette.generic.y			 = y;
@@ -190,6 +201,16 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.heightadjust.generic.callback  	= Comfort_MenuEvent;
 	s_comfort.heightadjust.minvalue		     = 0.0f;
 	s_comfort.heightadjust.maxvalue		     = 1.0f;
+
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.sixdof.generic.type        = MTYPE_RADIOBUTTON;
+	s_comfort.sixdof.generic.name	      = "SP 6DoF Movement:";
+	s_comfort.sixdof.generic.flags	      = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.sixdof.generic.callback    = Comfort_MenuEvent;
+	s_comfort.sixdof.generic.id          = ID_SIXDOF;
+	s_comfort.sixdof.generic.x	          = VR_X_POS;
+	s_comfort.sixdof.generic.y	          = y;
+	s_comfort.sixdof.generic.statusbar   = Comfort_SixDofStatusBar;
 
 	y += BIGCHAR_HEIGHT+2;
 	s_comfort.rollhit.generic.type        = MTYPE_RADIOBUTTON;
@@ -281,6 +302,7 @@ static void Comfort_MenuInit( void ) {
 
 	Menu_AddItem( &s_comfort.menu, &s_comfort.comfortvignette );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.heightadjust );
+	Menu_AddItem( &s_comfort.menu, &s_comfort.sixdof );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.rollhit );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.smoothfollow );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hapticintensity );

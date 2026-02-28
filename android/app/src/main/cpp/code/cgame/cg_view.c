@@ -1205,7 +1205,7 @@ static int CG_CalcViewValues( ) {
         VectorCopy(cg.refdef.vieworg, cg.vr_vieworigin);
     }
 
-    if (vr->use_fake_6dof && !vr->virtual_screen)
+    if (!vr->use_6dof && !vr->virtual_screen)
     {
         vec3_t weaponorigin, weaponangles;
         if (cg.predictedPlayerState.pm_type == PM_SPECTATOR && !(cg.snap->ps.pm_flags & PMF_FOLLOW)) {
@@ -1278,7 +1278,7 @@ static int CG_CalcViewValues( ) {
     }
 
 	// position eye relative to origin
-	if (vr->use_fake_6dof && !vr->virtual_screen)
+	if (!vr->use_6dof && !vr->virtual_screen)
     {
 		if (vr->weapon_zoomed) {
 			//If we are zoomed, then we use the refdefViewANgles (which are the weapon angles)
@@ -1298,7 +1298,7 @@ static int CG_CalcViewValues( ) {
 		}
 		else if (!vr->first_person_following)
 		{
-			//We are connected to a multiplayer server, so make the appropriate adjustment to the view
+			//We are using fake 6DoF, so make the appropriate adjustment to the view
 			//angles as we send orientation to the server that includes the weapon angles
 			vec3_t angles;
 			VectorCopy(vr->hmdorientation, angles);

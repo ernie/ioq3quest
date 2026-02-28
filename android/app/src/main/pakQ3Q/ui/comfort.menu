@@ -42,13 +42,13 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Comfort Vignette:"
 		cvarfloat "vr_comfortVignette" 0.2 0 1
-		rect 99 150 256 20
+		rect 99 90 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
 		textscale .333
       		forecolor 1 1 1 1
-      		visible 1 
+      		visible 1
     		}
 
 	itemDef {
@@ -57,7 +57,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Height Adjust:"
 		cvarfloat "vr_heightAdjust" 0.2 0 1
-		rect 99 175 256 20
+		rect 99 115 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
@@ -70,15 +70,45 @@ itemDef {
       		name comfort
 		group grpComfort
       		type ITEM_TYPE_YESNO
-		text "Roll When Hit:"
-		cvar "vr_rollWhenHit"
-		rect 99 200 256 20
+		text "SP 6DoF Movement:"
+		cvar "vr_6dof"
+		rect 99 140 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
 		textscale .333
       		forecolor 1 1 1 1
-      		visible 1 
+      		visible 1
+		mouseEnter { show message_sixdof }
+		mouseExit { hide message_sixdof }
+    		}
+
+	itemDef {
+		name message_sixdof
+		text "Physical head movement controls in-game movement (SP only)"
+		rect 99 385 256 20
+		textalign ITEM_ALIGN_CENTER
+		textalignx 128
+		textaligny 14
+		textscale .25
+		forecolor 1 .75 0 1
+		visible 0
+		decoration
+		}
+
+	itemDef {
+      		name comfort
+		group grpComfort
+      		type ITEM_TYPE_YESNO
+		text "Roll When Hit:"
+		cvar "vr_rollWhenHit"
+		rect 99 165 256 20
+      		textalign ITEM_ALIGN_RIGHT
+      		textalignx 128
+      		textaligny 20
+		textscale .333
+      		forecolor 1 1 1 1
+      		visible 1
     		}
 
 	itemDef {
@@ -87,7 +117,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Haptic Intensity:"
 		cvarfloat "vr_hapticIntensity" 0.2 0 1
-		rect 99 225 256 20
+		rect 99 190 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
@@ -102,13 +132,13 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "HUD Depth:"
 		cvarfloat "vr_hudDepth" 1 0 5
-		rect 99 250 256 20
+		rect 99 215 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
 		textscale .333
       		forecolor 1 1 1 1
-      		visible 1 
+      		visible 1
     		}
 
 	itemDef {
@@ -117,7 +147,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "HUD Vertical Position:"
 		cvarfloat "vr_hudYOffset" 20 -200 200
-		rect 99 275 256 20
+		rect 99 240 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
@@ -132,7 +162,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "HUD Scale:"
 		cvarfloat "vr_hudScale" 0.1 0.5 2.0
-		rect 99 300 256 20
+		rect 99 265 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
@@ -147,7 +177,7 @@ itemDef {
       		type ITEM_TYPE_YESNO
 		text "Smooth Follow:"
 		cvar "cg_smoothFollow"
-		rect 99 325 256 20
+		rect 99 290 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20
@@ -162,7 +192,7 @@ itemDef {
       		type ITEM_TYPE_SLIDER
 		text "Screen Curvature:"
 		cvarfloat "vr_screenCurvature" 0.5 0 1
-		rect 99 350 256 20
+		rect 99 315 256 20
       		textalign ITEM_ALIGN_RIGHT
       		textalignx 128
       		textaligny 20

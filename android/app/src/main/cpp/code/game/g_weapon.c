@@ -110,7 +110,7 @@ qboolean CheckGauntletAttack( gentity_t *ent ) {
     if ( !( ent->r.svFlags & SVF_BOT ) &&
          vr != NULL &&
          (ent->client->ps.clientNum == vr->clientNum) &&
-         !vr->use_fake_6dof)
+         vr->use_6dof)
     {
         VectorCopy(vr->weaponangles, angles);
         angles[YAW] += ent->client->ps.viewangles[YAW] - vr->hmdorientation[YAW];
@@ -844,7 +844,7 @@ void CalcMuzzlePoint ( gentity_t *ent, vec3_t forward, vec3_t right, vec3_t up, 
 	if ( ( ent->r.svFlags & SVF_BOT ) ||
 			//Can't use the vr_clientinfo if this isn't the vr client
 			vr == NULL || (ent->client->ps.clientNum != vr->clientNum) ||
-			vr->use_fake_6dof)
+			!vr->use_6dof)
 	{
 		VectorCopy( ent->s.pos.trBase, muzzlePoint );
 		muzzlePoint[2] += ent->client->ps.viewheight;
@@ -909,7 +909,7 @@ void FireWeapon( gentity_t *ent ) {
 	if ( !( ent->r.svFlags & SVF_BOT ) &&
          vr != NULL &&
          (ent->client->ps.clientNum == vr->clientNum) &&
-         !vr->use_fake_6dof)
+         vr->use_6dof)
 	{
 		VectorCopy(vr->weaponangles, viewang);
 		viewang[YAW] += ent->client->ps.viewangles[YAW] - vr->hmdorientation[YAW];
