@@ -1,1 +1,1 @@
-#define Q3QVERSION  "1.1.3"
+#define Q3QVERSION  "1.2.0" 

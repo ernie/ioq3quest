@@ -236,9 +236,9 @@ static void Main_MenuDraw( void ) {
 	}
 
 	yPos += SMALLCHAR_HEIGHT;
-	UI_DrawString( 320, yPos, "Quake3Quest " Q3QVERSION " - Visit quake3.quakevr.com for discord invite.", UI_CENTER|UI_SMALLFONT, color_white );
+	UI_DrawString( 320, yPos, "Quake3Quest " Q3QVERSION " - Unofficial build maintained by ^1Nil^4Class", UI_CENTER|UI_SMALLFONT, color_white );
 	yPos += SMALLCHAR_HEIGHT;
-	UI_DrawString( 320, yPos, "Join our discord for news, leaderboards and community!", UI_CENTER|UI_SMALLFONT, color_white );
+	UI_DrawString( 320, yPos, "Visit quake3.quakevr.com for discord invite.", UI_CENTER|UI_SMALLFONT, color_white );
 	yPos += SMALLCHAR_HEIGHT;
 	UI_DrawString( 320, yPos, "Get mods & mappacks via the companion app!", UI_CENTER|UI_SMALLFONT, color_white );
 }

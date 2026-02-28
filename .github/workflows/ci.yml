@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [renderervk]
+
+jobs:
+  build:
+    name: Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        run: |
+          SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+          yes | $SDKMANAGER --licenses > /dev/null 2>&1 || true
+          $SDKMANAGER "ndk;27.3.13750724" "cmake;3.22.1" "build-tools;32.0.0"
+
+      - name: CMake configure
+        run: |
+          cmake -B build -S android/app/src/main/cpp \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/27.3.13750724/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFULL_BUILD=ON \
+            -DBUILD_RENDERER_VK=ON \
+            -G Ninja
+
+      - name: CMake build
+        run: cmake --build build -j$(nproc)
+
+      - name: Gradle build
+        working-directory: android
+        run: ./gradlew :app:assembleRelease -PUSE_VULKAN=ON
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ioq3quest-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 5

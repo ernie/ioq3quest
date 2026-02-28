@@ -3,8 +3,8 @@
 setlocal EnableDelayedExpansion
 
 set BUILD_TYPE=release
-set VERSION=1.1.3
-set BUILD_RENDERER_VK=OFF
+set VERSION=1.2.0
+set BUILD_RENDERER_VK=ON
 
 @REM Define the following environment variables to sign a release build
 @REM set KEYSTORE=
@@ -42,7 +42,7 @@ if %BUILD_TYPE%==debug (
 	set CMAKE_BUILD_TYPE=Debug
 )
 
-echo #define Q3QVERSION  "%VERSION%" > .\android\app\src\main\cpp\code\vr\vr_version.h
+echo #define Q3QVERSION  "%VERSION%" > .\android\app\src\main\cpp\code\vrcommon\vr_version.h
 
 pushd %~dp0\..
 

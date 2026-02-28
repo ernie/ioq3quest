@@ -2,7 +2,7 @@
 include_guard(GLOBAL)
 
 set(PROJECT_NAME "ioq3quest")
-set(PROJECT_VERSION "1.1.3")
+set(PROJECT_VERSION "1.2.0")
 set(CLIENT_NAME "ioquake3")
 
 # Game directories
