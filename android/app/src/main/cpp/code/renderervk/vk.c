@@ -7444,7 +7444,7 @@ void vk_update_mvp( const float *m ) {
 				// In virtual screen mode, apply the same aspect correction as normal
 				// virtual screen rendering to prevent vertically squished mirror reflections
 				if ( vr.virtual_screen ) {
-					float viewportAspect = (float)backEnd.viewParms.viewportWidth / (float)backEnd.viewParms.viewportHeight;
+					float viewportAspect = 4.0f / 3.0f;
 					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
 					float aspectCorrection = viewportAspect / nativeAspect;
 					proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
@@ -7473,9 +7473,9 @@ void vk_update_mvp( const float *m ) {
 				proj[8] = 0.0f;  // Symmetric FOV (no asymmetric offset)
 				proj[9] = 0.0f;
 			} else {
-				// Full-screen virtual screen (spectator follow, etc.): use VR projection
-				// with aspect correction for the actual viewport dimensions.
-				float viewportAspect = (float)backEnd.viewParms.viewportWidth / (float)backEnd.viewParms.viewportHeight;
+				// Game world behind virtual screen: viewport is full framebuffer but
+				// virtual screen constrains visible output to 4:3, so use hardcoded 4:3.
+				float viewportAspect = 4.0f / 3.0f;
 				float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
 				float aspectCorrection = viewportAspect / nativeAspect;
 				proj[5] *= aspectCorrection;
