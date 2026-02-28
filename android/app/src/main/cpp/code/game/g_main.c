@@ -457,6 +457,10 @@ void G_RegisterCvars( void ) {
 	}
 
 	level.warmupModificationCount = g_warmup.modificationCount;
+
+	// force g_doWarmup to 1
+	trap_Cvar_Register( NULL, "g_doWarmup", "1", CVAR_ROM );
+	trap_Cvar_Set( "g_doWarmup", "1" );
 }
 
 /*
@@ -1716,9 +1720,8 @@ void CheckTournament( void ) {
 		// if all players have arrived, start the countdown
 		if ( level.warmupTime < 0 ) {
 			if ( level.numPlayingClients == 2 ) {
-				// fudge by -1 to account for extra delays
-				if ( g_warmup.integer > 1 ) {
-					level.warmupTime = level.time + ( g_warmup.integer - 1 ) * 1000;
+				if ( g_warmup.integer > 0 ) {
+					level.warmupTime = level.time + g_warmup.integer * 1000;
 				} else {
 					level.warmupTime = 0;
 				}
@@ -1769,9 +1772,8 @@ void CheckTournament( void ) {
 
 		// if all players have arrived, start the countdown
 		if ( level.warmupTime < 0 ) {
-			// fudge by -1 to account for extra delays
-			if ( g_warmup.integer > 1 ) {
-				level.warmupTime = level.time + ( g_warmup.integer - 1 ) * 1000;
+			if ( g_warmup.integer > 0 ) {
+				level.warmupTime = level.time + g_warmup.integer * 1000;
 			} else {
 				level.warmupTime = 0;
 			}
