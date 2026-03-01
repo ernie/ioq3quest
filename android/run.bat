@@ -27,12 +27,6 @@ if "%1"=="clean" (
 	rm -rf .\android\app\src\main\jniLibs\arm64-v8a
 )
 
-@REM Check all arguments for vulkan or -DBUILD_RENDERER_VK=ON
-for %%a in (%*) do (
-	if "%%a"=="vulkan" set BUILD_RENDERER_VK=ON
-	if "%%a"=="-DBUILD_RENDERER_VK=ON" set BUILD_RENDERER_VK=ON
-)
-
 if %BUILD_TYPE%==release (
 	set GRADLE_BUILD_TYPE=:app:assembleRelease
 	set CMAKE_BUILD_TYPE=Release
@@ -46,31 +40,21 @@ echo #define Q3QVERSION  "%VERSION%" > .\android\app\src\main\cpp\code\vrcommon\
 
 pushd %~dp0\..
 
-@REM CMake configure (if needed or if renderer type changed)
-@REM Check if we need to reconfigure by comparing renderer type with cached value
+@REM CMake configure (if needed)
 set NEED_CONFIGURE=0
 if not exist "build\CMakeCache.txt" (
 	set NEED_CONFIGURE=1
 	echo CMakeCache.txt not found, will configure...
-) else (
-	@REM Check if renderer type changed by looking at cache
-	findstr /C:"BUILD_RENDERER_VK:BOOL=!BUILD_RENDERER_VK!" "build\CMakeCache.txt" >nul 2>&1
-	if !ERRORLEVEL! NEQ 0 (
-		echo Renderer type changed to BUILD_RENDERER_VK=!BUILD_RENDERER_VK!, cleaning and reconfiguring...
-		rd /s /q build 2>nul
-		set NEED_CONFIGURE=1
-	)
 )
 
 if "!NEED_CONFIGURE!"=="1" (
-	echo Configuring CMake build with BUILD_RENDERER_VK=!BUILD_RENDERER_VK!...
-	cmake -B build -S android/app/src/main/cpp ^
+	echo Configuring CMake build...
+	cmake -Wno-deprecated -B build -S android/app/src/main/cpp ^
 		-DCMAKE_TOOLCHAIN_FILE="%TOOLCHAIN_FILE%" ^
 		-DANDROID_ABI=arm64-v8a ^
 		-DANDROID_PLATFORM=android-26 ^
 		-DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE% ^
 		-DFULL_BUILD=ON ^
-		-DBUILD_RENDERER_VK=!BUILD_RENDERER_VK! ^
 		-G "Ninja"
 
 	if !ERRORLEVEL! NEQ 0 (
@@ -93,7 +77,7 @@ if %ERRORLEVEL% NEQ 0 (
 pushd android
 
 set GRADLE_EXIT_CONSOLE=1
-call gradlew.bat %GRADLE_BUILD_TYPE% -PUSE_VULKAN=%BUILD_RENDERER_VK%
+call gradlew.bat %GRADLE_BUILD_TYPE%
 
 if %ERRORLEVEL% NEQ 0 (
 	popd

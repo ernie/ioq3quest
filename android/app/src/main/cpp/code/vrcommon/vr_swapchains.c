@@ -1,7 +1,7 @@
 /*
  * vr_swapchains.c - Common OpenXR swapchain utilities
  *
- * Graphics-API-agnostic OpenXR operations shared by vrgl2 and vrvk.
+ * Graphics-API-agnostic OpenXR swapchain operations.
  */
 
 #include "vr_swapchains.h"

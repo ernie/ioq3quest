@@ -42,7 +42,7 @@ typedef XrBool32 VR_Bool;
 #define VR_FALSE XR_FALSE
 
 // Forward declaration for graphics-specific swapchain info
-// The actual struct is defined in vrgl2/vr_gl_types.h or vrvk/vr_vk_types.h
+// The actual struct is defined in vrvk/vr_vk_types.h
 typedef struct VR_SwapchainInfos_s VR_SwapchainInfos;
 
 typedef struct

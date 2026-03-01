@@ -7,14 +7,7 @@
 #include "vr_clientinfo.h"
 #include "vr_gameplay.h"
 #include "vr_cvars.h"
-// VR_SwapchainInfos struct definition from graphics-specific headers.
-// This file only accesses the common interface members (XrSwapchain, width, height)
-// that are present in both GL and VK implementations.
-#ifdef USE_VULKAN
 #include "../vrvk/vr_vk_types.h"
-#else
-#include "../vrgl2/vr_gl_types.h"
-#endif
 #include "common/xr_linear.h"
 
 #ifndef M_PI

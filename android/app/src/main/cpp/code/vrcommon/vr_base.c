@@ -35,7 +35,7 @@ qboolean vr_shutdown = qfalse;
 static void VR_BuildExtensionList(void)
 {
 	int idx = 0;
-	// Graphics API extension is provided by vrgles or vrvk depending on build
+	// Graphics API extension is provided by vrvk
 	requiredExtensionNames[idx++] = VR_Graphics_GetExtensionName();
 	requiredExtensionNames[idx++] = XR_EXT_DEBUG_UTILS_EXTENSION_NAME;
 	requiredExtensionNames[idx++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;

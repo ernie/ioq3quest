@@ -3804,36 +3804,6 @@ static void CG_DrawScreen2D()
 	CG_WeaponAdjustDraw();
 }
 
-#ifndef USE_VULKAN
-//
-// HACK HACK HACK
-//
-//Render an empty scene - seems to sort the weird out-of-body thing
-//when the HUD isn't being drawn. Need to get to the bottom of this
-//it shouldn't cost frames, but it is ugly
-static void CG_EmptySceneHackHackHack( void )
-{
-	refdef_t refdef;
-	memset( &refdef, 0, sizeof( refdef ) );
-
-	refdef.rdflags = RDF_NOWORLDMODEL;
-	AxisClear( refdef.viewaxis );
-
-	refdef.fov_x = 30;
-	refdef.fov_y = 30;
-
-	refdef.x = 0;
-	refdef.y = 0;
-	refdef.width = cgs.glconfig.vidWidth;
-	refdef.height = cgs.glconfig.vidHeight;
-
-	refdef.time = cg.time;
-
-	trap_R_ClearScene();
-	trap_R_RenderScene( &refdef );
-}
-#endif
-
 static void CG_WarmupEvents( void ) {
 
 	int	count;
@@ -4357,10 +4327,6 @@ void CG_DrawActive( void ) {
 	// End post-bloom 2D subpass
 	// This completes the render pass and runs blur passes for next frame's bloom
 	trap_R_EndPostBloom2D();
-
-#ifndef USE_VULKAN
-	CG_EmptySceneHackHackHack();
-#endif
 }
 
 

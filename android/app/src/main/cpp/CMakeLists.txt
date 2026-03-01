@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10...3.31)
 
 # This CMakeLists.txt has two modes:
 # 1. FULL BUILD: When invoked from command line (run.bat/run.sh) with -DFULL_BUILD=ON
@@ -28,16 +28,8 @@ if(FULL_BUILD)
     option(BUILD_CLIENT "Build client executable" ON)
     option(BUILD_GAME_LIBRARIES "Build game module libraries (cgame, qagame, ui)" ON)
 
-    # Renderer options (mutually exclusive, GL ES 3.0 default for now)
-    # In Phase 3, BUILD_RENDERER_VK will become the default
-    option(BUILD_RENDERER_GLES3 "Build OpenGL ES 3.0 renderer" ON)
-    option(BUILD_RENDERER_VK "Build Vulkan renderer" OFF)
-
-    # If Vulkan requested, disable GL ES
-    if(BUILD_RENDERER_VK)
-        set(BUILD_RENDERER_GLES3 OFF CACHE BOOL "" FORCE)
-        message(STATUS "BUILD_RENDERER_VK enabled - disabling BUILD_RENDERER_GLES3")
-    endif()
+    # Renderer (Vulkan only)
+    set(BUILD_RENDERER_VK ON)
 
     # Codec options
     option(USE_CODEC_VORBIS "Ogg Vorbis support" ON)
@@ -66,12 +58,7 @@ if(FULL_BUILD)
 
     set(CMAKE_C_STANDARD 99)
     set(CMAKE_C_STANDARD_REQUIRED ON)
-    # Engine library name depends on renderer
-    if(BUILD_RENDERER_VK)
-        set(ENGINE_BINARY "ioquake3_vulkan")
-    else()
-        set(ENGINE_BINARY "ioquake3_opengl2")
-    endif()
+    set(ENGINE_BINARY "ioquake3_vulkan")
 
     # Source directory
     set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/code)
@@ -124,7 +111,6 @@ if(FULL_BUILD)
         include(utils/set_output_dirs)
         include(shared_sources)
         include(renderer_common)
-        include(renderer_gles3)
         include(renderer_vk)
         include(vr)
 
@@ -152,16 +138,9 @@ if(FULL_BUILD)
             list(APPEND ENGINE_SOURCES $<TARGET_OBJECTS:${OBJLIB}>)
         endforeach()
 
-        # Add renderer sources based on selection
-        if(BUILD_RENDERER_GLES3)
-            list(APPEND ENGINE_SOURCES ${RENDERER_GLES3_BINARY_SOURCES})
-            list(APPEND CLIENT_DEFINITIONS USE_RENDERER_GLES3)
-            message(STATUS "Building with OpenGL ES 3.0 renderer")
-        elseif(BUILD_RENDERER_VK)
-            list(APPEND ENGINE_SOURCES ${RENDERER_VK_BINARY_SOURCES})
-            list(APPEND CLIENT_DEFINITIONS USE_VULKAN)
-            message(STATUS "Building with Vulkan renderer")
-        endif()
+        # Add Vulkan renderer sources
+        list(APPEND ENGINE_SOURCES ${RENDERER_VK_BINARY_SOURCES})
+        list(APPEND CLIENT_DEFINITIONS USE_VULKAN)
 
         #############################################################################
         # Engine library
@@ -197,8 +176,8 @@ if(FULL_BUILD)
 
         set_output_dirs(${ENGINE_BINARY})
 
-        # Add shader compilation dependency for Vulkan builds
-        if(BUILD_RENDERER_VK AND TARGET compile_shaders)
+        # Add shader compilation dependency
+        if(TARGET compile_shaders)
             add_dependencies(${ENGINE_BINARY} compile_shaders)
         endif()
 
@@ -213,17 +192,10 @@ if(FULL_BUILD)
         endforeach()
 
         # Create marker file for stub build to detect renderer type
-        if(BUILD_RENDERER_VK)
-            add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/.vulkan_build
-                COMMENT "Creating Vulkan build marker"
-            )
-        else()
-            add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E remove -f ${CMAKE_BINARY_DIR}/.vulkan_build
-                COMMENT "Removing Vulkan build marker (GL ES build)"
-            )
-        endif()
+        add_custom_command(TARGET ${ENGINE_BINARY} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/.vulkan_build
+            COMMENT "Creating Vulkan build marker"
+        )
     endif()
 
     #############################################################################
@@ -244,8 +216,7 @@ if(FULL_BUILD)
     message(STATUS "  Platform: Android (${ARCH})")
     message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
     message(STATUS "  Client: ${BUILD_CLIENT}")
-    message(STATUS "  GL ES 3.0 Renderer: ${BUILD_RENDERER_GLES3}")
-    message(STATUS "  Vulkan Renderer: ${BUILD_RENDERER_VK}")
+    message(STATUS "  Renderer: Vulkan")
     message(STATUS "  Game Libraries: ${BUILD_GAME_LIBRARIES}")
     message(STATUS "")
 
@@ -259,15 +230,7 @@ else()
 
     set(${CMAKE_C_FLAGS}, "${CMAKE_C_FLAGS}")
 
-    # USE_VULKAN is passed from Gradle via cmake arguments
-    option(USE_VULKAN "Use Vulkan renderer" OFF)
-
-    # Engine library name matches what the full build produced
-    if(USE_VULKAN)
-        set(ENGINE_BINARY "ioquake3_vulkan")
-    else()
-        set(ENGINE_BINARY "ioquake3_opengl2")
-    endif()
+    set(ENGINE_BINARY "ioquake3_vulkan")
 
     # Build directory where full CMake build outputs libraries
     set(FULL_BUILD_DIR "${CMAKE_SOURCE_DIR}/../../../../../build")
@@ -310,13 +273,12 @@ else()
         ${CMAKE_SOURCE_DIR}/code/SDL2/include
         ${CMAKE_SOURCE_DIR}/code
         ${CMAKE_SOURCE_DIR}/code/vrcommon
-        ${CMAKE_SOURCE_DIR}/code/vrgles
         ${CMAKE_SOURCE_DIR}/code/vrvk
     )
 
     target_compile_definitions(main PRIVATE
         ARCH_STRING=android
-        $<$<BOOL:${USE_VULKAN}>:USE_VULKAN>
+        USE_VULKAN
     )
 
     find_library(log-lib log)

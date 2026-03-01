@@ -22,14 +22,6 @@ set(VR_COMMON_SOURCES
     ${SOURCE_DIR}/vrcommon/vr_swapchains.c
 )
 
-# GL ES specific VR sources (vrgles/)
-set(VR_GLES_SOURCES
-    ${SOURCE_DIR}/vrgles/vr_gles.c
-    ${SOURCE_DIR}/vrgles/vr_gles_framebuffer.c
-    ${SOURCE_DIR}/vrgles/vr_gles_events.c
-    ${SOURCE_DIR}/vrgles/vr_gles_renderer.c
-)
-
 # Vulkan specific VR sources (vrvk/)
 # Uses vrcommon/vr_events.c for event handling
 set(VR_VK_SOURCES
@@ -41,24 +33,7 @@ set(VR_VK_SOURCES
     ${SOURCE_DIR}/vrvk/vr_vk_virtual_screen.c
 )
 
-# Renderer-specific VR sources and include directories
-if(BUILD_RENDERER_VK)
-    set(VR_SOURCES ${VR_COMMON_SOURCES} ${VR_VK_SOURCES})
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrvk)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrvk)
-elseif(BUILD_RENDERER_GLES3)
-    set(VR_SOURCES ${VR_COMMON_SOURCES} ${VR_GLES_SOURCES})
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrgles)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrgles)
-else()
-    # Default to GL ES sources if no renderer selected
-    set(VR_SOURCES ${VR_COMMON_SOURCES} ${VR_GLES_SOURCES})
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrgles)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon)
-    list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrgles)
-endif()
+# Combine VR sources
+set(VR_SOURCES ${VR_COMMON_SOURCES} ${VR_VK_SOURCES})
+list(APPEND CLIENT_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon ${SOURCE_DIR}/vrvk)
+list(APPEND RENDERER_INCLUDE_DIRS ${SOURCE_DIR}/vrcommon ${SOURCE_DIR}/vrvk)

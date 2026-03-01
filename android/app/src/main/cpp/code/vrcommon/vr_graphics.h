@@ -2,8 +2,7 @@
  * vr_graphics.h - Graphics API abstraction interface
  *
  * This header provides an abstraction layer for graphics-specific VR operations.
- * The actual implementations are provided by vrgl2/vr_gl.c or vrvk/vr_vk.c
- * depending on which renderer is being built.
+ * The actual implementations are in vrvk/vr_vk.c.
  */
 
 #ifndef __VR_GRAPHICS_H

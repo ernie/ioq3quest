@@ -5,8 +5,7 @@
 #include "vr_macros.h"
 #include "../vrcommon/vr_graphics.h"
 
-// Session creation is now delegated to graphics-specific implementation
-// See vrgl2/vr_gl_session.c or vrvk/vr_vk_session.c
+// Session creation is delegated to vrvk/vr_vk_session.c
 
 XrResult VR_CreateSession(XrInstance instance, XrSystemId systemId, XrSession* session)
 {

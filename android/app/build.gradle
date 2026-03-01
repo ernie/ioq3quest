@@ -16,9 +16,7 @@ android {
 		versionName "1.2.0"
 		externalNativeBuild {
 			cmake {
-				// Pass USE_VULKAN flag if set via gradle property
-				def useVulkan = project.hasProperty('USE_VULKAN') ? project.property('USE_VULKAN') : 'OFF'
-				arguments '-DANDROID_STL=c++_static', "-DUSE_VULKAN=${useVulkan}"
+				arguments '-DANDROID_STL=c++_static'
 			}
 		}
 		ndk {
