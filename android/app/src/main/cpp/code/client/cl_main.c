@@ -3471,8 +3471,8 @@ static void *CL_GL_GetProcAddress( const char *name ) {
 }
 
 // Wrapper for Com_RealTime - renderer expects void return, but actual function returns int
-static void CL_Com_RealTime_Wrapper( qtime_t *qtime ) {
-	Com_RealTime( qtime );
+static int CL_Com_RealTime_Wrapper( qtime_t *qtime ) {
+	return Com_RealTime( qtime );
 }
 
 #ifdef USE_VULKAN

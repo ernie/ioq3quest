@@ -9053,35 +9053,39 @@ void vk_finish_subpass_post( void )
 		// This shifts the previous frame's bloom to align with current head orientation
 		// If we don't do this, we'll see incorrect bloom "ghosting" during rapid head turns
 		// Use tan(halfFov) for correct perspective projection mapping
+		// Skip reprojection on virtual screen - the world isn't moving with the head
 		{
-			// Use per-eye averaged FOV (vr.fov_x/y)
-			float fovX = vr.fov_x;
-			float fovY = vr.fov_y;
-			float uvOffset[2];
+			float uvOffset[2] = { 0.0f, 0.0f };
 
-			if ( fovX <= 0.0f ) fovX = 90.0f;  // Fallback
-			if ( fovY <= 0.0f ) fovY = 90.0f;  // Fallback
+			if ( !VR_Gameplay_ShouldRenderInVirtualScreen() ) {
+				// Use per-eye averaged FOV (vr.fov_x/y)
+				float fovX = vr.fov_x;
+				float fovY = vr.fov_y;
 
-			// Convert to radians and use tan(halfFov) for perspective-correct mapping
-			float halfFovXRad = DEG2RAD( fovX * 0.5f );
-			float halfFovYRad = DEG2RAD( fovY * 0.5f );
-			float tanHalfFovX = tanf( halfFovXRad );
-			float tanHalfFovY = tanf( halfFovYRad );
+				if ( fovX <= 0.0f ) fovX = 90.0f;  // Fallback
+				if ( fovY <= 0.0f ) fovY = 90.0f;  // Fallback
 
-			// For small angles, tan(delta) ≈ delta in radians
-			float deltaYawRad = DEG2RAD( vr.hmdorientation_delta[YAW] );
-			float deltaPitchRad = DEG2RAD( vr.hmdorientation_delta[PITCH] );
+				// Convert to radians and use tan(halfFov) for perspective-correct mapping
+				float halfFovXRad = DEG2RAD( fovX * 0.5f );
+				float halfFovYRad = DEG2RAD( fovY * 0.5f );
+				float tanHalfFovX = tanf( halfFovXRad );
+				float tanHalfFovY = tanf( halfFovYRad );
 
-			// UV offset = tan(angleDelta) / (2 * tan(halfFov))
-			// The factor of 2 accounts for full FOV covering UV range [0,1]
-			uvOffset[0] = deltaYawRad / ( 2.0f * tanHalfFovX );
-			uvOffset[1] = -deltaPitchRad / ( 2.0f * tanHalfFovY );
+				// For small angles, tan(delta) ≈ delta in radians
+				float deltaYawRad = DEG2RAD( vr.hmdorientation_delta[YAW] );
+				float deltaPitchRad = DEG2RAD( vr.hmdorientation_delta[PITCH] );
 
-			// Clamp to prevent extreme shifts during dropped frames
-			if ( uvOffset[0] < -0.25f ) uvOffset[0] = -0.25f;
-			if ( uvOffset[0] > 0.25f ) uvOffset[0] = 0.25f;
-			if ( uvOffset[1] < -0.25f ) uvOffset[1] = -0.25f;
-			if ( uvOffset[1] > 0.25f ) uvOffset[1] = 0.25f;
+				// UV offset = tan(angleDelta) / (2 * tan(halfFov))
+				// The factor of 2 accounts for full FOV covering UV range [0,1]
+				uvOffset[0] = deltaYawRad / ( 2.0f * tanHalfFovX );
+				uvOffset[1] = -deltaPitchRad / ( 2.0f * tanHalfFovY );
+
+				// Clamp to prevent extreme shifts during dropped frames
+				if ( uvOffset[0] < -0.25f ) uvOffset[0] = -0.25f;
+				if ( uvOffset[0] > 0.25f ) uvOffset[0] = 0.25f;
+				if ( uvOffset[1] < -0.25f ) uvOffset[1] = -0.25f;
+				if ( uvOffset[1] > 0.25f ) uvOffset[1] = 0.25f;
+			}
 
 			qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout_subpass_composite,
 				VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uvOffset), uvOffset );

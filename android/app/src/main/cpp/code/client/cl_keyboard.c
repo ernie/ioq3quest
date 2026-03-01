@@ -599,16 +599,16 @@ void VKeyboard_Draw( void ) {
 		// menuLeftHanded == true means left physical hand drives the primary cursor
 		vec4_t colorLeft  = {0.3f, 0.5f, 1.0f, 1.0f};
 		vec4_t colorRight = {1.0f, 0.3f, 0.3f, 1.0f};
-		vec4_t *primaryColor = vr.menuLeftHanded ? colorLeft : colorRight;
-		vec4_t *offhandColor = vr.menuLeftHanded ? colorRight : colorLeft;
+		float *primaryColor = vr.menuLeftHanded ? colorLeft : colorRight;
+		float *offhandColor = vr.menuLeftHanded ? colorRight : colorLeft;
 
 		// Offhand cursor (draw first, behind primary)
 		SCR_FillRect(offhandCursorX - CURSOR_DOT_SIZE / 2, offhandCursorY - CURSOR_DOT_SIZE / 2,
-			CURSOR_DOT_SIZE, CURSOR_DOT_SIZE, *offhandColor);
+			CURSOR_DOT_SIZE, CURSOR_DOT_SIZE, offhandColor);
 
 		// Primary cursor (on top)
 		SCR_FillRect(cursorX - CURSOR_DOT_SIZE / 2, cursorY - CURSOR_DOT_SIZE / 2,
-			CURSOR_DOT_SIZE, CURSOR_DOT_SIZE, *primaryColor);
+			CURSOR_DOT_SIZE, CURSOR_DOT_SIZE, primaryColor);
 	}
 }
 
@@ -643,32 +643,6 @@ Send a key event through the normal input path
 */
 static void VKeyboard_SendKey( int key, qboolean down ) {
 	CL_KeyEvent( key, down, cls.realtime );
-}
-
-/*
-=================
-VKeyboard_IsRepeatable
-
-Returns qtrue if a key should support hold-to-repeat.
-=================
-*/
-static qboolean VKeyboard_IsRepeatable( vKeyDef_t *key ) {
-	if (!key->special) {
-		return qtrue;	// all regular characters
-	}
-	switch (key->special) {
-		case VKEY_BACKSPACE:
-		case VKEY_SPACE:
-		case VKEY_LEFT:
-		case VKEY_RIGHT:
-		case VKEY_UP:
-		case VKEY_DOWN:
-		case VKEY_TAB:
-		case VKEY_ENTER:
-			return qtrue;
-		default:
-			return qfalse;	// shift, symbols
-	}
 }
 
 /*
