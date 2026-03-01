@@ -65,6 +65,10 @@ typedef struct {
 
 static mainmenu_t s_main;
 
+static char      trinityVersion[64];
+static qboolean  trinityVersionLoaded = qfalse;
+static qhandle_t trinityIconShader;
+
 typedef struct {
 	menuframework_s menu;	
 	char errorMessage[4096];
@@ -148,6 +152,31 @@ sfxHandle_t ErrorMessage_Key(int key)
 	trap_Cvar_Set( "com_errorMessage", "" );
 	UI_MainMenu();
 	return (menu_null_sound);
+}
+
+static void MainMenu_LoadTrinityVersion( void ) {
+	fileHandle_t f;
+	int len;
+
+	trinityVersionLoaded = qtrue;
+	trinityVersion[0] = '\0';
+
+	len = trap_FS_FOpenFile( "trinity-version.txt", &f, FS_READ );
+	if ( f == FS_INVALID_HANDLE ) {
+		return;
+	}
+	if ( len >= (int)sizeof( trinityVersion ) ) {
+		len = sizeof( trinityVersion ) - 1;
+	}
+	trap_FS_Read( trinityVersion, len, f );
+	trinityVersion[len] = '\0';
+	trap_FS_FCloseFile( f );
+
+	while ( len > 0 && ( trinityVersion[len-1] == '\n' || trinityVersion[len-1] == '\r' || trinityVersion[len-1] == ' ' ) ) {
+		trinityVersion[--len] = '\0';
+	}
+
+	trinityIconShader = trap_R_RegisterShaderNoMip( "menu/art/trinity" );
 }
 
 /*
@@ -241,6 +270,22 @@ static void Main_MenuDraw( void ) {
 	UI_DrawString( 320, yPos, "Visit quake3.quakevr.com for discord invite.", UI_CENTER|UI_SMALLFONT, color_white );
 	yPos += SMALLCHAR_HEIGHT;
 	UI_DrawString( 320, yPos, "Get mods & mappacks via the companion app!", UI_CENTER|UI_SMALLFONT, color_white );
+
+	// Trinity version badge
+	if ( !trinityVersionLoaded ) {
+		MainMenu_LoadTrinityVersion();
+	}
+	if ( trinityVersion[0] ) {
+		int textWidth = strlen( trinityVersion ) * SMALLCHAR_WIDTH;
+		int iconSize = 16;
+		int rightMargin = 4;
+		int vx = 640 - rightMargin - textWidth;
+		int vy = yPos;
+		vec4_t versionColor = { 1.0f, 1.0f, 1.0f, 0.8f };
+
+		UI_DrawHandlePic( vx - iconSize, vy, iconSize, iconSize, trinityIconShader );
+		UI_DrawString( vx, vy, trinityVersion, UI_LEFT|UI_SMALLFONT|UI_DROPSHADOW, versionColor );
+	}
 }
 
 
@@ -299,6 +344,7 @@ void UI_MainMenu( void ) {
 	
 	memset( &s_main, 0 ,sizeof(mainmenu_t) );
 	memset( &s_errorMessage, 0 ,sizeof(errorMessage_t) );
+	trinityVersionLoaded = qfalse;
 
 	// com_errorMessage would need that too
 	MainMenu_Cache();
