@@ -189,7 +189,7 @@ target_compile_definitions(opus_objects PRIVATE
     FLOAT_APPROX
     USE_ALLOCA
 )
-target_compile_options(opus_objects PRIVATE ${COMMON_COMPILE_OPTIONS})
+target_compile_options(opus_objects PRIVATE ${COMMON_COMPILE_OPTIONS} -w)
 
 # Create object library for opusfile (needs both opus and ogg includes)
 add_library(opusfile_objects OBJECT ${OPUSFILE_SOURCES})
@@ -198,7 +198,7 @@ target_include_directories(opusfile_objects PRIVATE
     ${OPUS_DIR}/include
     ${OGG_DIR}/include
 )
-target_compile_options(opusfile_objects PRIVATE ${COMMON_COMPILE_OPTIONS})
+target_compile_options(opusfile_objects PRIVATE ${COMMON_COMPILE_OPTIONS} -w)
 
 # Add the opus/opusfile include directories for the main client (for opus.h, opusfile.h etc)
 # Do NOT add celt/ or silk/ to global includes as celt/ contains mdct.h which conflicts with vorbis

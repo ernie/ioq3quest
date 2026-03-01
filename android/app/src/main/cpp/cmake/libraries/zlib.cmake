@@ -22,3 +22,6 @@ set(ZLIB_SOURCES
 
 list(APPEND CLIENT_INCLUDE_DIRS ${ZLIB_DIR})
 list(APPEND CLIENT_LIBRARY_SOURCES ${ZLIB_SOURCES})
+
+# Suppress warnings in vendored zlib code
+set_source_files_properties(${ZLIB_SOURCES} PROPERTIES COMPILE_FLAGS -w)

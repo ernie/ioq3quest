@@ -282,6 +282,27 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	// Update HMD position/views
 	IN_VRUpdateHMD(views, viewCount, &fov);
 
+	// SP intermission state tracking - must be set before rendering
+	// so UI code sees the correct state for scaling/offsets
+	qboolean isSPIntermission = VR_IsSPIntermission();
+	if (isSPIntermission && !vr.sp_intermission_active)
+	{
+		// First frame of SP intermission - capture anchor position
+		vr.sp_intermission_active = qtrue;
+		vr.use_6dof = qtrue;
+		// Store yaw for HUD positioning (in degrees)
+		XrQuaternionf q = views[0].pose.orientation;
+		float siny_cosp = 2.0f * (q.w * q.y + q.z * q.x);
+		float cosy_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+		vr.sp_intermission_yaw = atan2f(siny_cosp, cosy_cosp) * 180.0f / (float)M_PI;
+	}
+	else if (!isSPIntermission && vr.sp_intermission_active)
+	{
+		// Exiting SP intermission - reset state
+		vr.sp_intermission_active = qfalse;
+		vr.use_6dof = vr.single_player && Cvar_VariableValue("vr_6dof") != 0;
+	}
+
 	// [Input] poll actions, update controller state, issue action commands
 	IN_VRSyncActions(engine);
 	IN_VRUpdateControllers(engine, lastPredictedDisplayTime);

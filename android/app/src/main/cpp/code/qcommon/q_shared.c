@@ -509,7 +509,7 @@ int COM_GetCurrentParseLine( void )
 	return com_lines;
 }
 
-char *COM_Parse( char **data_p )
+char *COM_Parse( const char **data_p )
 {
 	return COM_ParseExt( data_p, qtrue );
 }
@@ -550,7 +550,7 @@ string will be returned if the next token is
 a newline.
 ==============
 */
-static char *SkipWhitespace( char *data, qboolean *hasNewLines ) {
+static const char *SkipWhitespace( const char *data, qboolean *hasNewLines ) {
 	int c;
 
 	while( (c = *data) <= ' ') {
@@ -636,11 +636,11 @@ int COM_Compress( char *data_p ) {
 	return out - data_p;
 }
 
-char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
+char *COM_ParseExt( const char **data_p, qboolean allowLineBreaks )
 {
 	int c = 0, len;
 	qboolean hasNewLines = qfalse;
-	char *data;
+	const char *data;
 
 	data = *data_p;
 	len = 0;
@@ -715,7 +715,7 @@ char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
 			if (c=='\"' || !c)
 			{
 				com_token[len] = 0;
-				*data_p = ( char * ) data;
+				*data_p = data;
 				return com_token;
 			}
 			if ( c == '\n' )
@@ -744,7 +744,7 @@ char *COM_ParseExt( char **data_p, qboolean allowLineBreaks )
 
 	com_token[len] = 0;
 
-	*data_p = ( char * ) data;
+	*data_p = data;
 	return com_token;
 }
 
@@ -962,9 +962,9 @@ void Com_InitSeparators( void )
  SkipTillSeparators
 ==================
 */
-void SkipTillSeparators( char **data )
+void SkipTillSeparators( const char **data )
 {
-	char	*p;
+	const char	*p;
 	int	c;
 
 	p = *data;
@@ -993,11 +993,11 @@ void SkipTillSeparators( char **data )
 COM_ParseSep
 ==================
 */
-char *COM_ParseSep( char **data_p, qboolean allowLineBreaks )
+char *COM_ParseSep( const char **data_p, qboolean allowLineBreaks )
 {
 	int c = 0, len;
 	qboolean hasNewLines = qfalse;
-	char *data;
+	const char *data;
 
 	data = *data_p;
 	len = 0;
@@ -1074,7 +1074,7 @@ char *COM_ParseSep( char **data_p, qboolean allowLineBreaks )
 					data++;
 
 				com_token[ len ] = '\0';
-				*data_p = ( char * ) data;
+				*data_p = data;
 				return com_token;
 			}
 			data++;
@@ -1111,7 +1111,7 @@ char *COM_ParseSep( char **data_p, qboolean allowLineBreaks )
 
 	com_token[ len ] = '\0';
 
-	*data_p = ( char * ) data;
+	*data_p = data;
 	return com_token;
 }
 
@@ -1120,7 +1120,7 @@ char *COM_ParseSep( char **data_p, qboolean allowLineBreaks )
 COM_MatchToken
 ==================
 */
-void COM_MatchToken( char **buf_p, char *match ) {
+void COM_MatchToken( const char **buf_p, const char *match ) {
 	char	*token;
 
 	token = COM_Parse( buf_p );
@@ -1139,7 +1139,7 @@ Skips until a matching close brace is found.
 Internal brace depths are properly skipped.
 =================
 */
-qboolean SkipBracedSection (char **program, int depth) {
+qboolean SkipBracedSection (const char **program, int depth) {
 	char			*token;
 
 	do {
@@ -1162,8 +1162,8 @@ qboolean SkipBracedSection (char **program, int depth) {
 SkipRestOfLine
 =================
 */
-void SkipRestOfLine ( char **data ) {
-	char	*p;
+void SkipRestOfLine ( const char **data ) {
+	const char	*p;
 	int		c;
 
 	p = *data;
@@ -1182,7 +1182,7 @@ void SkipRestOfLine ( char **data ) {
 }
 
 
-void Parse1DMatrix (char **buf_p, int x, float *m) {
+void Parse1DMatrix (const char **buf_p, int x, float *m) {
 	char	*token;
 	int		i;
 
@@ -1196,7 +1196,7 @@ void Parse1DMatrix (char **buf_p, int x, float *m) {
 	COM_MatchToken( buf_p, ")" );
 }
 
-void Parse2DMatrix (char **buf_p, int y, int x, float *m) {
+void Parse2DMatrix (const char **buf_p, int y, int x, float *m) {
 	int		i;
 
 	COM_MatchToken( buf_p, "(" );
@@ -1208,7 +1208,7 @@ void Parse2DMatrix (char **buf_p, int y, int x, float *m) {
 	COM_MatchToken( buf_p, ")" );
 }
 
-void Parse3DMatrix (char **buf_p, int z, int y, int x, float *m) {
+void Parse3DMatrix (const char **buf_p, int z, int y, int x, float *m) {
 	int		i;
 
 	COM_MatchToken( buf_p, "(" );

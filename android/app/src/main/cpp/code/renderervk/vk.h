@@ -379,9 +379,8 @@ typedef struct vk_tess_s {
 } vk_tess_t;
 
 
-// Forward declaration for VR layer swapchain info
+// Forward declaration for VR layer swapchain info (typedef in vr_vk_types.h)
 struct VR_VK_SwapchainInfo_s;
-typedef struct VR_VK_SwapchainInfo_s VR_VK_SwapchainInfo;
 
 
 // XR-specific resources that don't have Quake3e equivalents
@@ -391,8 +390,8 @@ typedef struct VR_VK_SwapchainInfo_s VR_VK_SwapchainInfo;
 // the existing Quake3e fields in Vk_Instance, made multiview-compatible.
 typedef struct {
 	// Pointers to VR layer swapchain info (for accessing VkImages)
-	const VR_VK_SwapchainInfo* colorInfo;
-	const VR_VK_SwapchainInfo* depthInfo;
+	const struct VR_VK_SwapchainInfo_s* colorInfo;
+	const struct VR_VK_SwapchainInfo_s* depthInfo;
 
 	// VkImageViews for XR swapchain images (created by renderer)
 	VkImageView colorViews[MAX_SWAPCHAIN_IMAGES];    // Multiview array views (sRGB format)

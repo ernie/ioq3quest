@@ -3461,7 +3461,7 @@ static void UI_Update(const char *name) {
 	}
 }
 
-static void UI_RunMenuScript(char **args) {
+static void UI_RunMenuScript(const char **args) {
 	const char *name, *name2;
 	char buff[1024];
 
@@ -4043,7 +4043,6 @@ static void UI_BuildServerDisplayList(int force) {
 	int i, count, clients, maxClients, ping, game, len, visible;
 	char info[MAX_STRING_CHARS];
 //	qboolean startRefresh = qtrue; TTimo: unused
-	static int numinvisible;
 	int	lanSource;
 
 	if (!(force || uiInfo.uiDC.realTime > uiInfo.serverStatus.nextDisplayRefresh)) {
@@ -4069,7 +4068,6 @@ static void UI_BuildServerDisplayList(int force) {
 	lanSource = UI_SourceForLAN();
 
 	if (force) {
-		numinvisible = 0;
 		// clear number of displayed servers
 		uiInfo.serverStatus.numDisplayServers = 0;
 		uiInfo.serverStatus.numPlayersOnServers = 0;
@@ -4153,7 +4151,6 @@ static void UI_BuildServerDisplayList(int force) {
 			if (ping > 0) {
 				trap_LAN_MarkServerVisible(lanSource, i, qfalse);
 				uiInfo.serverStatus.numPlayersOnServers += clients;
-				numinvisible++;
 			}
 		}
 	}
@@ -4351,7 +4348,7 @@ UI_BuildFindPlayerList
 ==================
 */
 static void UI_BuildFindPlayerList(qboolean force) {
-	static int numFound, numTimeOuts;
+	static int numFound;
 	int i, j, resend;
 	serverStatusInfo_t info;
 	char name[MAX_NAME_LENGTH+2];
@@ -4388,7 +4385,6 @@ static void UI_BuildFindPlayerList(qboolean force) {
 						sizeof(uiInfo.foundPlayerServerNames[uiInfo.numFoundPlayerServers-1]),
 							"searching %d...", uiInfo.pendingServerStatus.num);
 		numFound = 0;
-		numTimeOuts++;
 	}
 	for (i = 0; i < MAX_SERVERSTATUSREQUESTS; i++) {
 		// if this pending server is valid
@@ -4435,9 +4431,6 @@ static void UI_BuildFindPlayerList(qboolean force) {
 		// if empty pending slot or timed out
 		if (!uiInfo.pendingServerStatus.server[i].valid ||
 			uiInfo.pendingServerStatus.server[i].startTime < uiInfo.uiDC.realTime - ui_serverStatusTimeOut.integer) {
-			if (uiInfo.pendingServerStatus.server[i].valid) {
-				numTimeOuts++;
-			}
 			// reset server status request for this address
 			UI_GetServerStatusInfo( uiInfo.pendingServerStatus.server[i].adrstr, NULL );
 			// reuse pending slot
@@ -4840,7 +4833,7 @@ static void UI_FeederSelection(float feederID, int index) {
 	}
 }
 
-static qboolean Team_Parse(char **p) {
+static qboolean Team_Parse(const char **p) {
   char *token;
   const char *tempStr;
 	int i;
@@ -4902,7 +4895,7 @@ static qboolean Team_Parse(char **p) {
   return qfalse;
 }
 
-static qboolean Character_Parse(char **p) {
+static qboolean Character_Parse(const char **p) {
   char *token;
   const char *tempStr;
 
@@ -4960,7 +4953,7 @@ static qboolean Character_Parse(char **p) {
 }
 
 
-static qboolean Alias_Parse(char **p) {
+static qboolean Alias_Parse(const char **p) {
   char *token;
 
   token = COM_ParseExt(p, qtrue);
@@ -5012,7 +5005,7 @@ static qboolean Alias_Parse(char **p) {
 // 2 - character parsing
 static void UI_ParseTeamInfo(const char *teamFile) {
 	char	*token;
-  char *p;
+  const char *p;
   char *buff = NULL;
   //static int mode = 0; TTimo: unused
 
@@ -5055,7 +5048,7 @@ static void UI_ParseTeamInfo(const char *teamFile) {
 }
 
 
-static qboolean GameType_Parse(char **p, qboolean join) {
+static qboolean GameType_Parse(const char **p, qboolean join) {
 	char *token;
 
 	token = COM_ParseExt(p, qtrue);
@@ -5116,7 +5109,7 @@ static qboolean GameType_Parse(char **p, qboolean join) {
 	return qfalse;
 }
 
-static qboolean MapList_Parse(char **p) {
+static qboolean MapList_Parse(const char **p) {
 	char *token;
 
 	token = COM_ParseExt(p, qtrue);
@@ -5182,7 +5175,7 @@ static qboolean MapList_Parse(char **p) {
 
 static void UI_ParseGameInfo(const char *teamFile) {
 	char	*token;
-	char *p;
+	const char *p;
 	char *buff = NULL;
 	//int mode = 0; TTimo: unused
 

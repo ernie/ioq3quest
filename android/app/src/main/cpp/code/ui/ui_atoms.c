@@ -56,36 +56,40 @@ void QDECL Com_Printf( const char *msg, ... ) {
 qboolean newUI = qfalse;
 
 
-float UI_GetXScale()
+float UI_GetXScale(void)
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uiInfo.uiDC.xscale;
+	} else if (vr->sp_intermission_active) {
+		return 2.0f;
 	} else {
 		return uiInfo.uiDC.xscale / 2.75f;
 	}
 }
 
-float UI_GetYScale()
+float UI_GetYScale(void)
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uiInfo.uiDC.yscale;
+	} else if (vr->sp_intermission_active) {
+		return 2.0f;
 	} else {
 		return uiInfo.uiDC.yscale / 3.25f;
 	}
 }
 
-float UI_GetXOffset()
+float UI_GetXOffset(void)
 {
-	if (vr == NULL || vr->virtual_screen) {
+	if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
 		return 0;
 	} else {
 		return (uiInfo.uiDC.glconfig.vidWidth - (640 * UI_GetXScale())) / 2.0f;
 	}
 }
 
-float UI_GetYOffset()
+float UI_GetYOffset(void)
 {
-	if (vr == NULL || vr->virtual_screen) {
+	if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
 		return 0;
 	} else {
 		return (uiInfo.uiDC.glconfig.vidHeight - (480 * UI_GetYScale())) / 2.0f;

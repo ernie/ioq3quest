@@ -28,6 +28,13 @@ set(COMMON_SOURCES
     ${SOURCE_DIR}/qcommon/vm_none.c
 )
 
+# Suppress warnings in vendored minizip code
+set_source_files_properties(
+    ${SOURCE_DIR}/qcommon/unzip.c
+    ${SOURCE_DIR}/qcommon/ioapi.c
+    PROPERTIES COMPILE_FLAGS -w
+)
+
 # Zstandard compression library
 set(ZSTD_SOURCES
     ${SOURCE_DIR}/libzstd/zstd.c

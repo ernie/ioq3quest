@@ -573,7 +573,7 @@ typedef struct {
 } trRefdef_t;
 
 
-typedef struct image_s {
+struct image_s {
 	char		*imgName;			// image path, including extension
 	char		*imgName2;			// image path with real file extension
 	struct image_s *next;			// for hash search
@@ -602,7 +602,7 @@ typedef struct image_s {
 	int			TMU;				// only needed for voodoo2
 #endif
 
-} image_t;
+};
 
 
 //=================================================================================
@@ -1964,13 +1964,13 @@ typedef struct {
 	float	s2, t2;
 } stretchPicCommand_t;
 
-typedef struct drawSurfsCommand_s {
+struct drawSurfsCommand_s {
 	int		commandId;
 	trRefdef_t	refdef;
 	viewParms_t	viewParms;
 	drawSurf_t *drawSurfs;
 	int		numDrawSurfs;
-} drawSurfsCommand_t;
+};
 
 typedef struct
 {

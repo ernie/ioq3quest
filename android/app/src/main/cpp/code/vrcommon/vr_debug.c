@@ -1,5 +1,6 @@
 #include "vr_debug.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 
 #include "vr_base.h"
@@ -121,9 +122,9 @@ XrBool32 OpenXRMessageCallbackFunction(
 	const XrDebugUtilsMessengerCallbackDataEXT *pCallbackData,
 	void *pUserData)
 {
-	fprintf(stderr, "[OpenXR][%llu][%llu][%s] %s - %s\n",
-		messageSeverity,
-		messageType,
+	fprintf(stderr, "[OpenXR][%" PRIu64 "][%" PRIu64 "][%s] %s - %s\n",
+		(uint64_t)messageSeverity,
+		(uint64_t)messageType,
 		((pCallbackData->messageId) ? pCallbackData->messageId : ""),
 		((pCallbackData->functionName) ? pCallbackData->functionName : ""),
 		((pCallbackData->message) ? pCallbackData->message : "")

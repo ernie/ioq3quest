@@ -1147,7 +1147,7 @@ CG_DrawUpperRight
 
 =====================
 */
-static void CG_DrawUpperRight()
+static void CG_DrawUpperRight(void)
 {
 	float	y;
 
@@ -3185,9 +3185,10 @@ static void CG_DrawWarmup( void ) {
 	int			i;
 #ifdef MISSIONPACK
 	float		scale;
+#else
+	int			cw;
 #endif
 	clientInfo_t	*ci1, *ci2;
-	int			cw;
 	const char	*s;
 
 	sec = cg.warmup;
@@ -3273,27 +3274,31 @@ static void CG_DrawWarmup( void ) {
 
 	switch ( cg.warmupCount ) {
 	case 1:
-		cw = 28;
 #ifdef MISSIONPACK
 		scale = 0.54f;
+#else
+		cw = 28;
 #endif
 		break;
 	case 2:
-		cw = 24;
 #ifdef MISSIONPACK
 		scale = 0.51f;
+#else
+		cw = 24;
 #endif
 		break;
 	case 3:
-		cw = 20;
 #ifdef MISSIONPACK
 		scale = 0.48f;
+#else
+		cw = 20;
 #endif
 		break;
 	default:
-		cw = 16;
 #ifdef MISSIONPACK
 		scale = 0.45f;
+#else
+		cw = 16;
 #endif
 		break;
 	}
@@ -3616,7 +3621,7 @@ static void CG_DrawVignette( void )
 CG_DrawHUD2D - Draw 2D elements always intended for the in-world HUD
 =================
 */
-static void CG_DrawHUD2D()
+static void CG_DrawHUD2D(void)
 {
 #ifdef MISSIONPACK
 	if (cgs.orderPending && cg.time > cgs.orderTime) {
@@ -3774,7 +3779,7 @@ static void CG_DrawHUD2DMinimal(void)
 CG_DrawScreen2D - Draws 2D elements always intended for the screen
 =================
 */
-static void CG_DrawScreen2D()
+static void CG_DrawScreen2D(void)
 {
 	// if we are taking a levelshot for the menu, don't draw anything
 	if ( cg.levelShot ) {

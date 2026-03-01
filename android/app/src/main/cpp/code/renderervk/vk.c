@@ -179,22 +179,6 @@ static uint32_t find_memory_type2( uint32_t memory_type_bits, VkMemoryPropertyFl
 }
 
 
-static const char *pmode_to_str( VkPresentModeKHR mode )
-{
-	static char buf[32];
-
-	switch ( mode ) {
-		case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
-		case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
-		case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
-		case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
-#ifdef VK_PRESENT_MODE_FIFO_LATEST_READY_EXT
-		case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT: return "FIFO_LATEST_READY";
-#endif
-		default: sprintf( buf, "mode#%x", mode ); return buf;
-	};
-}
-
 
 #define CASE_STR(x) case (x): return #x
 
@@ -1977,38 +1961,6 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugReportFlagsEXT flags
 #endif
 
 
-static qboolean used_instance_extension( const char *ext )
-{
-	const char *u;
-
-	// allow all VK_*_surface extensions
-	u = strrchr( ext, '_' );
-	if ( u && Q_stricmp( u + 1, "surface" ) == 0 )
-		return qtrue;
-
-	if ( Q_stricmp( ext, VK_KHR_DISPLAY_EXTENSION_NAME ) == 0 )
-		return qtrue; // needed for KMSDRM instances/devices?
-
-	if ( Q_stricmp( ext, VK_KHR_SWAPCHAIN_EXTENSION_NAME ) == 0 )
-		return qtrue;
-
-#ifdef USE_VK_VALIDATION
-	if ( Q_stricmp( ext, VK_EXT_DEBUG_REPORT_EXTENSION_NAME ) == 0 )
-		return qtrue;
-#endif
-
-	if ( Q_stricmp( ext, VK_EXT_DEBUG_UTILS_EXTENSION_NAME ) == 0 )
-		return qtrue;
-
-	if ( Q_stricmp( ext, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME ) == 0 )
-		return qtrue;
-
-	if ( Q_stricmp( ext, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME ) == 0 )
-		return qtrue;
-
-	return qfalse;
-}
-
 
 static VkFormat get_depth_format( VkPhysicalDevice physical_device ) {
 	VkFormatProperties props;
@@ -2087,137 +2039,6 @@ static VkFormat vk_get_unorm_format( VkFormat format )
 }
 
 
-typedef struct {
-	int bits;
-	VkFormat rgb;
-	VkFormat bgr;
-} present_format_t;
-
-static const present_format_t present_formats[] = {
-	//{12, VK_FORMAT_B4G4R4A4_UNORM_PACK16, VK_FORMAT_R4G4B4A4_UNORM_PACK16},
-	//{15, VK_FORMAT_B5G5R5A1_UNORM_PACK16, VK_FORMAT_R5G5B5A1_UNORM_PACK16},
-	{16, VK_FORMAT_B5G6R5_UNORM_PACK16, VK_FORMAT_R5G6B5_UNORM_PACK16},
-	{24, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM},
-	{30, VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_FORMAT_A2R10G10B10_UNORM_PACK32},
-	//{32, VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_B10G11R11_UFLOAT_PACK32}
-};
-
-// sRGB formats for desktop swapchain - matches XR swapchain color space
-static const present_format_t present_formats_srgb[] = {
-	{24, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB},
-};
-
-static void get_present_format( int present_bits, VkFormat *bgr, VkFormat *rgb ) {
-	const present_format_t *pf, *sel;
-	int i;
-
-	sel = NULL;
-	pf = present_formats;
-	for ( i = 0; i < ARRAY_LEN( present_formats ); i++, pf++ ) {
-		if ( pf->bits <= present_bits  ) {
-			sel = pf;
-		}
-	}
-	if ( !sel ) {
-		*bgr = VK_FORMAT_B8G8R8A8_UNORM;
-		*rgb = VK_FORMAT_R8G8B8A8_UNORM;
-	} else {
-		*bgr = sel->bgr;
-		*rgb = sel->rgb;
-	}
-}
-
-
-static qboolean vk_select_surface_format( VkPhysicalDevice physical_device, VkSurfaceKHR surface )
-{
-	VkFormat base_bgr, base_rgb;
-	VkFormat ext_bgr, ext_rgb;
-	VkSurfaceFormatKHR *candidates;
-	uint32_t format_count;
-	VkResult res;
-
-	// Quest/Android: no desktop surface, use default formats
-	if ( surface == VK_NULL_HANDLE ) {
-		get_present_format( 24, &base_bgr, &base_rgb );
-		vk.base_format.format = base_bgr;
-		vk.base_format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-		vk.present_format.format = base_bgr;
-		vk.present_format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-		return qtrue;
-	}
-
-	res = qvkGetPhysicalDeviceSurfaceFormatsKHR( physical_device, surface, &format_count, NULL );
-	if ( res < 0 ) {
-		ri.Printf( PRINT_ERROR, "vkGetPhysicalDeviceSurfaceFormatsKHR returned %s\n", vk_result_string( res ) );
-		return qfalse;
-	}
-
-	if ( format_count == 0 ) {
-		ri.Printf( PRINT_ERROR, "...no surface formats found\n" );
-		return qfalse;
-	}
-
-	candidates = (VkSurfaceFormatKHR*)ri.Malloc( format_count * sizeof(VkSurfaceFormatKHR) );
-
-	VK_CHECK( qvkGetPhysicalDeviceSurfaceFormatsKHR( physical_device, surface, &format_count, candidates ) );
-
-	get_present_format( 24, &base_bgr, &base_rgb );
-
-	if ( r_fbo->integer ) {
-		get_present_format( r_presentBits->integer, &ext_bgr, &ext_rgb );
-	} else {
-		ext_bgr = base_bgr;
-		ext_rgb = base_rgb;
-	}
-
-	if ( format_count == 1 && candidates[0].format == VK_FORMAT_UNDEFINED ) {
-		// special case that means we can choose any format
-		vk.base_format.format = base_bgr;
-		vk.base_format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-		vk.present_format.format = ext_bgr;
-		vk.present_format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-	}
-	else {
-		uint32_t i;
-		for ( i = 0; i < format_count; i++ ) {
-			if ( ( candidates[i].format == base_bgr || candidates[i].format == base_rgb ) && candidates[i].colorSpace == VK_COLORSPACE_SRGB_NONLINEAR_KHR ) {
-				vk.base_format = candidates[i];
-				break;
-			}
-		}
-		if ( i == format_count ) {
-			vk.base_format = candidates[0];
-		}
-
-		// For desktop swapchain, prefer sRGB format so display correctly interprets
-		// the sRGB-encoded values from the gamma pass (which writes through UNORM view)
-		vk.present_format = vk.base_format; // fallback
-		for ( i = 0; i < format_count; i++ ) {
-			if ( ( candidates[i].format == VK_FORMAT_B8G8R8A8_SRGB || candidates[i].format == VK_FORMAT_R8G8B8A8_SRGB ) && candidates[i].colorSpace == VK_COLORSPACE_SRGB_NONLINEAR_KHR ) {
-				vk.present_format = candidates[i];
-				ri.Printf( PRINT_ALL, "...using sRGB format for desktop swapchain\n" );
-				break;
-			}
-		}
-		// Fallback to UNORM if sRGB not available
-		if ( i == format_count ) {
-			for ( i = 0; i < format_count; i++ ) {
-				if ( ( candidates[i].format == ext_bgr || candidates[i].format == ext_rgb ) && candidates[i].colorSpace == VK_COLORSPACE_SRGB_NONLINEAR_KHR ) {
-					vk.present_format = candidates[i];
-					break;
-				}
-			}
-		}
-	}
-
-	if ( !r_fbo->integer ) {
-		vk.present_format = vk.base_format;
-	}
-
-	ri.Free( candidates );
-
-	return qtrue;
-}
 
 
 static void setup_surface_formats( VkPhysicalDevice physical_device )
@@ -10009,56 +9830,6 @@ static qboolean vk_create_subpass_framebuffers( void )
 	}
 
 	ri.Printf( PRINT_ALL, "...subpass framebuffers created (%d)\n", xr->colorInfo->imageCount );
-	return qtrue;
-}
-
-/*
- * vk_create_xr_gamma_framebuffers - Create framebuffers for gamma pass output to XR swapchain
- *
- * These framebuffers output to XR swapchain images via UNORM views (bypassing sRGB conversion).
- * They must be created after XR image views are ready.
- */
-static qboolean vk_create_xr_gamma_framebuffers( void )
-{
-	VkXrResources *xr = &vk.xr;
-	VkFramebufferCreateInfo fbCI;
-	uint32_t i;
-
-	if ( !vk.multiviewSupported ) {
-		return qtrue;
-	}
-
-	if ( xr->colorInfo == NULL || vk.render_pass.gamma == VK_NULL_HANDLE ) {
-		ri.Printf( PRINT_WARNING, "vk_create_xr_gamma_framebuffers: Prerequisites not met\n" );
-		return qfalse;
-	}
-
-	ri.Printf( PRINT_ALL, "Creating gamma framebuffers for XR swapchain output...\n" );
-
-	for ( i = 0; i < xr->colorInfo->imageCount && i < MAX_SWAPCHAIN_IMAGES; i++ ) {
-		// Use UNORM views for gamma framebuffer - gamma shader outputs sRGB-encoded
-		// values directly (like Quake3e), so we need to bypass Vulkan's automatic
-		// linear-to-sRGB conversion that would occur with sRGB attachment format
-		if ( xr->gammaViews[i] == VK_NULL_HANDLE ) {
-			continue;
-		}
-
-		Com_Memset( &fbCI, 0, sizeof( fbCI ) );
-		fbCI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		fbCI.renderPass = vk.render_pass.gamma;
-		fbCI.attachmentCount = 1;
-		fbCI.pAttachments = &xr->gammaViews[i];  // UNORM view - no sRGB conversion
-		fbCI.width = xr->width;
-		fbCI.height = xr->height;
-		// Multiview render pass: layers must be 1 (view mask handles stereo)
-		fbCI.layers = 1;
-
-		VK_CHECK( qvkCreateFramebuffer( vk.device, &fbCI, NULL, &vk.framebuffers.gamma[i] ) );
-		SET_OBJECT_NAME( vk.framebuffers.gamma[i], va( "gamma framebuffer %d (XR swapchain)", i ),
-			VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT );
-	}
-
-	ri.Printf( PRINT_ALL, "...gamma framebuffers created (%d)\n", xr->colorInfo->imageCount );
 	return qtrue;
 }
 

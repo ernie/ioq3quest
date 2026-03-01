@@ -816,11 +816,11 @@ float	Q_atof( const char *str );
 
 void	COM_BeginParseSession( const char *name );
 int		COM_GetCurrentParseLine( void );
-char	*COM_Parse( char **data_p );
-char	*COM_ParseExt( char **data_p, qboolean allowLineBreak );
-void	SkipTillSeparators( char **data );
+char	*COM_Parse( const char **data_p );
+char	*COM_ParseExt( const char **data_p, qboolean allowLineBreak );
+void	SkipTillSeparators( const char **data );
 void	Com_InitSeparators( void );
-char	*COM_ParseSep( char **data_p, qboolean allowLineBreaks );
+char	*COM_ParseSep( const char **data_p, qboolean allowLineBreaks );
 char	*COM_ParseComplex( const char **data_p, qboolean allowLineBreaks );
 int		COM_Compress( char *data_p );
 void	COM_ParseError( char *format, ... ) __attribute__ ((format (printf, 1, 2)));
@@ -871,14 +871,14 @@ typedef struct pc_token_s
 
 // data is an in/out parm, returns a parsed out token
 
-void	COM_MatchToken( char**buf_p, char *match );
+void	COM_MatchToken( const char **buf_p, const char *match );
 
-qboolean SkipBracedSection (char **program, int depth);
-void SkipRestOfLine ( char **data );
+qboolean SkipBracedSection (const char **program, int depth);
+void SkipRestOfLine ( const char **data );
 
-void Parse1DMatrix (char **buf_p, int x, float *m);
-void Parse2DMatrix (char **buf_p, int y, int x, float *m);
-void Parse3DMatrix (char **buf_p, int z, int y, int x, float *m);
+void Parse1DMatrix (const char **buf_p, int x, float *m);
+void Parse2DMatrix (const char **buf_p, int y, int x, float *m);
+void Parse3DMatrix (const char **buf_p, int z, int y, int x, float *m);
 int Com_HexStrToInt( const char *str );
 
 int QDECL Com_sprintf (char *dest, int size, const char *fmt, ...) __attribute__ ((format (printf, 3, 4)));

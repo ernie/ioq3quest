@@ -55,7 +55,7 @@ void QDECL Com_Printf( const char *msg, ... ) {
 	trap_Print( text );
 }
 
-float UI_GetXScale()
+float UI_GetXScale(void)
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uis.xscale;
@@ -67,7 +67,7 @@ float UI_GetXScale()
 	}
 }
 
-float UI_GetYScale()
+float UI_GetYScale(void)
 {
 	if (vr == NULL || vr->virtual_screen) {
 		return uis.yscale;
@@ -79,7 +79,7 @@ float UI_GetYScale()
 	}
 }
 
-float UI_GetXOffset()
+float UI_GetXOffset(void)
 {
     if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
         // SP intermission: no offset, draw to full HUD buffer
@@ -89,7 +89,7 @@ float UI_GetXOffset()
     }
 }
 
-float UI_GetYOffset()
+float UI_GetYOffset(void)
 {
     if (vr == NULL || vr->virtual_screen || vr->sp_intermission_active) {
         // SP intermission: no offset, draw to full HUD buffer

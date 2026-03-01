@@ -323,11 +323,11 @@ void CL_AdjustAngles( void ) {
 		vr.snapTurnYaw = 0.0f; // Clear after applying
 	}
 
-    //Make angles good
-    while (cl.viewangles[YAW] > 180.0f)
-        cl.viewangles[YAW] -= 360.0f;
-    while (cl.viewangles[YAW] < -180.0f)
-        cl.viewangles[YAW] += 360.0f;
+	//Make angles good
+	while (cl.viewangles[YAW] > 180.0f)
+		cl.viewangles[YAW] -= 360.0f;
+	while (cl.viewangles[YAW] < -180.0f)
+		cl.viewangles[YAW] += 360.0f;
 
 	cl.viewangles[PITCH] = vr.hmdorientation[PITCH];
 	cl.viewangles[ROLL] = Com_Clamp(-60.0f, 60.0f, vr.hmdorientation[ROLL]);

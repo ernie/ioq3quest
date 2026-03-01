@@ -456,6 +456,7 @@ static void CG_OffsetVRThirdPersonView( void ) {
 	}
 }
 
+#if 0 // unused in VR - third person offset disabled
 /*
 ===============
 CG_OffsetThirdPersonView
@@ -527,16 +528,17 @@ static void CG_OffsetThirdPersonView( void ) {
 	cg.refdefViewAngles[PITCH] = -180 / M_PI * atan2( focusPoint[2], focusDist );
 	cg.refdefViewAngles[YAW] -= cg_thirdPersonAngle.value;
 }
+#endif
 
 
 // this causes a compiler bug on mac MrC compiler
 static void CG_StepOffset( void ) {
 	int		timeDelta;
-	
+
 	// smooth out stair climbing
 	timeDelta = cg.time - cg.stepTime;
 	if ( timeDelta < STEP_TIME ) {
-		cg.refdef.vieworg[2] -= cg.stepChange 
+		cg.refdef.vieworg[2] -= cg.stepChange
 			* (STEP_TIME - timeDelta) / STEP_TIME;
 	}
 }
@@ -845,7 +847,7 @@ void CG_DamageBorderVignette( void ) {
 	float	alpha, damageIntensity, coverage;
 	int		borderBase;
 	int		leftBorder, rightBorder, topBorder, bottomBorder;
-	int		innerWidth, innerHeight;
+	int		innerWidth;
 	float	leftWeight, rightWeight, topWeight, bottomWeight;
 	vec4_t	red;
 	int		x, y, w, h;
@@ -921,7 +923,6 @@ void CG_DamageBorderVignette( void ) {
 
 	// Dimensions for edge pieces (between corners)
 	innerWidth = cg.refdef.width - leftBorder - rightBorder;
-	innerHeight = cg.refdef.height - topBorder - bottomBorder;
 
 	// Red with fading alpha
 	red[0] = 1.0f;
@@ -1066,7 +1067,7 @@ CG_CalcViewValues
 Sets cg.refdef view values
 ===============
 */
-static int CG_CalcViewValues( ) {
+static int CG_CalcViewValues( void ) {
 	playerState_t	*ps;
 
 	// When the player is in a menu, freeze the camera position/angle

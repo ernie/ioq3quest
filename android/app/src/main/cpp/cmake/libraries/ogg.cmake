@@ -18,3 +18,6 @@ set(OGG_SOURCES
 
 list(APPEND CLIENT_INCLUDE_DIRS ${OGG_DIR}/include)
 list(APPEND CLIENT_LIBRARY_SOURCES ${OGG_SOURCES})
+
+# Suppress warnings in vendored libogg code
+set_source_files_properties(${OGG_SOURCES} PROPERTIES COMPILE_FLAGS -w)

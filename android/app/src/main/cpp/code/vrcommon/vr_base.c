@@ -1,3 +1,5 @@
+#include <inttypes.h>
+
 #include "../qcommon/q_shared.h"
 #include "../qcommon/qcommon.h"
 #include "../client/client.h"
@@ -127,12 +129,12 @@ VR_Engine* VR_Init( void )
 		vr_engine.systemProperties.SystemProperties.graphicsProperties.maxSwapchainImageHeight);
 
 	// We're done
-	fprintf(stderr, 
+	fprintf(stderr,
 		"[OpenXR] Instance and system succesfully initialized:\n"
 		"  - Instance: %p\n"
-		"  - System: %llu\n\n",
+		"  - System: %" PRIu64 "\n\n",
 		vr_engine.appState.Instance,
-		vr_engine.appState.SystemId);
+		(uint64_t)vr_engine.appState.SystemId);
 
 	vr_initialized = qtrue;
 	VR_InitInstanceInput(&vr_engine);

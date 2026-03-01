@@ -51,7 +51,7 @@ target_include_directories(vorbis_objects PRIVATE
     ${VORBIS_DIR}/lib
     ${OGG_DIR}/include
 )
-target_compile_options(vorbis_objects PRIVATE ${COMMON_COMPILE_OPTIONS})
+target_compile_options(vorbis_objects PRIVATE ${COMMON_COMPILE_OPTIONS} -w)
 
 # Add the vorbis include directory for the main client (for vorbisfile.h etc)
 # Do NOT add lib/ to global includes as it contains mdct.h which conflicts with opus

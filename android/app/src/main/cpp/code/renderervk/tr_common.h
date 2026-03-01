@@ -133,7 +133,7 @@ void R_LoadPCX( const char *name, byte **pic, int *width, int *height );
 void R_LoadPNG( const char *name, byte **pic, int *width, int *height );
 void R_LoadTGA( const char *name, byte **pic, int *width, int *height );
 
-void RE_SaveJPG(char *filename, int quality, int image_width, int image_height,
+void RE_SaveJPG(const char *filename, int quality, int image_width, int image_height,
                 byte *image_buffer, int padding);
 size_t RE_SaveJPGToBuffer(byte *buffer, size_t bufSize, int quality,
                           int image_width, int image_height, byte *image_buffer, int padding);

@@ -1,5 +1,6 @@
 #include "vr_events.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 
 #include "../client/client.h"
@@ -29,14 +30,14 @@ XrBool32 VR_ProcessXrEvents(VR_App* app)
 
 		switch (baseEventHeader->type)
 		{
-			case XR_TYPE_EVENT_DATA_EVENTS_LOST:
+			case XR_TYPE_EVENT_DATA_EVENTS_LOST: {
 				XrEventDataEventsLost *eventsLost = (XrEventDataEventsLost*)baseEventHeader;
 				printf("[OpenXR][EVT_EVENTS_LOST] Lost %u events\n", eventsLost->lostEventCount);
-				break;
+			} break;
 
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
 				const XrEventDataInstanceLossPending* instance_loss_pending_event = (XrEventDataInstanceLossPending*)(baseEventHeader);
-				printf("[OpenXR][EVT_INSTANCE_LOSS_PENDING] Shutting down at %lld...\n", instance_loss_pending_event->lossTime);
+				printf("[OpenXR][EVT_INSTANCE_LOSS_PENDING] Shutting down at %" PRId64 "...\n", (int64_t)instance_loss_pending_event->lossTime);
 				// TODO(ripper37): we should probably quit here?
 			} break;
 

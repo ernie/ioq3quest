@@ -1450,7 +1450,6 @@ Return the searchpath in "startSearch".
 int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, int enableDll)
 {
 	searchpath_t *search, *lastSearch;
-	directory_t *dir;
 	pack_t *pack;
 	char dllName[MAX_OSPATH], qvmName[MAX_OSPATH];
 	char *netpath;
@@ -1489,8 +1488,6 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 	{
 		if(search->dir && (!fs_numServerPaks || fs_forceNativeVM->integer != 0))
 		{
-			dir = search->dir;
-
 			if(enableDll)
 			{
 #ifdef __ANDROID__
@@ -1498,6 +1495,8 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 				*startSearch = search;
 				return VMI_NATIVE;
 #else
+				{
+				directory_t *dir = search->dir;
 				netpath = FS_BuildOSPath(dir->path, dir->gamedir, dllName);
 
 				if(FS_FileInPathExists(netpath))
@@ -1506,6 +1505,7 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 					*startSearch = search;
 
 					return VMI_NATIVE;
+				}
 				}
 #endif
 			}

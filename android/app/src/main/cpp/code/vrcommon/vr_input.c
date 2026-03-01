@@ -677,7 +677,7 @@ void VR_InitInstanceInput( VR_Engine* engine )
 		// Index HMD with Index controllers, etc.)
 		const char* systemName = engine->systemProperties.SystemProperties.systemName;
 
-		const XrPath interactionProfiles[3];
+		XrPath interactionProfiles[3];
 		const char* interactionProfileNames[3];
 
 		// Check for Valve Index HMD
