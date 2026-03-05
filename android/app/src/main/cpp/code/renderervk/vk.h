@@ -205,6 +205,7 @@ typedef struct {
 	int abs_light;
 	int allow_discard;
 	int acff; // none, rgb, rgba, alpha
+	int stencil_mark; // mark pixels with stencil bit 0x80 (for shadow exclusion)
 	struct {
 		byte rgb;
 		byte alpha;

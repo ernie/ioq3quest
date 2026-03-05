@@ -1086,6 +1086,17 @@ static void RB_IterateStagesGeneric( const shaderCommands_t *input )
 			}
 		}
 
+		// mark entity model pixels with stencil bit 0x80 so shadows skip them
+		// only for RT_MODEL — sprites and other transparent entities must not
+		// mark stencil or their transparent areas will block shadow visibility
+		if ( r_shadows->integer == 2 && backEnd.currentEntity != &tr.worldEntity
+			&& backEnd.currentEntity->e.reType == RT_MODEL ) {
+			Vk_Pipeline_Def def;
+			vk_get_pipeline_def( pipeline, &def );
+			def.stencil_mark = 1;
+			pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
+		}
+
 		vk_bind_pipeline( pipeline );
 		vk_bind_geometry( tess_flags );
 		vk_draw_geometry( tess.depthRange, qtrue );
@@ -1095,6 +1106,15 @@ static void RB_IterateStagesGeneric( const shaderCommands_t *input )
 				pipeline = pStage->vk_mirror_pipeline_df;
 			else
 				pipeline = pStage->vk_pipeline_df;
+
+			if ( r_shadows->integer == 2 && backEnd.currentEntity != &tr.worldEntity
+				&& backEnd.currentEntity->e.reType == RT_MODEL ) {
+				Vk_Pipeline_Def def;
+				vk_get_pipeline_def( pipeline, &def );
+				def.stencil_mark = 1;
+				pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
+			}
+
 			vk_bind_pipeline( pipeline );
 			vk_draw_geometry( tess.depthRange, qtrue );
 		}
