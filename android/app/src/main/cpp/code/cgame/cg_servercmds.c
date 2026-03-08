@@ -174,6 +174,24 @@ void CG_ParseServerinfo( void ) {
 	cgs.tvPlayback = atoi( Info_ValueForKey( info, "tv" ) ) ? qtrue : qfalse;
 }
 
+
+void CG_ParseSysteminfo( void ) {
+	const char	*info;
+
+	info = CG_ConfigString( CS_SYSTEMINFO );
+
+	cgs.pmove_fixed = ( atoi( Info_ValueForKey( info, "pmove_fixed" ) ) ) ? qtrue : qfalse;
+	cgs.pmove_msec = atoi( Info_ValueForKey( info, "pmove_msec" ) );
+	if ( cgs.pmove_msec < 8 ) {
+		cgs.pmove_msec = 8;
+	} else if ( cgs.pmove_msec > 33 ) {
+		cgs.pmove_msec = 33;
+	}
+
+	cgs.synchronousClients = ( atoi( Info_ValueForKey( info, "g_synchronousClients" ) ) ) ? qtrue : qfalse;
+}
+
+
 /*
 ==================
 CG_ParseWarmup
@@ -312,6 +330,8 @@ static void CG_ConfigStringModified( void ) {
 	// do something with it if necessary
 	if ( num == CS_MUSIC ) {
 		CG_StartMusic();
+	} else if ( num == CS_SYSTEMINFO ) {
+		CG_ParseSysteminfo();
 	} else if ( num == CS_SERVERINFO ) {
 		CG_ParseServerinfo();
 	} else if ( num == CS_WARMUP ) {
@@ -1153,8 +1173,8 @@ static void CG_ServerCommand( void ) {
 		// Re-fetch entire gamestate after TV seek
 		trap_GetGameState( &cgs.gameState );
 		CG_ParseServerinfo();
+		CG_ParseSysteminfo();
 		CG_SetConfigValues();
-		CG_ParseWarmup();
 
 		// Re-register all models from configstrings
 		for ( i = 1; i < MAX_MODELS; i++ ) {
@@ -1196,10 +1216,6 @@ static void CG_ServerCommand( void ) {
 		CG_InitMarkPolys();
 		CG_ClearParticles();
 		trap_S_ClearLoopingSounds( qtrue );
-		trap_R_ClearScene();
-		memset( cg_entities, 0, sizeof( cg_entities ) );
-		memset( &cg.predictedPlayerEntity, 0, sizeof( cg.predictedPlayerEntity ) );
-		cg.validPPS = qfalse;
 		CG_ResetSeekState();
 		return;
 	}
