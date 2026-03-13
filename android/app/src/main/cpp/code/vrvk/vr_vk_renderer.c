@@ -197,8 +197,6 @@ void VR_DestroyRenderer(VR_Engine* engine)
 
 void VR_ProcessFrame(VR_Engine* engine)
 {
-	VR_UpdatePerFrameState();
-
 	// Handle deferred swapchain recreation from vid_restart.
 	// This MUST happen before xrBeginFrame (called in VR_Renderer_BeginFrame).
 	// If swapchains were marked for recreation during the previous frame's Com_Frame,
@@ -306,6 +304,10 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	// [Input] poll actions, update controller state, issue action commands
 	IN_VRSyncActions(engine);
 	IN_VRUpdateControllers(engine, lastPredictedDisplayTime);
+
+	// Update zoom level after input processing so weapon_zoomLevel
+	// matches weapon_zoomed (set during IN_VRUpdateControllers)
+	VR_UpdatePerFrameState();
 
 	// Acquire XR swapchains
 	VR_VK_Swapchains_Acquire(swapchains, &swapchainColorIndex, &swapchainDepthIndex);
