@@ -4108,7 +4108,8 @@ void CG_ResetSeekState( void ) {
 	// Damage vignette — CG_DamageBlendBlob: (cg.time - damageTime) vs DAMAGE_TIME
 	cg.damageTime = 0;
 
-	// Scoreboard
+	// Scoreboard / intermission
+	cg.intermissionStarted = qfalse;
 	cg.showScores = qfalse;
 	cg.scoreFadeTime = 0;
 	cg.scoreBoardShowing = qfalse;
