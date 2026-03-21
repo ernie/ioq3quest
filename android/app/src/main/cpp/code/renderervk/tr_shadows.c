@@ -24,92 +24,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 /*
 =================
-R_RecursiveRayBSP
-
-Walk BSP along a ray, recording where it enters and exits solid space.
-Used to clamp shadow volume extrusion so back faces land inside walls.
-=================
-*/
-static void R_RecursiveRayBSP( const mnode_t *node, const vec3_t start,
-							   const vec3_t end, float sf, float ef,
-							   float *entryFrac, float *exitFrac ) {
-	float	d1, d2, frac, mf;
-	vec3_t	mid;
-	int		nearChild;
-
-	if ( node->contents != CONTENTS_NODE ) {
-		// solid leaves have cluster < 0 in the visual BSP
-		if ( node->cluster < 0 ) {
-			if ( *entryFrac >= 1.0f )
-				*entryFrac = sf;
-		} else {
-			if ( *entryFrac < 1.0f && *exitFrac >= 1.0f )
-				*exitFrac = sf;
-		}
-		return;
-	}
-
-	d1 = DotProduct( start, node->plane->normal ) - node->plane->dist;
-	d2 = DotProduct( end, node->plane->normal ) - node->plane->dist;
-
-	if ( d1 >= 0 && d2 >= 0 ) {
-		R_RecursiveRayBSP( node->children[0], start, end, sf, ef, entryFrac, exitFrac );
-		return;
-	}
-	if ( d1 < 0 && d2 < 0 ) {
-		R_RecursiveRayBSP( node->children[1], start, end, sf, ef, entryFrac, exitFrac );
-		return;
-	}
-
-	// ray crosses the split plane
-	frac = d1 / ( d1 - d2 );
-	mf = sf + frac * ( ef - sf );
-	mid[0] = start[0] + frac * ( end[0] - start[0] );
-	mid[1] = start[1] + frac * ( end[1] - start[1] );
-	mid[2] = start[2] + frac * ( end[2] - start[2] );
-
-	nearChild = ( d1 < 0 ) ? 1 : 0;
-	R_RecursiveRayBSP( node->children[nearChild], start, mid, sf, mf, entryFrac, exitFrac );
-	// once we have both entry and exit, no need to continue
-	if ( *exitFrac < 1.0f )
-		return;
-	R_RecursiveRayBSP( node->children[1 - nearChild], mid, end, mf, ef, entryFrac, exitFrac );
-}
-
-
-/*
-=================
 R_ShadowClipDist
 
-Clamp shadow extrusion so the back face penetrates into the first
-solid surface but does not exit the other side.
+Trace a ray through the clip BSP (which includes detail brushes) to find
+the nearest solid surface, then place the shadow back face just past it.
 =================
 */
 static float R_ShadowClipDist( const vec3_t start, const vec3_t dir, float maxDist ) {
+	trace_t	trace;
 	vec3_t	end;
-	float	entryFrac = 1.0f;
-	float	exitFrac = 1.0f;
-	float	entryDist, exitDist;
 
 	VectorMA( start, maxDist, dir, end );
 
-	R_RecursiveRayBSP( tr.world->nodes, start, end, 0.0f, 1.0f,
-					   &entryFrac, &exitFrac );
+	ri.CM_PointTrace( &trace, start, end, CONTENTS_SOLID );
 
-	if ( entryFrac >= 1.0f ) {
+	if ( trace.fraction >= 1.0f ) {
 		return maxDist;	// no solid hit, use full distance
 	}
 
-	entryDist = entryFrac * maxDist;
-	exitDist = exitFrac * maxDist;
-
-	if ( exitFrac < 1.0f ) {
-		// thin wall — place back face at midpoint of the solid
-		return entryDist + ( exitDist - entryDist ) * 0.5f;
-	}
-
-	// thick wall / map boundary — extend 8 units past entry
-	return entryDist + 8.0f;
+	// place back face just past the wall surface
+	return trace.fraction * maxDist + r_shadowClipPenetration->value;
 }
 
 
@@ -138,6 +72,7 @@ static	int			facing[SHADER_MAX_INDEXES/3];
 static	int			numLitTris;
 static	int			litTriIndexes[SHADER_MAX_INDEXES];
 static	float		clipDists[SHADER_MAX_VERTEXES];
+static	qboolean	needsTrace[SHADER_MAX_VERTEXES];
 
 static void R_AddEdgeDef( int i1, int i2, int f ) {
 	int		c;
@@ -256,85 +191,8 @@ void RB_ShadowTessEnd( void ) {
 #endif
 		VectorCopy( backEnd.currentEntity->lightDir, lightDir );
 
-	// project vertexes away from light direction, clipped to BSP walls
-	{
-		float	extrusionDist = r_shadowDistance->value;
-		vec3_t	worldNegLightDir;
-
-		if ( r_shadowClip->integer && tr.world ) {
-			int j;
-			// entity-local lightDir to world space, negated for extrusion
-			for ( j = 0; j < 3; j++ )
-				worldNegLightDir[j] = -( lightDir[0] * backEnd.or.axis[0][j]
-									   + lightDir[1] * backEnd.or.axis[1][j]
-									   + lightDir[2] * backEnd.or.axis[2][j] );
-		}
-
-		// Phase A: compute per-vertex clip distances
-		for ( i = 0; i < tess.numVertexes; i++ ) {
-			clipDists[i] = extrusionDist;
-
-			if ( r_shadowClip->integer && tr.world ) {
-				int j;
-				vec3_t worldPos;
-				float clipped;
-				for ( j = 0; j < 3; j++ )
-					worldPos[j] = tess.xyz[i][0] * backEnd.or.axis[0][j]
-								+ tess.xyz[i][1] * backEnd.or.axis[1][j]
-								+ tess.xyz[i][2] * backEnd.or.axis[2][j]
-								+ backEnd.or.origin[j];
-
-				clipped = R_ShadowClipDist( worldPos, worldNegLightDir, clipDists[i] );
-				if ( clipped < clipDists[i] )
-					clipDists[i] = clipped;
-			}
-		}
-
-		// Phase B: fix corner gaps by extending clip distances across triangles.
-		// Capped per-vertex to avoid bleeding through thin walls.
-		if ( r_shadowClip->integer && tr.world ) {
-			int t, numTrisLocal = tess.numIndexes / 3;
-			for ( t = 0; t < numTrisLocal; t++ ) {
-				int i1 = tess.indexes[ t*3 + 0 ];
-				int i2 = tess.indexes[ t*3 + 1 ];
-				int i3 = tess.indexes[ t*3 + 2 ];
-				float maxD = clipDists[i1];
-				float capD;
-				if ( clipDists[i2] > maxD ) maxD = clipDists[i2];
-				if ( clipDists[i3] > maxD ) maxD = clipDists[i3];
-				// skip if any vertex didn't hit solid
-				if ( maxD >= extrusionDist )
-					continue;
-				// cap: max 24 units extension per vertex
-				capD = maxD;
-				if ( capD > clipDists[i1] + 24.0f ) {
-					if ( clipDists[i1] + 24.0f > clipDists[i1] )
-						clipDists[i1] += 24.0f;
-				} else {
-					clipDists[i1] = capD;
-				}
-				if ( capD > clipDists[i2] + 24.0f ) {
-					if ( clipDists[i2] + 24.0f > clipDists[i2] )
-						clipDists[i2] += 24.0f;
-				} else {
-					clipDists[i2] = capD;
-				}
-				if ( capD > clipDists[i3] + 24.0f ) {
-					if ( clipDists[i3] + 24.0f > clipDists[i3] )
-						clipDists[i3] += 24.0f;
-				} else {
-					clipDists[i3] = capD;
-				}
-			}
-		}
-
-		// Phase C: extrude vertices using final clip distances
-		for ( i = 0; i < tess.numVertexes; i++ ) {
-			VectorMA( tess.xyz[i], -clipDists[i], lightDir, tess.xyz[i+tess.numVertexes] );
-		}
-	}
-
-	// decide which triangles face the light
+	// decide which triangles face the light (must happen before clip distance
+	// computation so we can identify silhouette edge vertices and only trace those)
 	Com_Memset( numEdgeDefs, 0, tess.numVertexes * sizeof( numEdgeDefs[0] ) );
 
 	numTris = tess.numIndexes / 3;
@@ -377,6 +235,96 @@ void RB_ShadowTessEnd( void ) {
 			litTriIndexes[ numLitTris*3 + 1 ] = tess.indexes[ i*3 + 1 ];
 			litTriIndexes[ numLitTris*3 + 2 ] = tess.indexes[ i*3 + 2 ];
 			numLitTris++;
+		}
+	}
+
+	// project vertexes away from light direction, clipped to BSP walls
+	{
+		float	extrusionDist = r_shadowDistance->value;
+		vec3_t	worldNegLightDir;
+
+		if ( r_shadowClip->integer && tr.world ) {
+			int j;
+
+			// entity-local lightDir to world space, negated for extrusion
+			for ( j = 0; j < 3; j++ )
+				worldNegLightDir[j] = -( lightDir[0] * backEnd.or.axis[0][j]
+									   + lightDir[1] * backEnd.or.axis[1][j]
+									   + lightDir[2] * backEnd.or.axis[2][j] );
+
+			// mark vertices on lit-facing triangles — back-facing vertices
+			// don't contribute to silhouette edges or back caps, so skip them
+			Com_Memset( needsTrace, 0, tess.numVertexes * sizeof( needsTrace[0] ) );
+			for ( i = 0; i < numTris; i++ ) {
+				if ( facing[i] ) {
+					needsTrace[ tess.indexes[ i*3 + 0 ] ] = qtrue;
+					needsTrace[ tess.indexes[ i*3 + 1 ] ] = qtrue;
+					needsTrace[ tess.indexes[ i*3 + 2 ] ] = qtrue;
+				}
+			}
+		}
+
+		// Phase A: compute per-vertex clip distances (skip back-facing vertices)
+		for ( i = 0; i < tess.numVertexes; i++ ) {
+			clipDists[i] = extrusionDist;
+
+			if ( r_shadowClip->integer && tr.world && needsTrace[i] ) {
+				int j;
+				vec3_t worldPos;
+				float clipped;
+				for ( j = 0; j < 3; j++ )
+					worldPos[j] = tess.xyz[i][0] * backEnd.or.axis[0][j]
+								+ tess.xyz[i][1] * backEnd.or.axis[1][j]
+								+ tess.xyz[i][2] * backEnd.or.axis[2][j]
+								+ backEnd.or.origin[j];
+
+				clipped = R_ShadowClipDist( worldPos, worldNegLightDir, clipDists[i] );
+				if ( clipped < clipDists[i] )
+					clipDists[i] = clipped;
+			}
+		}
+
+		// Phase B: fix corner gaps by extending clip distances across triangles.
+		// Capped per-vertex to avoid bleeding through thin walls.
+		if ( r_shadowClip->integer && tr.world ) {
+			int t, numTrisLocal = tess.numIndexes / 3;
+			for ( t = 0; t < numTrisLocal; t++ ) {
+				int i1 = tess.indexes[ t*3 + 0 ];
+				int i2 = tess.indexes[ t*3 + 1 ];
+				int i3 = tess.indexes[ t*3 + 2 ];
+				float maxD = clipDists[i1];
+				float capD;
+				if ( clipDists[i2] > maxD ) maxD = clipDists[i2];
+				if ( clipDists[i3] > maxD ) maxD = clipDists[i3];
+				// skip if any vertex didn't hit solid
+				if ( maxD >= extrusionDist )
+					continue;
+				// cap: max r_shadowClipExtension units extension per vertex
+				capD = maxD;
+				if ( capD > clipDists[i1] + r_shadowClipExtension->value ) {
+					if ( clipDists[i1] + r_shadowClipExtension->value > clipDists[i1] )
+						clipDists[i1] += r_shadowClipExtension->value;
+				} else {
+					clipDists[i1] = capD;
+				}
+				if ( capD > clipDists[i2] + r_shadowClipExtension->value ) {
+					if ( clipDists[i2] + r_shadowClipExtension->value > clipDists[i2] )
+						clipDists[i2] += r_shadowClipExtension->value;
+				} else {
+					clipDists[i2] = capD;
+				}
+				if ( capD > clipDists[i3] + r_shadowClipExtension->value ) {
+					if ( clipDists[i3] + r_shadowClipExtension->value > clipDists[i3] )
+						clipDists[i3] += r_shadowClipExtension->value;
+				} else {
+					clipDists[i3] = capD;
+				}
+			}
+		}
+
+		// Phase C: extrude vertices using final clip distances
+		for ( i = 0; i < tess.numVertexes; i++ ) {
+			VectorMA( tess.xyz[i], -clipDists[i], lightDir, tess.xyz[i+tess.numVertexes] );
 		}
 	}
 

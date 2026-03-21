@@ -3551,6 +3551,7 @@ void CL_InitRef( void ) {
 	ri.Hunk_FreeTempMemory = Hunk_FreeTempMemory;
 
 	ri.CM_ClusterPVS = CM_ClusterPVS;
+	ri.CM_PointTrace = CM_PointTrace;
 	ri.CM_DrawDebugSurface = CM_DrawDebugSurface;
 
 	ri.FS_ReadFile = FS_ReadFile;
