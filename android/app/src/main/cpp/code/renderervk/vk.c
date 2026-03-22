@@ -8304,54 +8304,106 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 	VK_CHECK( qvkBeginCommandBuffer( vk.cmd->command_buffer, &begin_info ) );
 	vk.recordingCommands = qtrue;
 
-	// Transition FBO images to attachment-optimal layouts (only when FBO mode is active)
-	// In direct mode, XR swapchain images are used directly
-	if ( vk.color_image != VK_NULL_HANDLE ) {
-		record_image_layout_transition( vk.cmd->command_buffer,
-			vk.color_image,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			0, 0 );
-	}
+	// Batch FBO and XR layout transitions into a single pipeline barrier
+	{
+		VkImageMemoryBarrier barriers[5];
+		uint32_t barrierCount = 0;
 
-	if ( vk.depth_image != VK_NULL_HANDLE ) {
-		record_image_layout_transition( vk.cmd->command_buffer,
-			vk.depth_image,
-			VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			0, 0 );
-	}
+		if ( vk.color_image != VK_NULL_HANDLE ) {
+			barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[barrierCount].pNext = NULL;
+			barriers[barrierCount].srcAccessMask = VK_ACCESS_NONE;
+			barriers[barrierCount].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			barriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].image = vk.color_image;
+			barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barriers[barrierCount].subresourceRange.baseMipLevel = 0;
+			barriers[barrierCount].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			barriers[barrierCount].subresourceRange.baseArrayLayer = 0;
+			barriers[barrierCount].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			barrierCount++;
+		}
 
-	// MSAA mode: also transition MSAA color image
-	// Quake3e uses shared depth for MSAA, no separate MSAA depth
-	if ( vk.msaaActive && vk.msaa_image != VK_NULL_HANDLE ) {
-		record_image_layout_transition( vk.cmd->command_buffer,
-			vk.msaa_image,
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			0, 0 );
-	}
+		if ( vk.depth_image != VK_NULL_HANDLE ) {
+			barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[barrierCount].pNext = NULL;
+			barriers[barrierCount].srcAccessMask = VK_ACCESS_NONE;
+			barriers[barrierCount].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			barriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].image = vk.depth_image;
+			barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+			barriers[barrierCount].subresourceRange.baseMipLevel = 0;
+			barriers[barrierCount].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			barriers[barrierCount].subresourceRange.baseArrayLayer = 0;
+			barriers[barrierCount].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			barrierCount++;
+		}
 
-	// Direct mode: transition XR swapchain images for direct rendering
-	if ( !vk.fboActive && vk.xr.colorInfo && vk.xr.depthInfo ) {
-		// Transition XR color swapchain image
-		record_image_layout_transition( vk.cmd->command_buffer,
-			vk.xr.colorInfo->images[colorIndex],
-			VK_IMAGE_ASPECT_COLOR_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			0, 0 );
+		if ( vk.msaaActive && vk.msaa_image != VK_NULL_HANDLE ) {
+			barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[barrierCount].pNext = NULL;
+			barriers[barrierCount].srcAccessMask = VK_ACCESS_NONE;
+			barriers[barrierCount].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			barriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].image = vk.msaa_image;
+			barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barriers[barrierCount].subresourceRange.baseMipLevel = 0;
+			barriers[barrierCount].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			barriers[barrierCount].subresourceRange.baseArrayLayer = 0;
+			barriers[barrierCount].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			barrierCount++;
+		}
 
-		// Transition XR depth swapchain image
-		record_image_layout_transition( vk.cmd->command_buffer,
-			vk.xr.depthInfo->images[depthIndex],
-			VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			0, 0 );
+		// Direct mode: XR swapchain images
+		if ( !vk.fboActive && vk.xr.colorInfo && vk.xr.depthInfo ) {
+			barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[barrierCount].pNext = NULL;
+			barriers[barrierCount].srcAccessMask = VK_ACCESS_NONE;
+			barriers[barrierCount].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			barriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].image = vk.xr.colorInfo->images[colorIndex];
+			barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barriers[barrierCount].subresourceRange.baseMipLevel = 0;
+			barriers[barrierCount].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			barriers[barrierCount].subresourceRange.baseArrayLayer = 0;
+			barriers[barrierCount].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			barrierCount++;
+
+			barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[barrierCount].pNext = NULL;
+			barriers[barrierCount].srcAccessMask = VK_ACCESS_NONE;
+			barriers[barrierCount].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			barriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[barrierCount].image = vk.xr.depthInfo->images[depthIndex];
+			barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+			barriers[barrierCount].subresourceRange.baseMipLevel = 0;
+			barriers[barrierCount].subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+			barriers[barrierCount].subresourceRange.baseArrayLayer = 0;
+			barriers[barrierCount].subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+			barrierCount++;
+		}
+
+		if ( barrierCount > 0 ) {
+			qvkCmdPipelineBarrier( vk.cmd->command_buffer,
+				VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+				0, 0, NULL, 0, NULL, barrierCount, barriers );
+		}
 	}
 
 	// Track stats

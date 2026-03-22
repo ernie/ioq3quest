@@ -94,7 +94,6 @@ static void R_CalcShadowEdges( void ) {
 	int		c, c2;
 	int		j, k;
 	int		i2;
-	color4ub_t *colors;
 
 	tess.numIndexes = 0;
 
@@ -148,12 +147,9 @@ static void R_CalcShadowEdges( void ) {
 
 #ifdef USE_VULKAN
 	tess.numVertexes *= 2;
-
-	colors = &tess.svars.colors[0][0]; // we need at least 2x SHADER_MAX_VERTEXES there
-
-	for ( i = 0; i < tess.numVertexes; i++ ) {
-		Vector4Set( colors[i].rgba, 50, 50, 50, 255 );
-	}
+	// Shadow pipelines have colorWriteMask = 0, so only position data is needed.
+	// Binding 1 (color) and 2 (texcoord) are declared by TYPE_SIGNLE_TEXTURE but
+	// left unbound — the GPU never reads them.
 #endif
 }
 
@@ -358,7 +354,7 @@ void RB_ShadowTessEnd( void ) {
 	}
 	vk_bind_pipeline( pipeline[0] ); // back-sided
 	vk_bind_index();
-	vk_bind_geometry( TESS_XYZ | TESS_RGBA0 );
+	vk_bind_geometry( TESS_XYZ );
 	vk_draw_geometry( DEPTH_RANGE_NORMAL, qtrue );
 	vk_bind_pipeline( pipeline[1] ); // front-sided
 	vk_draw_geometry( DEPTH_RANGE_NORMAL, qtrue );
