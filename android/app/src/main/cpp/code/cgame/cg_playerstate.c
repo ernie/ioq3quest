@@ -205,7 +205,7 @@ void CG_Respawn( void ) {
 	cg.weaponSelect = cg.snap->ps.weapon;
 }
 
-extern char *eventnames[];
+extern const char *eventnames[EV_MAX];
 
 /*
 ==============
@@ -450,6 +450,22 @@ void CG_CheckLocalSounds( playerState_t *ps, playerState_t *ops ) {
 		else if ( cgs.timelimit > 5 && !( cg.timelimitWarnings & 1 ) && msec > (cgs.timelimit - 5) * 60 * 1000 ) {
 			cg.timelimitWarnings |= 1;
 			trap_S_StartLocalSound( cgs.media.fiveMinuteSound, CHAN_ANNOUNCER );
+		}
+	}
+
+	// overtime warnings
+	if ( cgs.timelimit > 0 && cgs.overtimelimit > 0 && !cg.warmup && cg.warmupFightSound < cg.time ) {
+		int overtimeElapsed = (cg.time - cgs.levelStartTime) - (cgs.timelimit * 60 * 1000);
+		if ( overtimeElapsed > 0 ) {
+			int overtimeRemaining = (cgs.overtimelimit * 60 * 1000) - overtimeElapsed;
+			if ( !( cg.overtimeWarnings & 2 ) && overtimeRemaining <= 60 * 1000 && overtimeRemaining > 0 ) {
+				cg.overtimeWarnings |= 1 | 2;
+				CG_AddBufferedSound( cgs.media.oneMinuteSound );
+			}
+			else if ( cgs.overtimelimit > 5 && !( cg.overtimeWarnings & 1 ) && overtimeRemaining <= 5 * 60 * 1000 && overtimeRemaining > 0 ) {
+				cg.overtimeWarnings |= 1;
+				CG_AddBufferedSound( cgs.media.fiveMinuteSound );
+			}
 		}
 	}
 
