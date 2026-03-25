@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // perform the server side effects of a weapon firing
 
 #include "g_local.h"
+#include "bg_gameplay.h"
 
 #include "../vrcommon/vr_clientinfo.h"
 
@@ -32,8 +33,6 @@ static	vec3_t	forward, right, up;
 static	vec3_t	muzzle;
 
 extern vr_clientinfo_t* vr;
-
-#define NUM_NAILSHOTS 15
 
 
 void rotateAboutOrigin(float x, float y, float rotation, vec2_t out)
@@ -161,7 +160,7 @@ qboolean CheckGauntletAttack( gentity_t *ent ) {
 	}
 #endif
 
-	damage = 50 * s_quadFactor;
+	damage = GP_GetConfig( g_gameplay.integer )->gauntletDamage * s_quadFactor;
 	G_Damage( traceEnt, ent, ent, forward, tr.endpos,
 		damage, 0, MOD_GAUNTLET );
 
@@ -198,14 +197,6 @@ void SnapVectorTowards( vec3_t v, vec3_t to ) {
 		}
 	}
 }
-
-#ifdef MISSIONPACK
-#define CHAINGUN_SPREAD		600
-#define CHAINGUN_DAMAGE		7
-#endif
-#define MACHINEGUN_SPREAD	200
-#define	MACHINEGUN_DAMAGE	7
-#define	MACHINEGUN_TEAM_DAMAGE	5		// wimpier MG in teamplay
 
 void Bullet_Fire (gentity_t *ent, float spread, int damage, int mod ) {
 	trace_t		tr;
@@ -316,10 +307,6 @@ SHOTGUN
 ======================================================================
 */
 
-// DEFAULT_SHOTGUN_SPREAD and DEFAULT_SHOTGUN_COUNT	are in bg_public.h, because
-// client predicts same spreads
-#define	DEFAULT_SHOTGUN_DAMAGE	10
-
 qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent ) {
 	trace_t		tr;
 	int			damage, i, passent;
@@ -343,7 +330,7 @@ qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent ) {
 		}
 
 		if ( traceEnt->takedamage) {
-			damage = DEFAULT_SHOTGUN_DAMAGE * s_quadFactor;
+			damage = GP_GetConfig( g_gameplay.integer )->sgDamage * s_quadFactor;
 #ifdef MISSIONPACK
 			if ( traceEnt->client && traceEnt->client->invulnerabilityTime > level.time ) {
 				if (G_InvulnerabilityEffect( traceEnt, forward, tr.endpos, impactpoint, bouncedir )) {
@@ -375,28 +362,64 @@ void ShotgunPattern( vec3_t origin, vec3_t origin2, int seed, gentity_t *ent ) {
 	int			i;
 	float		r, u;
 	vec3_t		end;
-	vec3_t		forward, right, up;
+	vec3_t		localForward, localRight, localUp;
 	qboolean	hitClient = qfalse;
+	const gameplayConfig_t *cb = GP_GetConfig( g_gameplay.integer );
 
 	// derive the right and up vectors from the forward vector, because
 	// the client won't have any other information
-	VectorNormalize2( origin2, forward );
-	PerpendicularVector( right, forward );
-	CrossProduct( forward, right, up );
+	VectorNormalize2( origin2, localForward );
+	PerpendicularVector( localRight, localForward );
+	CrossProduct( localForward, localRight, localUp );
 
 	// unlagged
 	G_DoTimeShiftFor( ent );
 
-	// generate the "random" spread pattern
-	for ( i = 0 ; i < DEFAULT_SHOTGUN_COUNT ; i++ ) {
-		r = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		u = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		VectorMA( origin, 8192 * 16, forward, end);
-		VectorMA (end, r, right, end);
-		VectorMA (end, u, up, end);
-		if( ShotgunPellet( origin, end, ent ) && !hitClient ) {
-			hitClient = qtrue;
-			ent->client->accuracy_hits++;
+	{
+		float angle, radius;
+		int ring, ringIndex;
+
+		// generate spread pattern
+		for ( i = 0 ; i < cb->sgCount ; i++ ) {
+			if ( cb->sgPatternType == 2 ) {
+				// CPM dual-ring pattern: 8 inner + 8 outer, offset 22.5° so no pellets at 0/90/180/270
+				ring = ( i < 8 ) ? 0 : 1;
+				ringIndex = ( i < 8 ) ? i : i - 8;
+				radius = ring ? (float)cb->sgSpread * 16.0f : (float)cb->sgSpread * 16.0f * 0.40f;
+				angle = 2.0f * M_PI * ringIndex / 8.0f + ( M_PI / 8.0f );	// offset 22.5°
+				r = cos( angle ) * radius;
+				u = sin( angle ) * radius;
+			} else if ( cb->sgPatternType == 1 ) {
+				// QL ring pattern: 3 concentric rings (inner 6, middle 6, outer 8)
+				if ( i < 6 ) {
+					ring = 0; ringIndex = i;			// inner ring: 6 pellets at 0°,60°,...
+				} else if ( i < 12 ) {
+					ring = 1; ringIndex = i - 6;		// middle ring: 6 pellets, rotated 30°
+				} else {
+					ring = 2; ringIndex = i - 12;		// outer ring: 8 pellets at 0°,45°,...
+				}
+				radius = (float)cb->sgSpread * 16.0f * ( ring + 1 ) / 3.0f;
+				if ( ring == 0 ) {
+					angle = 2.0f * M_PI * ringIndex / 6.0f;				// 0°, 60°, 120°...
+				} else if ( ring == 1 ) {
+					angle = 2.0f * M_PI * ringIndex / 6.0f - ( 25.0f * M_PI / 180.0f );	// -25° offset
+				} else {
+					angle = 2.0f * M_PI * ringIndex / 8.0f;				// 0°, 45°, 90°...
+				}
+				r = cos( angle ) * radius;
+				u = sin( angle ) * radius;
+			} else {
+				// VQ3 random spread
+				r = Q_crandom( &seed ) * cb->sgSpread * 16;
+				u = Q_crandom( &seed ) * cb->sgSpread * 16;
+			}
+			VectorMA( origin, 8192 * 16, localForward, end);
+			VectorMA (end, r, localRight, end);
+			VectorMA (end, u, localUp, end);
+			if( ShotgunPellet( origin, end, ent ) && !hitClient ) {
+				hitClient = qtrue;
+				ent->client->accuracy_hits++;
+			}
 		}
 	}
 
@@ -508,7 +531,7 @@ void weapon_railgun_fire (gentity_t *ent) {
 	int			passent;
 	gentity_t	*unlinkedEntities[MAX_RAIL_HITS];
 
-	damage = 100 * s_quadFactor;
+	damage = GP_GetConfig( g_gameplay.integer )->rgDamage * s_quadFactor;
 
 	VectorMA (muzzle, 8192, forward, end);
 
@@ -678,12 +701,13 @@ void Weapon_LightningFire( gentity_t *ent ) {
 #endif
 	gentity_t	*traceEnt, *tent;
 	int			damage, i, passent;
+	const gameplayConfig_t *cb = GP_GetConfig( g_gameplay.integer );
 
-	damage = 8 * s_quadFactor;
+	damage = cb->lgDamage * s_quadFactor;
 
 	passent = ent->s.number;
 	for (i = 0; i < 10; i++) {
-		VectorMA( muzzle, LIGHTNING_RANGE, forward, end );
+		VectorMA( muzzle, cb->lgRange, forward, end );
 
 		// unlagged
 		G_DoTimeShiftFor( ent );
@@ -762,7 +786,9 @@ void Weapon_Nailgun_Fire (gentity_t *ent) {
 	gentity_t	*m;
 	int			count;
 
-	for( count = 0; count < NUM_NAILSHOTS; count++ ) {
+	int			nailCount = GP_GetConfig( g_gameplay.integer )->ngCount;
+
+	for( count = 0; count < nailCount; count++ ) {
 		m = fire_nail (ent, muzzle, forward, right, up );
 		m->damage *= s_quadFactor;
 		m->splashDamage *= s_quadFactor;
@@ -896,7 +922,7 @@ void FireWeapon( gentity_t *ent ) {
 	if( ent->s.weapon != WP_GRAPPLING_HOOK && ent->s.weapon != WP_GAUNTLET ) {
 #ifdef MISSIONPACK
 		if( ent->s.weapon == WP_NAILGUN ) {
-			ent->client->accuracy_shots += NUM_NAILSHOTS;
+			ent->client->accuracy_shots += GP_GetConfig( g_gameplay.integer )->ngCount;
 		} else {
 			ent->client->accuracy_shots++;
 		}
@@ -936,10 +962,13 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_supershotgun_fire( ent );
 		break;
 	case WP_MACHINEGUN:
-		if ( g_gametype.integer != GT_TEAM ) {
-			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_DAMAGE, MOD_MACHINEGUN );
-		} else {
-			Bullet_Fire( ent, MACHINEGUN_SPREAD, MACHINEGUN_TEAM_DAMAGE, MOD_MACHINEGUN );
+		{
+			const gameplayConfig_t *cb = GP_GetConfig( g_gameplay.integer );
+			if ( g_gametype.integer != GT_TEAM ) {
+				Bullet_Fire( ent, cb->mgSpread, cb->mgDamage, MOD_MACHINEGUN );
+			} else {
+				Bullet_Fire( ent, cb->mgSpread, cb->mgTeamDamage, MOD_MACHINEGUN );
+			}
 		}
 		break;
 	case WP_GRENADE_LAUNCHER:
@@ -968,7 +997,10 @@ void FireWeapon( gentity_t *ent ) {
 		weapon_proxlauncher_fire( ent );
 		break;
 	case WP_CHAINGUN:
-		Bullet_Fire( ent, CHAINGUN_SPREAD, CHAINGUN_DAMAGE, MOD_CHAINGUN );
+		{
+			const gameplayConfig_t *cb = GP_GetConfig( g_gameplay.integer );
+			Bullet_Fire( ent, cb->cgSpread, cb->cgDamage, MOD_CHAINGUN );
+		}
 		break;
 #endif
 	default:

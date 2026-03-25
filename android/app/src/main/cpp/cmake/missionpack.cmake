@@ -29,6 +29,7 @@ set(GAME_MODULE_SHARED_SOURCES
 # Background/physics shared by cgame and game
 set(BG_SOURCES
     ${SOURCE_DIR}/game/bg_misc.c
+    ${SOURCE_DIR}/game/bg_gameplay.c
     ${SOURCE_DIR}/game/bg_pmove.c
     ${SOURCE_DIR}/game/bg_slidemove.c
     ${SOURCE_DIR}/game/bg_lib.c
@@ -166,6 +167,7 @@ set(MP_UI_SOURCES
     ${SOURCE_DIR}/ui/ui_shared.c
     ${SOURCE_DIR}/ui/ui_syscalls.c
     ${SOURCE_DIR}/game/bg_misc.c
+    ${SOURCE_DIR}/game/bg_gameplay.c
     ${SOURCE_DIR}/game/bg_lib.c
 )
 

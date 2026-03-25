@@ -803,6 +803,12 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.armorModel = trap_R_RegisterModel( "models/powerups/armor/armor_yel.md3" );
 	cgs.media.armorIcon  = trap_R_RegisterShaderNoMip( "icons/iconr_yellow" );
 
+	// per-tier armor media for CPM HUD (always register — g_gameplay can change mid-match)
+	cgs.media.armorModelGA = trap_R_RegisterModel( "models/powerups/armor/armor_grn.md3" );
+	cgs.media.armorModelRA = trap_R_RegisterModel( "models/powerups/armor/armor_red.md3" );
+	cgs.media.armorIconGA  = trap_R_RegisterShaderNoMip( "icons/iconr_green" );
+	cgs.media.armorIconRA  = trap_R_RegisterShaderNoMip( "icons/iconr_red" );
+
 	cgs.media.machinegunBrassModel = trap_R_RegisterModel( "models/weapons2/shells/m_shell.md3" );
 	cgs.media.shotgunBrassModel = trap_R_RegisterModel( "models/weapons2/shells/s_shell.md3" );
 
@@ -890,6 +896,11 @@ static void CG_RegisterGraphics( void ) {
 
     // scoreboard cursor
     cgs.media.scoreboardCursor = trap_R_RegisterShaderNoMip( "menu/art/3_cursor2" );
+
+	cgs.media.modeIcons[PM_MOVEMENT_VQ3] = trap_R_RegisterShaderNoMip( "gfx/2d/mode_vq3" );
+	cgs.media.modeIcons[PM_MOVEMENT_CPM] = trap_R_RegisterShaderNoMip( "gfx/2d/mode_cpm" );
+	cgs.media.modeIcons[PM_MOVEMENT_QL]  = trap_R_RegisterShaderNoMip( "gfx/2d/mode_ql" );
+	cgs.media.modeIcons[PM_MOVEMENT_QLT] = trap_R_RegisterShaderNoMip( "gfx/2d/mode_qlt" );
 
     //HUD
     cgs.media.hudShader = trap_R_RegisterShader( "sprites/vr/hud" );
