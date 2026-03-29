@@ -110,6 +110,7 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_ui.c
     ${SOURCE_DIR}/client/cl_avi.c
     ${SOURCE_DIR}/client/cl_http_curl.c
+    ${SOURCE_DIR}/client/cl_trinity.c
     ${SOURCE_DIR}/client/cl_tv.c
     ${SOURCE_DIR}/client/snd_altivec.c
     ${SOURCE_DIR}/client/snd_adpcm.c

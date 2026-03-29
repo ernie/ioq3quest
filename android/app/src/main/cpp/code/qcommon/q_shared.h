@@ -1021,12 +1021,12 @@ default values.
 #define CVAR_VM_CREATED		0x1000	// cvar was created exclusively in one of the VMs.
 #define CVAR_PROTECTED		0x2000	// prevent modifying this var from VMs or the server
 #define CVAR_DEVELOPER		0x4000	// developer-only cvar (renderervk compatibility)
+#define CVAR_NODEFAULT		0x8000	// do not write to config if matching with default value
 // These flags are only returned by the Cvar_Flags() function
 #define CVAR_MODIFIED		0x40000000	// Cvar was modified
 #define CVAR_NONEXISTENT	0x80000000	// Cvar doesn't exist.
 
-// Alias for renderervk compatibility (CVAR_ARCHIVE_ND = "no default", same behavior as CVAR_ARCHIVE)
-#define CVAR_ARCHIVE_ND		CVAR_ARCHIVE
+#define CVAR_ARCHIVE_ND		(CVAR_ARCHIVE | CVAR_NODEFAULT)	// archived, but not written if value equals default
 
 // Cvar groups for batch modification checking (renderervk)
 typedef enum {

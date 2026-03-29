@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_main.c  -- client main loop
 
 #include "client.h"
+#include "cl_trinity.h"
 #include <limits.h>
 
 #include "../sys/sys_local.h"
@@ -1274,6 +1275,8 @@ void CL_ShutdownAll(qboolean shutdownRef)
 
 	// clear sounds
 	S_DisableSounds();
+	// shutdown Trinity login
+	CL_TrinityShutdown();
 	// shutdown CGame
 	CL_ShutdownCGame();
 	// shutdown UI
@@ -3215,6 +3218,7 @@ void CL_Frame ( int msec ) {
 
 	CL_HTTP_PerformInMemoryDownload();
 	CL_TV_DownloadFrame();
+	CL_TrinityPerformLogin();
 #endif
 
 	if ( cls.cddialog ) {
@@ -4021,6 +4025,7 @@ void CL_Init( void ) {
 #endif
 
 	CL_TV_Init();
+	CL_TrinityInit();
 
 	// cgame might not be initialized before menu is used
 	Cvar_Get ("cg_viewsize", "100", CVAR_ARCHIVE );

@@ -12,6 +12,7 @@ include(utils/set_output_dirs)
 # Common definitions for game modules (needed for q_platform.h)
 set(GAME_MODULE_DEFINITIONS
     ARCH_STRING="${ARCH_STRING}"
+    IOQ3QUEST_VERSION="${IOQ3QUEST_VERSION_STRING}"
 )
 
 # Common include directories for game modules (SDL and OpenXR needed for VR headers)
@@ -28,6 +29,7 @@ set(GAME_MODULE_SHARED_SOURCES
 
 # Background/physics shared by cgame and game
 set(BG_SOURCES
+    ${SOURCE_DIR}/game/bg_hash.c
     ${SOURCE_DIR}/game/bg_misc.c
     ${SOURCE_DIR}/game/bg_gameplay.c
     ${SOURCE_DIR}/game/bg_pmove.c
@@ -171,6 +173,7 @@ set(UI_SOURCES
     ${SOURCE_DIR}/q3_ui/ui_gameinfo.c
     ${SOURCE_DIR}/q3_ui/ui_ingame.c
     ${SOURCE_DIR}/q3_ui/ui_loadconfig.c
+    ${SOURCE_DIR}/q3_ui/ui_login.c
     ${SOURCE_DIR}/q3_ui/ui_menu.c
     ${SOURCE_DIR}/q3_ui/ui_mfield.c
     ${SOURCE_DIR}/q3_ui/ui_mods.c
