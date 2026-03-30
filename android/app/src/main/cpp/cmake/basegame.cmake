@@ -199,6 +199,7 @@ set(UI_SOURCES
     ${SOURCE_DIR}/q3_ui/ui_team.c
     ${SOURCE_DIR}/q3_ui/ui_teamorders.c
     ${SOURCE_DIR}/q3_ui/ui_video.c
+    ${SOURCE_DIR}/q3_ui/ui_update.c
     ${SOURCE_DIR}/ui/ui_syscalls.c
     ${SOURCE_DIR}/game/bg_misc.c
     ${SOURCE_DIR}/game/bg_gameplay.c

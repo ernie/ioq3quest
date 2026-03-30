@@ -15,6 +15,7 @@ list(APPEND COMMON_DEFINITIONS
 # System sources for Android
 set(SYSTEM_PLATFORM_SOURCES
     ${SOURCE_DIR}/android/android_snd.c
+    ${SOURCE_DIR}/android/sys_android.c
     ${SOURCE_DIR}/sys/sys_unix.c
 )
 

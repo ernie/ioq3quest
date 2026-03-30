@@ -43,6 +43,7 @@ MAIN MENU
 #define ID_MODS					16
 #define ID_EXIT					17
 #define ID_ACCOUNT				18
+#define ID_UPDATE				19
 
 #define MAIN_BANNER_MODEL				"models/mapobjects/banner/banner5.md3"
 #define MAIN_MENU_VERTICAL_SPACING		34
@@ -60,6 +61,7 @@ typedef struct {
 	menutext_s		mods;
 	menutext_s		exit;
 	menutext_s		account;
+	menutext_s		update;
 
 	qhandle_t		bannerModel;
 } mainmenu_t;
@@ -105,6 +107,29 @@ static void Main_DrawLoginButton( void *self ) {
 
 	// Update hit rect to match current label width
 	w = strlen( label ) * SMALLCHAR_WIDTH;
+	t->generic.left = t->generic.x - w;
+}
+
+/*
+=================
+Main_DrawUpdateButton
+
+Draws the Update Available button using the small bitmap font.
+=================
+*/
+static void Main_DrawUpdateButton( void *self ) {
+	menutext_s	*t = (menutext_s *)self;
+	int			style;
+	int			w;
+
+	style = UI_RIGHT | UI_SMALLFONT;
+	if ( t->generic.flags & QMF_PULSEIFFOCUS && Menu_ItemAtCursor( t->generic.parent ) == t ) {
+		style |= UI_PULSE;
+	}
+
+	UI_DrawString( t->generic.x, t->generic.y, t->string, style, t->color );
+
+	w = strlen( t->string ) * SMALLCHAR_WIDTH;
 	t->generic.left = t->generic.x - w;
 }
 
@@ -165,6 +190,10 @@ void Main_MenuEvent (void* ptr, int event) {
 
 	case ID_ACCOUNT:
 		UI_LoginMenu();
+		break;
+
+	case ID_UPDATE:
+		UI_UpdateMenu();
 		break;
 
 	case ID_EXIT:
@@ -530,6 +559,28 @@ void UI_MainMenu( void ) {
 		s_main.account.generic.right  = s_main.account.generic.x;
 		s_main.account.generic.top    = s_main.account.generic.y;
 		s_main.account.generic.bottom = s_main.account.generic.y + SMALLCHAR_HEIGHT;
+	}
+
+	// Update Available button — right-aligned, below Account
+	if ( (int)trap_Cvar_VariableValue( "update_available" ) == 1 ) {
+		s_main.update.generic.type			= MTYPE_PTEXT;
+		s_main.update.generic.flags			= QMF_RIGHT_JUSTIFY|QMF_PULSEIFFOCUS;
+		s_main.update.generic.x				= 610;
+		s_main.update.generic.y				= 134 + SMALLCHAR_HEIGHT + 2;
+		s_main.update.generic.id			= ID_UPDATE;
+		s_main.update.generic.callback		= Main_MenuEvent;
+		s_main.update.generic.ownerdraw		= Main_DrawUpdateButton;
+		s_main.update.string				= "Update Available";
+		s_main.update.color					= color_yellow;
+		s_main.update.style					= UI_RIGHT|UI_SMALLFONT;
+		Menu_AddItem( &s_main.menu, &s_main.update );
+		{
+			int w = strlen( s_main.update.string ) * SMALLCHAR_WIDTH;
+			s_main.update.generic.left   = s_main.update.generic.x - w;
+			s_main.update.generic.right  = s_main.update.generic.x;
+			s_main.update.generic.top    = s_main.update.generic.y;
+			s_main.update.generic.bottom = s_main.update.generic.y + SMALLCHAR_HEIGHT;
+		}
 	}
 
 	trap_Key_SetCatcher( KEYCATCH_UI );

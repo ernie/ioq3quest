@@ -10,6 +10,7 @@
 #endif
 #endif
 
+#define JSON_IMPLEMENTATION
 #include "../qcommon/json.h"
 
 cvar_t *cl_trinityToken;
@@ -216,11 +217,7 @@ static void CL_TrinityLogin_f( void ) {
 	qcurl_easy_setopt( trinityLogin.curl, CURLOPT_WRITEDATA, &trinityLogin.response );
 	qcurl_easy_setopt( trinityLogin.curl, CURLOPT_TIMEOUT, 10L );
 	qcurl_easy_setopt( trinityLogin.curl, CURLOPT_FOLLOWLOCATION, 0L );
-#ifdef __ANDROID__
-	// Android's dynamically-loaded libcurl has no default CA bundle path,
-	// so HTTPS peer verification fails. Disable it for the tracker connection.
-	qcurl_easy_setopt( trinityLogin.curl, CURLOPT_SSL_VERIFYPEER, 0L );
-#endif
+	qcurl_easy_setopt( trinityLogin.curl, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem" );
 
 	trinityLogin.multi = qcurl_multi_init();
 	if ( !trinityLogin.multi ) {

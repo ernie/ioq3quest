@@ -783,4 +783,10 @@ void UI_SignupMenu( void );
 void RankStatus_Cache( void );
 void UI_RankStatusMenu( void );
 
+//
+// ui_update.c
+//
+extern void UI_UpdateMenu( void );
+extern void UI_UpdateMenu_Cache( void );
+
 #endif

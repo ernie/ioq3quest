@@ -16,6 +16,7 @@
 #include <SDL.h>
 
 extern void CON_LogcatFn( void (*LogcatFn)( const char* message ) );
+extern void Sys_Android_SetJNIEnv( JavaVM *vm, jobject activity );
 
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "Quake3", __VA_ARGS__))
@@ -68,6 +69,9 @@ int main(int argc, char* argv[]) {
 
 	// Set Android context for OpenXR initialization
 	VR_SetAndroidContext(g_JavaVM, g_ActivityObject);
+
+	// Set JNI context for APK installer
+	Sys_Android_SetJNIEnv(g_JavaVM, g_ActivityObject);
 
 	// Initialize VR engine
 	VR_Engine* engine = VR_Init();

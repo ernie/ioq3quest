@@ -3,6 +3,8 @@ package com.drbeef.ioq3quest;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
 import android.content.res.AssetManager;
 import android.os.Bundle;
 import android.os.RemoteException;
@@ -12,6 +14,7 @@ import android.view.KeyEvent;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.drbeef.externalhapticsservice.HapticServiceClient;
 import com.drbeef.externalhapticsservice.HapticsConstants;
@@ -124,6 +127,9 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		// Prepare base game directory
 		new File("/sdcard/ioquake3Quest/baseq3").mkdirs();
 
+		// Copy CA certificate bundle for HTTPS
+		copy_asset("/sdcard/ioquake3Quest", "cacert.pem", true);
+
 		// Copy the command line params file and autoexec
 		copy_asset("/sdcard/ioquake3Quest", "commandline.txt", false);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "autoexec.cfg", false);
@@ -193,6 +199,22 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 
 		Log.d(TAG, "nativeCreate");
 		nativeCreate(this);
+	}
+
+	public void installApk(String apkPath) {
+		File apkFile = new File(apkPath);
+		Uri apkUri;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			apkUri = FileProvider.getUriForFile(this,
+				getPackageName() + ".fileprovider", apkFile);
+		} else {
+			apkUri = Uri.fromFile(apkFile);
+		}
+		Intent intent = new Intent(Intent.ACTION_VIEW);
+		intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+		intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+		intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+		startActivity(intent);
 	}
 
 	public void copy_asset(String path, String name, boolean force) {

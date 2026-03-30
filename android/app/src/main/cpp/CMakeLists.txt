@@ -89,6 +89,9 @@ if(FULL_BUILD)
     endif()
 
     add_definitions(-DPRODUCT_VERSION="${PRODUCT_VERSION}")
+    add_definitions(-DUPDATE_GITHUB_OWNER="ernie")
+    add_definitions(-DUPDATE_GITHUB_REPO="ioq3quest")
+    add_definitions(-DUPDATE_ASSET_PREFIX="ioq3quest")
     message(STATUS "Building ${PROJECT_NAME} version ${PRODUCT_VERSION}")
 
     #############################################################################

@@ -1045,6 +1045,7 @@ void UI_Cache_f( void ) {
 //	UI_SaveConfigMenu_Cache();
 	UI_BotSelectMenu_Cache();
 //	UI_CDKeyMenu_Cache();
+	UI_UpdateMenu_Cache();
 	UI_ModsMenu_Cache();
 
 }

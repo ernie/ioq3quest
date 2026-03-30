@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../sys/sys_local.h"
 #include "../sys/sys_loadlib.h"
+#include "../qcommon/autoupdate.h"
 
 #include "../vrcommon/vr_base.h"
 #include "../vrcommon/vr_cvars.h"
@@ -3219,6 +3220,8 @@ void CL_Frame ( int msec ) {
 	CL_HTTP_PerformInMemoryDownload();
 	CL_TV_DownloadFrame();
 	CL_TrinityPerformLogin();
+
+	Update_Frame();
 #endif
 
 	if ( cls.cddialog ) {
@@ -4022,6 +4025,8 @@ void CL_Init( void ) {
 
 	Cmd_AddCommand( "tvdyes", CL_TVDYes_f );
 	Cmd_AddCommand( "tvdno", CL_TVDNo_f );
+
+	Update_Init();
 #endif
 
 	CL_TV_Init();
@@ -4113,6 +4118,7 @@ void CL_Shutdown(char *finalmsg, qboolean disconnect, qboolean quit)
 	CL_Snd_Shutdown();
 
 #ifdef USE_HTTP
+	Update_Shutdown();
 	CL_HTTP_Shutdown();
 #endif
 
