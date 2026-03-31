@@ -5,10 +5,12 @@ set(PROJECT_NAME "ioq3quest")
 set(PROJECT_VERSION "1.2.0")
 set(CLIENT_NAME "ioquake3")
 
-# Full version string from git describe (e.g. "v1.2.0" or "v1.2.0-3-gabcdef-dirty")
+# Full version string from CI tag (GITHUB_REF_NAME) or git describe
 # CMAKE_SOURCE_DIR is android/app/src/main/cpp, so navigate up to repo root for .git
 set(REPO_ROOT "${CMAKE_SOURCE_DIR}/../../../../..")
-if(EXISTS "${REPO_ROOT}/.git")
+if(DEFINED ENV{GITHUB_REF_NAME} AND "$ENV{GITHUB_REF_NAME}" MATCHES "^v[0-9]")
+    set(IOQ3QUEST_VERSION_STRING "$ENV{GITHUB_REF_NAME}")
+elseif(EXISTS "${REPO_ROOT}/.git")
     execute_process(
         COMMAND git describe --tags --always --dirty
         WORKING_DIRECTORY "${REPO_ROOT}"
