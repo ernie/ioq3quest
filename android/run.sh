@@ -51,7 +51,24 @@ echo "#define Q3QVERSION  \"$APP_VERSION"\" > $SCRIPTDIR/app/src/main/cpp/code/v
 cd $SCRIPTDIR/..
 
 # CMake configure (if needed)
+NEED_CONFIGURE=0
 if [ ! -f "build/CMakeCache.txt" ]; then
+    NEED_CONFIGURE=1
+    echo "CMakeCache.txt not found, will configure..."
+fi
+
+# Check if git tag changed since last configure
+if [ "$NEED_CONFIGURE" -eq 0 ]; then
+    CURRENT_TAG="$(git describe --tags --abbrev=0 2>/dev/null)"
+    CACHED_TAG="$(cat build/.version_tag 2>/dev/null)"
+    if [ "$CURRENT_TAG" != "$CACHED_TAG" ]; then
+        NEED_CONFIGURE=1
+        echo "Version tag changed, will reconfigure..."
+        rm -f build/CMakeCache.txt
+    fi
+fi
+
+if [ "$NEED_CONFIGURE" -eq 1 ]; then
     echo "Configuring CMake build..."
     cmake -B build -S android/app/src/main/cpp \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
@@ -65,6 +82,9 @@ if [ ! -f "build/CMakeCache.txt" ]; then
         echo "Failed to configure CMake"
         exit 1
     fi
+
+    # Save current tag for next build
+    git describe --tags --abbrev=0 2>/dev/null > build/.version_tag
 fi
 
 # CMake build

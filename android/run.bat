@@ -47,6 +47,20 @@ if not exist "build\CMakeCache.txt" (
 	echo CMakeCache.txt not found, will configure...
 )
 
+@REM Check if git tag changed since last configure
+if "!NEED_CONFIGURE!"=="0" (
+	for /f "delims=" %%G in ('git describe --tags --abbrev=0 2^>nul') do set "CURRENT_TAG=%%G"
+	if exist "build\.version_tag" (
+		set /p CACHED_TAG=<"build\.version_tag"
+	) else (
+		set "CACHED_TAG="
+	)
+	if not "!CURRENT_TAG!"=="!CACHED_TAG!" (
+		set NEED_CONFIGURE=1
+		echo Version tag changed, will reconfigure...
+	)
+)
+
 if "!NEED_CONFIGURE!"=="1" (
 	echo Configuring CMake build...
 	cmake -Wno-deprecated -B build -S android/app/src/main/cpp ^
@@ -62,6 +76,9 @@ if "!NEED_CONFIGURE!"=="1" (
 		echo "Failed to configure CMake"
 		exit /b 1
 	)
+
+	@REM Save current tag for next build
+	for /f "delims=" %%G in ('git describe --tags --abbrev=0 2^>nul') do echo %%G>"build\.version_tag"
 )
 
 @REM CMake build
