@@ -43,6 +43,7 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 	private int permissionCount = 0;
 	private static final int READ_EXTERNAL_STORAGE_PERMISSION_ID = 1;
 	private static final int WRITE_EXTERNAL_STORAGE_PERMISSION_ID = 2;
+	private static final int RECORD_AUDIO_PERMISSION_ID = 3;
 	private static final String TAG = "ioquake3Quest";
 
 	private boolean hapticsEnabled = false;
@@ -114,6 +115,12 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 			try {
 				create();
 			} catch (Exception e) {
+			}
+		} else if (requestCode == RECORD_AUDIO_PERMISSION_ID) {
+			if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+				Log.d(TAG, "Microphone permission granted; VOIP available");
+			} else {
+				Log.w(TAG, "Microphone permission denied; VOIP unavailable");
 			}
 		}
 	}
@@ -199,6 +206,22 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 
 		Log.d(TAG, "nativeCreate");
 		nativeCreate(this);
+
+		// Request microphone permission for VOIP (non-blocking)
+		requestMicrophonePermission();
+	}
+
+	public boolean hasMicrophonePermission() {
+		return ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+				== PackageManager.PERMISSION_GRANTED;
+	}
+
+	public void requestMicrophonePermission() {
+		if (!hasMicrophonePermission()) {
+			ActivityCompat.requestPermissions(this,
+					new String[]{Manifest.permission.RECORD_AUDIO},
+					RECORD_AUDIO_PERMISSION_ID);
+		}
 	}
 
 	public void installApk(String apkPath) {

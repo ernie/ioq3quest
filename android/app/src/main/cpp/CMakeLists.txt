@@ -251,6 +251,7 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libSDL2.so" "${JNILIBS_DIR}/libSDL2.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/libopenxr_loader.so" "${JNILIBS_DIR}/libopenxr_loader.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libcurl.so" "${JNILIBS_DIR}/libcurl.so"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/code/libs/android/arm64-v8a/libopenal.so" "${JNILIBS_DIR}/libopenal.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/cgameaarch64.so" "${JNILIBS_DIR}/libcgameaarch64_baseq3.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/qagameaarch64.so" "${JNILIBS_DIR}/libqagameaarch64_baseq3.so"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FULL_BUILD_DIR}/baseq3/uiaarch64.so" "${JNILIBS_DIR}/libuiaarch64_baseq3.so"
