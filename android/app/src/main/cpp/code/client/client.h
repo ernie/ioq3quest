@@ -518,6 +518,7 @@ extern	cvar_t	*cl_voipSendTarget;
 extern	cvar_t	*cl_voipGainDuringCapture;
 extern	cvar_t	*cl_voipCaptureMult;
 extern	cvar_t	*cl_voipShowMeter;
+extern	cvar_t	*cl_voipVolume;
 extern	cvar_t	*cl_voip;
 
 // 20ms at 48k
@@ -620,6 +621,9 @@ extern int cl_connectedToCheatServer;
 
 #ifdef USE_VOIP
 void CL_Voip_f( void );
+void CL_InitVoip( void );
+void CL_ShutdownVoip( void );
+void CL_ParseVoip( msg_t *msg, qboolean ignoreData );
 #endif
 
 void CL_SystemInfoChanged( void );

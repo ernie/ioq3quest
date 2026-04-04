@@ -76,6 +76,7 @@ cvar_t	*cl_voipSendTarget;
 cvar_t	*cl_voipGainDuringCapture;
 cvar_t	*cl_voipCaptureMult;
 cvar_t	*cl_voipShowMeter;
+cvar_t	*cl_voipVolume;
 cvar_t	*cl_voipProtocol;
 cvar_t	*cl_voip;
 #endif
@@ -335,6 +336,87 @@ void CL_Voip_f( void )
 }
 
 
+/*
+===============
+CL_InitVoip
+
+Create Opus encoder + MAX_CLIENTS decoders.
+Called on first snapshot from cl_cgame.c and on TVD open.
+===============
+*/
+void CL_InitVoip( void )
+{
+	int i;
+	int error;
+
+	if ( clc.voipCodecInitialized )
+		return;
+
+	clc.opusEncoder = opus_encoder_create( 48000, 1, OPUS_APPLICATION_VOIP, &error );
+
+	if ( error ) {
+		Com_DPrintf( "VoIP: Error opus_encoder_create %d\n", error );
+		return;
+	}
+
+	for ( i = 0; i < MAX_CLIENTS; i++ ) {
+		clc.opusDecoder[i] = opus_decoder_create( 48000, 1, &error );
+		if ( error ) {
+			int j;
+			Com_DPrintf( "VoIP: Error opus_decoder_create(%d) %d\n", i, error );
+			// Clean up already-created decoders and encoder
+			for ( j = 0; j < i; j++ ) {
+				opus_decoder_destroy( clc.opusDecoder[j] );
+				clc.opusDecoder[j] = NULL;
+			}
+			opus_encoder_destroy( clc.opusEncoder );
+			clc.opusEncoder = NULL;
+			return;
+		}
+		clc.voipIgnore[i] = qfalse;
+		clc.voipGain[i] = 1.0f;
+	}
+	clc.voipCodecInitialized = qtrue;
+	clc.voipMuteAll = qfalse;
+	Cmd_AddCommand( "voip", CL_Voip_f );
+	Cvar_Set( "cl_voipSendTarget", "spatial" );
+	Com_Memset( clc.voipTargets, ~0, sizeof( clc.voipTargets ) );
+}
+
+
+static void CL_CaptureVoip( void );
+
+/*
+===============
+CL_ShutdownVoip
+
+Destroy encoder/decoders and clean up VoIP state.
+Called from CL_Disconnect and on TVD close.
+===============
+*/
+void CL_ShutdownVoip( void )
+{
+	if ( cl_voipSend->integer ) {
+		int tmp = cl_voipUseVAD->integer;
+		cl_voipUseVAD->integer = 0;  // disable this for a moment.
+		clc.voipOutgoingDataSize = 0;  // dump any pending VoIP transmission.
+		Cvar_Set( "cl_voipSend", "0" );
+		CL_CaptureVoip();  // clean up any state...
+		cl_voipUseVAD->integer = tmp;
+	}
+
+	if ( clc.voipCodecInitialized ) {
+		int i;
+		opus_encoder_destroy( clc.opusEncoder );
+		for ( i = 0; i < MAX_CLIENTS; i++ ) {
+			opus_decoder_destroy( clc.opusDecoder[i] );
+		}
+		clc.voipCodecInitialized = qfalse;
+	}
+	Cmd_RemoveCommand( "voip" );
+}
+
+
 static
 void CL_VoipNewGeneration(void)
 {
@@ -553,7 +635,7 @@ void CL_CaptureVoip(void)
 				const float flsamp = (float) sampbuffer[i];
 				const float s = fabs(flsamp);
 				voipPower += s * s;
-				sampbuffer[i] = (int16_t) ((flsamp) * audioMult);
+				sampbuffer[i] = (int16_t) Com_Clamp( -32768.0f, 32767.0f, flsamp * audioMult );
 			}
 
 			// encode raw audio samples into Opus data...
@@ -1466,24 +1548,7 @@ void CL_Disconnect( qboolean showMainMenu ) {
 #endif
 
 #ifdef USE_VOIP
-	if (cl_voipSend->integer) {
-		int tmp = cl_voipUseVAD->integer;
-		cl_voipUseVAD->integer = 0;  // disable this for a moment.
-		clc.voipOutgoingDataSize = 0;  // dump any pending VoIP transmission.
-		Cvar_Set("cl_voipSend", "0");
-		CL_CaptureVoip();  // clean up any state...
-		cl_voipUseVAD->integer = tmp;
-	}
-
-	if (clc.voipCodecInitialized) {
-		int i;
-		opus_encoder_destroy(clc.opusEncoder);
-		for (i = 0; i < MAX_CLIENTS; i++) {
-			opus_decoder_destroy(clc.opusDecoder[i]);
-		}
-		clc.voipCodecInitialized = qfalse;
-	}
-	Cmd_RemoveCommand ("voip");
+	CL_ShutdownVoip();
 #endif
 
 	if ( tvPlay.active ) {
@@ -4005,6 +4070,9 @@ void CL_Init( void ) {
 	cl_voipUseVAD = Cvar_Get ("cl_voipUseVAD", "0", CVAR_ARCHIVE);
 	cl_voipVADThreshold = Cvar_Get ("cl_voipVADThreshold", "0.25", CVAR_ARCHIVE);
 	cl_voipShowMeter = Cvar_Get ("cl_voipShowMeter", "1", CVAR_ARCHIVE);
+	cl_voipVolume = Cvar_Get ("cl_voipVolume", "1.0", CVAR_ARCHIVE);
+	Cvar_CheckRange( cl_voipVolume, 0.0f, 2.0f, qfalse );
+	Cvar_SetDescription( cl_voipVolume, "Sets volume for incoming VOIP audio (0.0 - 2.0, allows boost)." );
 
 	cl_voip = Cvar_Get ("cl_voip", "1", CVAR_ARCHIVE);
 	Cvar_CheckRange( cl_voip, 0, 1, qtrue );

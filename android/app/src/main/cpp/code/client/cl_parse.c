@@ -660,8 +660,8 @@ qboolean CL_ShouldIgnoreVoipSender(int sender)
 {
 	if (!cl_voip->integer)
 		return qtrue;  // VoIP is disabled.
-	else if ((sender == clc.clientNum) && (!clc.demoplaying))
-		return qtrue;  // ignore own voice (unless playing back a demo).
+	else if ((sender == clc.clientNum) && (!clc.demoplaying) && (!tvPlay.active))
+		return qtrue;  // ignore own voice (unless playing back a demo or TVD).
 	else if (clc.voipMuteAll)
 		return qtrue;  // all channels are muted with extreme prejudice.
 	else if (clc.voipIgnore[sender])
@@ -682,16 +682,18 @@ Play raw data
 
 static void CL_PlayVoip(int sender, int samplecnt, const byte *data, int flags)
 {
+	float vol = cl_voipVolume->value;
+
 	if(flags & VOIP_DIRECT)
 	{
 		S_RawSamples(sender + 1, samplecnt, 48000, 2, 1,
-	             data, clc.voipGain[sender], -1);
+	             data, clc.voipGain[sender] * vol, -1);
 	}
 
 	if(flags & VOIP_SPATIAL)
 	{
 		S_RawSamples(sender + MAX_CLIENTS + 1, samplecnt, 48000, 2, 1,
-	             data, 1.0f, sender);
+	             data, vol, sender);
 	}
 }
 
@@ -702,7 +704,6 @@ CL_ParseVoip
 A VoIP message has been received from the server
 =====================
 */
-static
 void CL_ParseVoip ( msg_t *msg, qboolean ignoreData ) {
 	static short decoded[VOIP_MAX_PACKET_SAMPLES*4]; // !!! FIXME: don't hard code
 
