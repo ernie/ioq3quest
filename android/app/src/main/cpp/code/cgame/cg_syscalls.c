@@ -304,6 +304,10 @@ void	trap_R_EndPostBloom2D( void ) {
 	syscall( CG_R_END_POST_BLOOM_2D );
 }
 
+qboolean trap_GetValue( char *value, int valueSize, const char *key ) {
+	return syscall( CG_GETVALUE, value, valueSize, key );
+}
+
 void	trap_R_SetColor( const float *rgba ) {
 	syscall( CG_R_SETCOLOR, rgba );
 }

@@ -170,6 +170,9 @@ typedef enum {
 	CG_R_HUDBUFFER_END,
 	CG_R_BEGIN_POST_BLOOM_2D,
 	CG_R_END_POST_BLOOM_2D,
+	CG_GETVALUE,
+//	qboolean trap_GetValue( char *value, int valueSize, const char *key );
+//	Engine-side value query (voip_talking, voip_muted, voip_version, voip_channels).
 
 /*
 	CG_LOADCAMERA,
@@ -237,8 +240,12 @@ typedef enum {
 
 	CG_MOUSE_EVENT,
 //	void	(*CG_MouseEvent)( int dx, int dy );
-	CG_EVENT_HANDLING
-//	void (*CG_EventHandling)(int type);
+	CG_EVENT_HANDLING,
+//	void	(*CG_EventHandling)(int type);
+	CG_VOIP_TEAM
+//	int	(*CG_VoipTeam)( void );
+//	sets cl_voipSendTarget to comma-separated teammate IDs
+//	returns 0 on success or -1 on failure
 
 } cgameExport_t;
 

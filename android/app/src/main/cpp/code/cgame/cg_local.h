@@ -27,6 +27,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../vrcommon/vr_types.h"
 
+// VOIP channel flags (must match engine q_shared.h)
+#define VOIP_SPATIAL	0x01
+#define VOIP_DIRECT		0x02
+#define VOIP_TEAM		0x04
+#define VOIP_ALL		0x08
+
 // The entire cgame module is unloaded and reloaded on each level change,
 // so there is NO persistant data between levels on the client side.
 // If you absolutely need something stored, it can either be kept
@@ -331,6 +337,7 @@ typedef struct {
 
 	int				botSkill;		// 0 = not bot, 1-5 = bot
 	qboolean		vrPlayer;
+	qboolean		voipEnabled;	// qtrue if client has VOIP support
 
 	vec3_t			color1;
 	vec3_t			color2;
@@ -735,6 +742,11 @@ typedef struct {
 	int				voteHoldStartTime;	// cg.time when hold began (0 = not holding)
 	int				voteHoldButton;		// 1=yes(A), -1=no(B), 0=none
 	int				voteHoldTarget;		// dialog target when hold began (-1=TVD, 1=vote, 2=teamvote)
+
+	// VOIP state
+	qboolean		voipTalking[MAX_CLIENTS];
+	int				voipTalkingTime[MAX_CLIENTS];	// cg.time when last seen talking (for HUD fade)
+	int				voipChannel[MAX_CLIENTS];		// per-client channel flags from engine
 } cg_t;
 
 
@@ -823,6 +835,8 @@ typedef struct {
 	qhandle_t	friendShader;
 
 	qhandle_t	balloonShader;
+	qhandle_t	speakerShader;
+	qhandle_t	speakerIdleShader;
 	qhandle_t	connectionShader;
 
 	qhandle_t	selectShader;
@@ -1215,6 +1229,9 @@ typedef struct {
 	qboolean	tvScrubFilterKeyUp;	// filter phantom -tv_scrub from catcher change
 	float		tvScrubSavedMenuYaw;	// menuYaw to restore when scrub ends
 
+	// VOIP state
+	int				voipVersion;				// engine VOIP version (0 = legacy, 2 = channels)
+	qboolean		voipMuted[MAX_CLIENTS];
 } cgs_t;
 
 //==============================================================================
@@ -1249,6 +1266,14 @@ void QDECL CG_Error( const char *msg, ... ) __attribute__ ((noreturn, format (pr
 void CG_StartMusic( void );
 
 void CG_UpdateCvars( void );
+void CG_UpdateVoipTalkingState( void );
+void CG_UpdateVoipChannelState( void );
+void CG_UpdateVoipMuteState( void );
+qboolean CG_GetVoipChannelColor( vec3_t color );
+void CG_VoipChannelFlagsToColor( int flags, vec3_t color );
+
+int CG_FeederCount( float feederID );
+clientInfo_t *CG_InfoFromScoreIndex( int index, int team, int *scoreIndex );
 
 int CG_CrosshairPlayer( void );
 int CG_LastAttacker( void );
@@ -1320,6 +1345,7 @@ void CG_DrawSmallStringColor( int x, int y, const char *s, vec4_t color );
 int CG_DrawStrlen( const char *str );
 
 float	*CG_FadeColor( int startMsec, int totalMsec );
+float	*CG_FadeColorTime( int startMsec, int totalMsec, int fadeMsec );
 float *CG_TeamColor( int team );
 void CG_TileClear( void );
 void CG_ColorForHealth( vec4_t hcolor );
@@ -1545,6 +1571,7 @@ void CG_SetScoreCatcher( qboolean value );
 //
 qboolean CG_ConsoleCommand( void );
 void CG_InitConsoleCommands( void );
+qboolean CG_BuildTeamVoipTarget( char *buf, int bufSize );
 qboolean CG_VoteActive( void );
 qboolean CG_TeamVoteActive( void );
 qboolean CG_TVDOfferActive( void );
@@ -1717,6 +1744,8 @@ void		trap_R_HUDBufferStart( qboolean clear );
 void		trap_R_HUDBufferEnd( void );
 void		trap_R_BeginPostBloom2D( void );
 void		trap_R_EndPostBloom2D( void );
+
+qboolean	trap_GetValue( char *value, int valueSize, const char *key );
 
 // The glconfig_t will not change during the life of a cgame.
 // If it needs to change, the entire cgame will be restarted, because
