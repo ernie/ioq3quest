@@ -419,7 +419,6 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 		swapchains,
 		views,
 		viewCount,
-		fov,
 		engine->appState.CurrentSpace,
 		engine->appState.ViewSpace,
 		lastPredictedDisplayTime);

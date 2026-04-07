@@ -25,31 +25,66 @@ vr_clientinfo_t vr;
 qboolean vr_initialized = qfalse;
 qboolean vr_shutdown = qfalse;
 
-// Extension list: base (4) + Android (3) = 7 on Android, 4 on desktop
-#if __ANDROID__
-    static const char* requiredExtensionNames[7];
-    static const uint32_t numRequiredExtensions = 7;
-#else
-    static const char* requiredExtensionNames[4];
-    static const uint32_t numRequiredExtensions = 4;
-#endif
+// Required extensions first, optional extensions only if the runtime advertises them.
+#define MAX_REQUIRED_EXTENSIONS 9
+static const char* requiredExtensionNames[MAX_REQUIRED_EXTENSIONS];
+static uint32_t numRequiredExtensions = 0;
+
+static qboolean VR_HasInstanceExtension(const char* name)
+{
+	uint32_t count = 0;
+	if (xrEnumerateInstanceExtensionProperties(NULL, 0, &count, NULL) != XR_SUCCESS || count == 0) {
+		return qfalse;
+	}
+
+	XrExtensionProperties* props = (XrExtensionProperties*)malloc(sizeof(XrExtensionProperties) * count);
+	if (!props) {
+		return qfalse;
+	}
+	for (uint32_t i = 0; i < count; ++i) {
+		props[i].type = XR_TYPE_EXTENSION_PROPERTIES;
+		props[i].next = NULL;
+	}
+
+	qboolean found = qfalse;
+	if (xrEnumerateInstanceExtensionProperties(NULL, count, &count, props) == XR_SUCCESS) {
+		for (uint32_t i = 0; i < count; ++i) {
+			if (strcmp(props[i].extensionName, name) == 0) {
+				found = qtrue;
+				break;
+			}
+		}
+	}
+
+	free(props);
+	return found;
+}
 
 static void VR_BuildExtensionList(void)
 {
-	int idx = 0;
+	numRequiredExtensions = 0;
 	// Graphics API extension is provided by vrvk
-	requiredExtensionNames[idx++] = VR_Graphics_GetExtensionName();
-	requiredExtensionNames[idx++] = XR_EXT_DEBUG_UTILS_EXTENSION_NAME;
-	requiredExtensionNames[idx++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = VR_Graphics_GetExtensionName();
+	requiredExtensionNames[numRequiredExtensions++] = XR_EXT_DEBUG_UTILS_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME;
 	// Cylinder layer for virtual screen (menus, spectator mode)
-	requiredExtensionNames[idx++] = XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME;
 #if __ANDROID__
 	// Android requires this extension to pass Java context during instance creation
-	requiredExtensionNames[idx++] = XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME;
 	// Performance and thread settings for Android
-	requiredExtensionNames[idx++] = XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME;
-	requiredExtensionNames[idx++] = XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME;
+	requiredExtensionNames[numRequiredExtensions++] = XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME;
 #endif
+	// XR_KHR_vulkan_swapchain_format_list lets the runtime know which view formats
+	// we'll use for the swapchain images, so it can skip unnecessary usage flags
+	// (e.g. STORAGE_BIT). Only enable if the runtime advertises it — it is chained
+	// into swapchain creation in vr_vk.c and must not be referenced otherwise.
+	if (numRequiredExtensions < MAX_REQUIRED_EXTENSIONS &&
+		VR_HasInstanceExtension("XR_KHR_vulkan_swapchain_format_list"))
+	{
+		requiredExtensionNames[numRequiredExtensions++] = "XR_KHR_vulkan_swapchain_format_list";
+	}
 }
 
 // Part of init

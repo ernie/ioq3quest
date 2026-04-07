@@ -7241,9 +7241,14 @@ void vk_update_mvp( const float *m ) {
 	if ( m ) {
 		// Explicit modelview provided (e.g., for shadows, flares)
 		if ( tr.vrParms.valid && (vr.virtual_screen || vr.weapon_zoomed) && !backEnd.projection2D ) {
-			// Mono rendering: use shared symmetric projection for both eyes
+			// Cyclopean: zero the asymmetric optical-axis offset so content lands
+			// on the geometric framebuffer center for the head-locked quad layer.
 			float mvp[16];
-			myGlMultMatrix( m, tr.vrParms.projection, mvp );
+			float proj[16];
+			Com_Memcpy( proj, tr.vrParms.projection, sizeof(proj) );
+			proj[8] = 0.0f;
+			proj[9] = 0.0f;
+			myGlMultMatrix( m, proj, mvp );
 			Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
 			Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
 		} else {
@@ -7288,6 +7293,10 @@ void vk_update_mvp( const float *m ) {
 					proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
 				}
 
+				// Zero asymmetric optical-axis offset for the cyclopean / quad path.
+				proj[8] = 0.0f;
+				proj[9] = 0.0f;
+
 				myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
 				Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
 				Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
@@ -7309,8 +7318,6 @@ void vk_update_mvp( const float *m ) {
 					// Keep Z components from VR projection (reversed depth, Vulkan conventions).
 					proj[0] = 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f );
 					proj[5] = -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f );  // Vulkan Y-flip
-					proj[8] = 0.0f;  // Symmetric FOV (no asymmetric offset)
-					proj[9] = 0.0f;
 				} else {
 					// Game world behind virtual screen: viewport is full framebuffer but
 					// virtual screen constrains visible output to 4:3, so use hardcoded 4:3.
@@ -7320,6 +7327,11 @@ void vk_update_mvp( const float *m ) {
 					proj[5] *= aspectCorrection;
 				}
 			}
+
+			// Zero asymmetric optical-axis offset so cyclopean content lands on
+			// the geometric framebuffer center for the head-locked quad layer.
+			proj[8] = 0.0f;
+			proj[9] = 0.0f;
 
 			myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
 
