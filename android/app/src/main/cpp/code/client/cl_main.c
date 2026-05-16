@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include "cl_trinity.h"
+#include "cl_trinity_rconset.h"
 #include <limits.h>
 
 #include "../sys/sys_local.h"
@@ -4217,6 +4218,7 @@ void CL_Init( void ) {
 
 	CL_TV_Init();
 	CL_TrinityInit();
+	CL_TrinityRconsetSelfTest();
 
 	// cgame might not be initialized before menu is used
 	Cvar_Get ("cg_viewsize", "100", CVAR_ARCHIVE );
