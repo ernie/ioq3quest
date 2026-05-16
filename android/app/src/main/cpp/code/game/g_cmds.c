@@ -1752,7 +1752,7 @@ static void Cmd_TrinityHandshake_f( gentity_t *ent ) {
 		return;
 	}
 
-	if ( client->pers.trinityVerified ) {
+	if ( client->sess.trinityVerified ) {
 		return;  // already verified
 	}
 
@@ -1776,7 +1776,7 @@ static void Cmd_TrinityHandshake_f( gentity_t *ent ) {
 	}
 
 	// Validate nonce
-	if ( Q_stricmp( nonce, client->pers.handshakeNonce ) != 0 ) {
+	if ( Q_stricmp( nonce, client->sess.handshakeNonce ) != 0 ) {
 		trap_DropClient( ent - g_entities, "Trinity handshake failed: invalid nonce" );
 		return;
 	}
@@ -1787,7 +1787,7 @@ static void Cmd_TrinityHandshake_f( gentity_t *ent ) {
 		return;
 	}
 
-	client->pers.trinityVerified = qtrue;
+	client->sess.trinityVerified = qtrue;
 
 	// Log handshake for tracker
 	if ( username[0] ) {
