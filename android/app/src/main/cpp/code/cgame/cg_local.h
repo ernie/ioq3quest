@@ -652,6 +652,15 @@ typedef struct {
 	qhandle_t	soundBuffer[MAX_SOUNDBUFFER];
 	qhandle_t	soundPlaying;
 
+	// Trinity announcement queue -- paced separately from soundBuffer because
+	// name .wav files are typically longer than that queue's 750ms gate.
+	// See cg_trinity_announce.c.
+#define MAX_TRINITY_ANNOUNCE_QUEUE	4
+	int			trinityAnnounceIn;
+	int			trinityAnnounceOut;
+	int			trinityAnnounceTime;
+	sfxHandle_t	trinityAnnounceQueue[MAX_TRINITY_ANNOUNCE_QUEUE];
+
 #ifdef MISSIONPACK
 	// for voice chat buffer
 	int			voiceChatTime;
@@ -1587,6 +1596,12 @@ qboolean CG_TeamVoteActive( void );
 qboolean CG_TVDOfferActive( void );
 int CG_ActiveVoteTarget( void );	// 0=none, 1=vote, 2=teamvote
 void CG_VoteSubmit( qboolean yes );
+
+//
+// cg_trinity_announce.c
+//
+void CG_TrinityAnnounce_Play( char subtype, int clientNum );
+void CG_TrinityAnnounce_Tick( void );
 
 //
 // cg_servercmds.c

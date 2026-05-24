@@ -59,6 +59,7 @@ set(CGAME_SOURCES
     ${SOURCE_DIR}/cgame/cg_scoreboard.c
     ${SOURCE_DIR}/cgame/cg_servercmds.c
     ${SOURCE_DIR}/cgame/cg_snapshot.c
+    ${SOURCE_DIR}/cgame/cg_trinity_announce.c
     ${SOURCE_DIR}/cgame/cg_view.c
     ${SOURCE_DIR}/cgame/cg_weapons.c
     ${SOURCE_DIR}/cgame/cg_syscalls.c
@@ -121,6 +122,7 @@ set(GAME_SOURCES
     ${SOURCE_DIR}/game/g_target.c
     ${SOURCE_DIR}/game/g_team.c
     ${SOURCE_DIR}/game/g_trigger.c
+    ${SOURCE_DIR}/game/g_trinity_announce.c
     ${SOURCE_DIR}/game/g_unlagged.c
     ${SOURCE_DIR}/game/g_utils.c
     ${SOURCE_DIR}/game/g_weapon.c
