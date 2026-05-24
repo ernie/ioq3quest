@@ -59,6 +59,7 @@ android/app/src/main/cpp/code/vr/vr_version.h
 android/app/src/main/assets/pakQ3Q.pk3
 android/app/src/main/assets/pak8t.pk3
 android/app/src/main/assets/pak3t.pk3
+android/app/src/main/assets/zzz-trinity-announcer.pk3
 
 # Local dev
 run.bat
