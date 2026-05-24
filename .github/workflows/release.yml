@@ -33,6 +33,7 @@ jobs:
         run: |
           curl -fL -o android/app/src/main/assets/pak8t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak8t.pk3
           curl -fL -o android/app/src/main/assets/pak3t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak3t.pk3
+          curl -fL -o android/app/src/main/assets/zzz-trinity-announcer.pk3 https://github.com/ernie/trinity/releases/latest/download/zzz-trinity-announcer.pk3
 
       - name: CMake configure
         run: |
