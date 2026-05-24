@@ -933,6 +933,9 @@ void	Q_strcat( char *dest, int size, const char *src );
 int Q_PrintStrlen( const char *string );
 // removes color sequences from string
 char *Q_CleanStr( char *string );
+// canonicalizes a display name into the filename used for the
+// sound/player/announce/<name>[_wins].wav lookups (see q_shared.c)
+void Q_NormalizeAnnounceName( char *out, const char *in, int outSize );
 // Count the number of char tocount encountered in string
 int Q_CountChar(const char *string, char tocount);
 
