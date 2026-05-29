@@ -140,10 +140,11 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		// Copy the command line params file and autoexec
 		copy_asset("/sdcard/ioquake3Quest", "commandline.txt", false);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "autoexec.cfg", false);
-		// Copy our special pak file and demo
+		// Copy our special pak files and demo
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pakQ3Q.pk3", true);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak0.pk3", false);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak8t.pk3", true);
+		copy_asset("/sdcard/ioquake3Quest/baseq3", "zzz-trinity-announcer.pk3", true);
 		//Copy Omarlego's excellent replacement background
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "z_custom_background66.pk3", false);
 		// Cleanup incompatible shaders
