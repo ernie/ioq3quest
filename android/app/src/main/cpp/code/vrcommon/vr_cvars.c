@@ -42,6 +42,7 @@ cvar_t *vr_thumbstickDeadzone = NULL;
 cvar_t *vr_thumbstickFullDeflection = NULL;
 cvar_t *vr_weaponAdjust = NULL;
 cvar_t *vr_triggerSensitivity = NULL;
+cvar_t *vr_analogWalk = NULL;
 
 void VR_InitCvars( void )
 {
@@ -85,6 +86,7 @@ void VR_InitCvars( void )
 	vr_weaponAdjust = Cvar_Get ("vr_weaponAdjust", "0", CVAR_ARCHIVE);
 	vr_triggerSensitivity = Cvar_Get ("vr_triggerSensitivity", "0.25", CVAR_ARCHIVE);
 	Cvar_CheckRange( vr_triggerSensitivity, 0.1f, 0.9f, qfalse );
+	vr_analogWalk = Cvar_Get ("vr_analogWalk", "1", CVAR_ARCHIVE); // 0 - classic always-run, 1 - silent walk below run speed
 
 	// Values are:  scale,right,up,forward,pitch,yaw,roll
 	// VALUES PROVIDED BY SkillFur - Thank-you!
