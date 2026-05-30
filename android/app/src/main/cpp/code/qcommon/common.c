@@ -2741,7 +2741,7 @@ void Com_Init( char *commandLine ) {
 #ifndef IOQ3QUEST_VERSION
 #define IOQ3QUEST_VERSION "unknown"
 #endif
-	Cvar_Get( "com_engine", va( "ioq3quest/%s", IOQ3QUEST_VERSION ), CVAR_ROM );
+	Cvar_Get( "com_engine", va( "trinity-quest/%s", IOQ3QUEST_VERSION ), CVAR_ROM );
 
 	Cvar_Get( "vr_master1", "mp.quakevr.com:27950", 0 );
 	Cvar_Get( "vr_master2", "directory.trinity.run", 0 );

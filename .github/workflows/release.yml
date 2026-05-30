@@ -62,7 +62,8 @@ jobs:
           else
             VERSION=$(git show -s --pretty=format:%h)
           fi
-          SIGNED=android/app/build/outputs/apk/release/ioq3quest-${VERSION}.apk
+          OUTDIR=android/app/build/outputs/apk/release
+          SIGNED=$OUTDIR/trinity-quest-${VERSION}.apk
           $APKSIGNER sign \
             --ks /tmp/keystore.jks \
             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -71,12 +72,20 @@ jobs:
             "$UNSIGNED"
           rm /tmp/keystore.jks
           rm "$UNSIGNED"
+          # Transition bridge: also publish under the pre-rename name so clients
+          # built before the trinity-quest rename (UPDATE_ASSET_PREFIX "ioq3quest")
+          # can still find an asset and auto-update onto the new prefix.
+          # The v2 signature covers contents, not filename, so the copy stays valid.
+          # TODO: remove this legacy copy once old "ioq3quest" clients have aged out.
+          cp "$SIGNED" "$OUTDIR/ioq3quest-${VERSION}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ioq3quest-apk
-          path: android/app/build/outputs/apk/release/ioq3quest-*.apk
+          name: trinity-quest-apk
+          path: |
+            android/app/build/outputs/apk/release/trinity-quest-*.apk
+            android/app/build/outputs/apk/release/ioq3quest-*.apk
           if-no-files-found: error
           retention-days: 5
 
@@ -91,6 +100,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: ioq3quest-apk/ioq3quest-*.apk
+          files: |
+            trinity-quest-apk/trinity-quest-*.apk
+            trinity-quest-apk/ioq3quest-*.apk
           generate_release_notes: true
           draft: ${{ github.event_name == 'workflow_dispatch' }}

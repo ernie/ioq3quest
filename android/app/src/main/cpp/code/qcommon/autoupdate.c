@@ -55,11 +55,11 @@ extern CURLMsg *(*qcurl_multi_info_read)(CURLM *multi_handle, int *msgs_in_queue
 #endif
 
 #ifndef UPDATE_GITHUB_REPO
-#define UPDATE_GITHUB_REPO "ioq3quest"
+#define UPDATE_GITHUB_REPO "trinity-quest"
 #endif
 
 #ifndef UPDATE_ASSET_PREFIX
-#define UPDATE_ASSET_PREFIX "ioq3quest"
+#define UPDATE_ASSET_PREFIX "trinity-quest"
 #endif
 
 #define UPDATE_API_BUFSIZE		(256 * 1024)
@@ -168,7 +168,7 @@ static int Update_ParseVersion( const char *str, int *major, int *minor, int *pa
 ==================
 Update_GetCurrentVersion
 
-Extract version string from com_engine cvar ("ioq3quest/vX.Y.Z")
+Extract version string from com_engine cvar ("trinity-quest/vX.Y.Z")
 ==================
 */
 static const char *Update_GetCurrentVersion( void )
