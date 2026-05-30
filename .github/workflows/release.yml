@@ -96,12 +96,15 @@ jobs:
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v8
+        with:
+          name: trinity-quest-apk
+          path: dist
 
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            trinity-quest-apk/trinity-quest-*.apk
-            trinity-quest-apk/ioq3quest-*.apk
+            dist/trinity-quest-*.apk
+            dist/ioq3quest-*.apk
           generate_release_notes: true
           draft: ${{ github.event_name == 'workflow_dispatch' }}
