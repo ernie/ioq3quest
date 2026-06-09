@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // perform the server side effects of a weapon firing
 
 #include "g_local.h"
-#include "bg_gameplay.h"
+#include "bg_mode.h"
 
 #include "../vrcommon/vr_clientinfo.h"
 
@@ -160,7 +160,7 @@ qboolean CheckGauntletAttack( gentity_t *ent ) {
 	}
 #endif
 
-	damage = GP_GetConfig( g_gameplay.integer )->weapons[WP_GAUNTLET].damage * s_quadFactor;
+	damage = Mode_GetConfig( g_mode.integer )->weapons[WP_GAUNTLET].damage * s_quadFactor;
 	G_Damage( traceEnt, ent, ent, forward, tr.endpos,
 		damage, 0, MOD_GAUNTLET );
 
@@ -330,7 +330,7 @@ qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent ) {
 		}
 
 		if ( traceEnt->takedamage) {
-			damage = GP_GetConfig( g_gameplay.integer )->weapons[WP_SHOTGUN].damage * s_quadFactor;
+			damage = Mode_GetConfig( g_mode.integer )->weapons[WP_SHOTGUN].damage * s_quadFactor;
 #ifdef MISSIONPACK
 			if ( traceEnt->client && traceEnt->client->invulnerabilityTime > level.time ) {
 				if (G_InvulnerabilityEffect( traceEnt, forward, tr.endpos, impactpoint, bouncedir )) {
@@ -364,7 +364,7 @@ void ShotgunPattern( vec3_t origin, vec3_t origin2, int seed, gentity_t *ent ) {
 	vec3_t		end;
 	vec3_t		localForward, localRight, localUp;
 	qboolean	hitClient = qfalse;
-	const gameplayConfig_t *gp = GP_GetConfig( g_gameplay.integer );
+	const modeConfig_t *gp = Mode_GetConfig( g_mode.integer );
 
 	// derive the right and up vectors from the forward vector, because
 	// the client won't have any other information
@@ -531,7 +531,7 @@ void weapon_railgun_fire (gentity_t *ent) {
 	int			passent;
 	gentity_t	*unlinkedEntities[MAX_RAIL_HITS];
 
-	damage = GP_GetConfig( g_gameplay.integer )->weapons[WP_RAILGUN].damage * s_quadFactor;
+	damage = Mode_GetConfig( g_mode.integer )->weapons[WP_RAILGUN].damage * s_quadFactor;
 
 	VectorMA (muzzle, 8192, forward, end);
 
@@ -701,7 +701,7 @@ void Weapon_LightningFire( gentity_t *ent ) {
 #endif
 	gentity_t	*traceEnt, *tent;
 	int			damage, i, passent;
-	const gameplayConfig_t *gp = GP_GetConfig( g_gameplay.integer );
+	const modeConfig_t *gp = Mode_GetConfig( g_mode.integer );
 
 	damage = gp->weapons[WP_LIGHTNING].damage * s_quadFactor;
 
@@ -786,7 +786,7 @@ void Weapon_Nailgun_Fire (gentity_t *ent) {
 	gentity_t	*m;
 	int			count;
 
-	int			nailCount = GP_GetConfig( g_gameplay.integer )->weapons[WP_NAILGUN].count;
+	int			nailCount = Mode_GetConfig( g_mode.integer )->weapons[WP_NAILGUN].count;
 
 	for( count = 0; count < nailCount; count++ ) {
 		m = fire_nail (ent, muzzle, forward, right, up );
@@ -922,7 +922,7 @@ void FireWeapon( gentity_t *ent ) {
 	if( ent->s.weapon != WP_GRAPPLING_HOOK && ent->s.weapon != WP_GAUNTLET ) {
 #ifdef MISSIONPACK
 		if( ent->s.weapon == WP_NAILGUN ) {
-			ent->client->accuracy_shots += GP_GetConfig( g_gameplay.integer )->weapons[WP_NAILGUN].count;
+			ent->client->accuracy_shots += Mode_GetConfig( g_mode.integer )->weapons[WP_NAILGUN].count;
 		} else {
 			ent->client->accuracy_shots++;
 		}
@@ -963,7 +963,7 @@ void FireWeapon( gentity_t *ent ) {
 		break;
 	case WP_MACHINEGUN:
 		{
-			const gameplayConfig_t *gp = GP_GetConfig( g_gameplay.integer );
+			const modeConfig_t *gp = Mode_GetConfig( g_mode.integer );
 			if ( g_gametype.integer != GT_TEAM ) {
 				Bullet_Fire( ent, gp->weapons[WP_MACHINEGUN].spread, gp->weapons[WP_MACHINEGUN].damage, MOD_MACHINEGUN );
 			} else {
@@ -998,7 +998,7 @@ void FireWeapon( gentity_t *ent ) {
 		break;
 	case WP_CHAINGUN:
 		{
-			const gameplayConfig_t *gp = GP_GetConfig( g_gameplay.integer );
+			const modeConfig_t *gp = Mode_GetConfig( g_mode.integer );
 			Bullet_Fire( ent, gp->weapons[WP_CHAINGUN].spread, gp->weapons[WP_CHAINGUN].damage, MOD_CHAINGUN );
 		}
 		break;
