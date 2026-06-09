@@ -24,6 +24,12 @@ jobs:
           yes | $SDKMANAGER --licenses > /dev/null 2>&1 || true
           $SDKMANAGER "ndk;27.3.13750724" "cmake;3.22.1" "build-tools;32.0.0"
 
+      - name: Download latest Trinity
+        run: |
+          curl -fL -o android/app/src/main/assets/pak8t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak8t.pk3
+          curl -fL -o android/app/src/main/assets/pak3t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak3t.pk3
+          curl -fL -o android/app/src/main/assets/zzz-trinity-announcer.pk3 https://github.com/ernie/trinity/releases/latest/download/zzz-trinity-announcer.pk3
+
       - name: CMake configure
         run: |
           cmake -Wno-deprecated -B build -S android/app/src/main/cpp \
