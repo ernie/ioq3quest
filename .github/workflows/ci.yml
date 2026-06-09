@@ -41,9 +41,25 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease
 
+      - name: Sign APK
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > /tmp/keystore.jks
+          APKSIGNER=$ANDROID_SDK_ROOT/build-tools/32.0.0/apksigner
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          VERSION=$(git show -s --pretty=format:%h)
+          SIGNED=android/app/build/outputs/apk/release/trinity-quest-${VERSION}.apk
+          $APKSIGNER sign \
+            --ks /tmp/keystore.jks \
+            --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
+            --out "$SIGNED" \
+            --v2-signing-enabled true \
+            "$UNSIGNED"
+          rm /tmp/keystore.jks
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
           name: trinity-quest-apk
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: android/app/build/outputs/apk/release/trinity-quest-*.apk
           retention-days: 5
+          if-no-files-found: error
