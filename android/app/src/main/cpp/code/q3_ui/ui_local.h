@@ -663,8 +663,6 @@ void			trap_SetCDKey( char *buf );
 
 qboolean               trap_VerifyCDKey( const char *key, const char *chksum);
 
-void			trap_SetPbClStatus( int status );
-
 // Virtual keyboard traps
 void			trap_VKeyboard_Show( void );
 void			trap_VKeyboard_Hide( void );
