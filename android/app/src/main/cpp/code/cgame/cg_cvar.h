@@ -111,6 +111,17 @@ CG_CVAR( cg_noVoiceText, "cg_noVoiceText", "0", CVAR_ARCHIVE )
 CG_CVAR( cg_buildScript, "com_buildScript", "0", 0 )
 CG_CVAR( cg_paused, "cl_paused", "0", CVAR_ROM )
 CG_CVAR( cg_blood, "com_blood", "2", CVAR_ARCHIVE_ND )	// 0 off, 1 classic, 2 enhanced
+CG_CVAR( cg_bloodGibSpray, "cg_bloodGibSpray", "0.2", CVAR_ARCHIVE_ND )	// 0-1 gib-spray gout density (Quest-tuned)
+CG_CVAR( cg_bloodGoutScale, "cg_bloodGoutScale", "1.0", CVAR_ARCHIVE_ND )	// 0-1 gout sprite radius scale
+CG_CVAR( cg_bloodNearCull, "cg_bloodNearCull", "0.3", CVAR_ARCHIVE_ND )	// cull a gout once it covers > this fraction of screen height (0=off; Quest-tuned)
+CG_CVAR( cg_bloodBleedGouts, "cg_bloodBleedGouts", "8", CVAR_ARCHIVE_ND )	// max gouts per hit
+CG_CVAR( cg_bloodBleedDecals, "cg_bloodBleedDecals", "8", CVAR_ARCHIVE_ND )	// max decals per hit
+CG_CVAR( cg_bloodTrailStep, "cg_bloodTrailStep", "30", CVAR_ARCHIVE_ND )	// units between trail gouts (Quest-tuned)
+CG_CVAR( cg_bloodTrailDecalStep, "cg_bloodTrailDecalStep", "3", CVAR_ARCHIVE_ND )	// trail decal every Nth gout; 0=none
+CG_CVAR( cg_bloodDecals, "cg_bloodDecals", "1", CVAR_ARCHIVE_ND )	// master gate for projected blood decals
+CG_CVAR( cg_bloodDecalScale, "cg_bloodDecalScale", "0.75", CVAR_ARCHIVE_ND )	// painted decal size multiplier (Quest-tuned)
+CG_CVAR( cg_bloodDecalReach, "cg_bloodDecalReach", "1.0", CVAR_ARCHIVE_ND )	// surface-reach multiplier (decoupled from size)
+CG_CVAR( cg_bloodDecalTime, "cg_bloodDecalTime", "4000", CVAR_ARCHIVE_ND )	// decal lifetime (ms) (Quest-tuned)
 CG_CVAR( cg_damageEffect, "cg_damageEffect", "0", CVAR_ARCHIVE )
 #ifdef MISSIONPACK
 CG_CVAR( cg_currentSelectedPlayer, "cg_currentSelectedPlayer", "0", CVAR_ARCHIVE )
