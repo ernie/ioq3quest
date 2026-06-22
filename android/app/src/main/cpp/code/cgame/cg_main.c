@@ -40,6 +40,13 @@ int enemyColorsModificationCount = -1;
 int teamModelModificationCount = -1;
 int teamColorsModificationCount = -1;
 
+// extension interface: resolved at runtime in CG_Init via the engine's
+// "//trap_GetValue" ROM cvar (mirrors trinity-engine's discovery mechanism)
+qboolean projectDecal = qfalse;		// engine advertises trap_R_ProjectDecal
+qboolean animFrame = qfalse;		// engine indexes animMap by refEntity->frame (RF_ANIMFRAME)
+int dll_com_trapGetValue;
+int dll_trap_R_ProjectDecal;
+
 void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum );
 void CG_Shutdown( void );
 
@@ -852,6 +859,11 @@ static void CG_RegisterGraphics( void ) {
 #endif
 	cgs.media.plasmaBallShader = trap_R_RegisterShader( "sprites/plasma1" );
 	cgs.media.bloodTrailShader = trap_R_RegisterShader( "bloodTrail" );
+	cgs.media.bloodGoutShader = trap_R_RegisterShader( "bloodGout" );
+	cgs.media.bloodSplatShader[0] = trap_R_RegisterShader( "bloodSplat0" );
+	cgs.media.bloodSplatShader[1] = trap_R_RegisterShader( "bloodSplat1" );
+	cgs.media.bloodSplatShader[2] = trap_R_RegisterShader( "bloodSplat2" );
+	cgs.media.bloodSplatShader[3] = trap_R_RegisterShader( "bloodSplat3" );
 	cgs.media.lagometerShader = trap_R_RegisterShader("lagometer" );
 	cgs.media.connectionShader = trap_R_RegisterShader( "disconnected" );
 
@@ -1993,9 +2005,32 @@ void CG_Init( int serverMessageNum, int serverCommandSequence, int clientNum ) {
 	// get the gamestate from the client system
 	trap_GetGameState( &cgs.gameState );
 
-	// check version
+	// enhanced blood decals: bootstrap the extension system. The engine
+	// publishes the trap_GetValue syscall number via the "//trap_GetValue" ROM
+	// cvar; with it we discover renderer extensions by name. projectDecal gates
+	// the Modern blood path's engine-decal calls (graceful fallback if absent).
+	{
+		char ext[64];
+		trap_Cvar_VariableStringBuffer( "//trap_GetValue", ext, sizeof( ext ) );
+		if ( ext[0] ) {
+			dll_com_trapGetValue = atoi( ext );
+			if ( trap_GetValue( ext, sizeof( ext ), "trap_R_ProjectDecal" ) ) {
+				dll_trap_R_ProjectDecal = atoi( ext );
+				projectDecal = qtrue;
+			}
+			if ( trap_GetValue( ext, sizeof( ext ), "R_animFrame" ) ) {
+				animFrame = qtrue;	// gouts play once across their life via RF_ANIMFRAME
+			}
+		}
+	}
+
+	// check version: a Trinity server reports GAME_VERSION ("trinity-1"); still
+	// accept a vanilla "baseq3-1" peer. Detect Trinity here (auth-independent),
+	// not via the optional handshake.
 	s = CG_ConfigString( CS_GAME_VERSION );
-	if ( strcmp( s, GAME_VERSION ) ) {
+	if ( !strcmp( s, GAME_VERSION ) ) {
+		cgs.trinity = qtrue;
+	} else if ( strcmp( s, GAME_VERSION_VANILLA ) ) {
 		CG_Error( "Client/Server game mismatch: %s/%s", GAME_VERSION, s );
 	}
 

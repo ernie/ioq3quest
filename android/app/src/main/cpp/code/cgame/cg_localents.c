@@ -26,7 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "cg_local.h"
 
-#define	MAX_LOCAL_ENTITIES	512
+#define	MAX_LOCAL_ENTITIES	2048
 localEntity_t	cg_localEntities[MAX_LOCAL_ENTITIES];
 localEntity_t	cg_activeLocalEntities;		// double linked list
 localEntity_t	*cg_freeLocalEntities;		// single linked list
@@ -111,6 +111,11 @@ or generates more localentities along a trail.
 ====================================================================================
 */
 
+// min gib speed (u/s) to keep trailing, so settling gibs don't stack trails
+#define GIB_TRAIL_SPEED	200
+// gout spacing (u) along the path; emit by distance traveled, not by time
+#define GIB_TRAIL_STEP	10
+
 /*
 ================
 CG_BloodTrail
@@ -125,25 +130,57 @@ void CG_BloodTrail( localEntity_t *le ) {
 	vec3_t	newOrigin;
 	localEntity_t	*blood;
 
-	step = 150;
-	t = step * ( (cg.time - cg.frametime + step ) / step );
-	t2 = step * ( cg.time / step );
+	// Classic blood: sparse expanding puffs behind the gib (the pre-overhaul
+	// trail), with no animated gouts or projected decals.
+	if ( cg_blood.integer < 2 ) {
+		step = 150;
+		t = step * ( ( cg.time - cg.frametime + step ) / step );
+		t2 = step * ( cg.time / step );
+		for ( ; t <= t2; t += step ) {
+			BG_EvaluateTrajectory( &le->pos, t, newOrigin );
+			blood = CG_SmokePuff( newOrigin, vec3_origin,
+				20, 1, 1, 1, 1, 2000, t, 0, 0,
+				cgs.media.bloodTrailShader );
+			blood->leType = LE_FALL_SCALE_FADE;
+			blood->pos.trDelta[2] = 40;
+		}
+		return;
+	}
 
-	for ( ; t <= t2; t += step ) {
-		BG_EvaluateTrajectory( &le->pos, t, newOrigin );
+	// Modern: gout trail by distance traveled (speed-independent). Accumulate
+	// from the last emission point, dropping a gout every GIB_TRAIL_STEP units.
+	{
+		vec3_t	dir;
+		float	dist;
+		int		n;
 
-		blood = CG_SmokePuff( newOrigin, vec3_origin, 
-					  20,		// radius
-					  1, 1, 1, 1,	// color
-					  2000,		// trailTime
-					  t,		// startTime
-					  0,		// fadeInTime
-					  0,		// flags
-					  cgs.media.bloodTrailShader );
-		// use the optimized version
-		blood->leType = LE_FALL_SCALE_FADE;
-		// drop a total of 40 units over its lifetime
-		blood->pos.trDelta[2] = 40;
+		BG_EvaluateTrajectory( &le->pos, cg.time, newOrigin );
+		VectorSubtract( newOrigin, le->trailOrigin, dir );
+		dist = VectorNormalize( dir );
+
+		for ( n = 0; dist >= GIB_TRAIL_STEP && n < 64; n++ ) {
+			VectorMA( le->trailOrigin, GIB_TRAIL_STEP, dir, le->trailOrigin );
+			dist -= GIB_TRAIL_STEP;
+
+			blood = CG_SmokePuff( le->trailOrigin, vec3_origin,
+						  24 + random() * 16, 1, 1, 1, 1,
+						  300 + random() * 66,		// ~333ms: one 30fps animMap cycle
+						  cg.time, 0, LEF_PUFF_DONT_SCALE,
+						  cgs.media.bloodGoutShader );
+			blood->pos.trDelta[2] = -10;	// gentle settle
+			if ( animFrame ) {
+				blood->refEntity.renderfx |= RF_ANIMFRAME;	// gout plays once across its life
+			}
+			// slight tumble so trail puffs don't read as identical stamps
+			blood->angles.trType = TR_LINEAR;
+			blood->angles.trTime = cg.time;
+			blood->angles.trBase[0] = blood->refEntity.rotation;
+			blood->angles.trDelta[0] = crandom() * 50;	// deg/sec
+
+			if ( n % 3 == 0 ) {		// decals sparser than sprites (projection is costly)
+				CG_BloodDecal( le->trailOrigin, 16 + random() * 16 );
+			}
+		}
 	}
 }
 
@@ -158,9 +195,14 @@ void CG_FragmentBounceMark( localEntity_t *le, trace_t *trace ) {
 
 	if ( le->leMarkType == LEMT_BLOOD ) {
 
-		radius = 16 + (rand()&31);
-		CG_ImpactMark( cgs.media.bloodMarkShader, trace->endpos, trace->plane.normal, random()*360,
-			1,1,1,1, qtrue, radius, qfalse );
+		// Modern: radial projected decal. Classic: legacy single blood mark.
+		if ( cg_blood.integer >= 2 ) {
+			CG_BloodDecal( trace->endpos, 16 + ( rand() & 31 ) );
+		} else {
+			radius = 16 + ( rand() & 31 );
+			CG_ImpactMark( cgs.media.bloodMarkShader, trace->endpos, trace->plane.normal,
+				random() * 360, 1, 1, 1, 1, qtrue, radius, qfalse );
+		}
 	} else if ( le->leMarkType == LEMT_BURN ) {
 
 		radius = 8 + (rand()&15);
@@ -287,8 +329,12 @@ void CG_AddFragment( localEntity_t *le ) {
 
 		trap_R_AddRefEntityToScene( &le->refEntity );
 
-		// add a blood trail
-		if ( le->leBounceSoundType == LEBS_BLOOD ) {
+		// modern trails across bounces while fast; classic stops after one
+		if ( le->leFlags & LEF_BLOOD_TRAIL ) {
+			if ( VectorLengthSquared( le->pos.trDelta ) > GIB_TRAIL_SPEED * GIB_TRAIL_SPEED ) {
+				CG_BloodTrail( le );
+			}
+		} else if ( le->leBounceSoundType == LEBS_BLOOD ) {
 			CG_BloodTrail( le );
 		}
 
@@ -348,6 +394,36 @@ void CG_AddFadeRGB( localEntity_t *le ) {
 
 /*
 ==================
+CG_UpdateGoutSprite
+
+Per-frame sprite updates for blood gouts: RF_ANIMFRAME maps the animMap frame to
+the life fraction (plays once, no loop); a TR_LINEAR angles trajectory spins the
+billboard slightly so the sprite tumbles instead of reading as a stamp.
+==================
+*/
+#define	BLOOD_GOUT_FRAMES	10		// frame count of the bloodGout animMap
+
+static void CG_UpdateGoutSprite( localEntity_t *le ) {
+	refEntity_t	*re = &le->refEntity;
+
+	if ( re->renderfx & RF_ANIMFRAME ) {
+		float frac = 1.0f - ( le->endTime - cg.time ) * le->lifeRate;
+		if ( frac < 0.0f ) {
+			frac = 0.0f;
+		} else if ( frac > 0.999f ) {
+			frac = 0.999f;	// stay on the last frame; never wrap to 0
+		}
+		re->frame = (int)( frac * BLOOD_GOUT_FRAMES );
+	}
+
+	if ( le->angles.trType == TR_LINEAR ) {
+		re->rotation = le->angles.trBase[0]
+			+ le->angles.trDelta[0] * ( cg.time - le->angles.trTime ) * 0.001f;
+	}
+}
+
+/*
+==================
 CG_AddMoveScaleFade
 ==================
 */
@@ -385,6 +461,8 @@ static void CG_AddMoveScaleFade( localEntity_t *le ) {
 		return;
 	}
 
+	CG_UpdateGoutSprite( le );
+
 	trap_R_AddRefEntityToScene( re );
 }
 
@@ -393,10 +471,12 @@ static void CG_AddMoveScaleFade( localEntity_t *le ) {
 ===================
 CG_AddBloodParticle
 
-Blood droplet that moves with gravity, traces for collision,
-leaves a blood mark on impact, then fades out on the surface.
+Blood gout/droplet: moves under gravity (mist also drags), traces for collision,
+leaves a mark on impact, then fades out on the surface.
 ===================
 */
+#define	BLOOD_DRAG	6.0f	// mist air resistance (1/s); terminal fall ~= gravity/BLOOD_DRAG
+
 static void CG_AddBloodParticle( localEntity_t *le ) {
 	refEntity_t	*re;
 	vec3_t		newOrigin;
@@ -410,8 +490,23 @@ static void CG_AddBloodParticle( localEntity_t *le ) {
 	if ( c < 0 ) c = 0;
 	re->shaderRGBA.rgba[3] = 0xff * c * le->color[3];
 
-	// Calculate new position
-	BG_EvaluateTrajectory( &le->pos, cg.time, newOrigin );
+	// Calculate new position. Mist (LEF_NO_MARK) integrates gravity + air drag so
+	// the fine spray decelerates and hangs like aerosol rather than arcing like a
+	// solid; heavier droplets keep the closed-form ballistic path.
+	if ( le->leFlags & LEF_NO_MARK ) {
+		float dt = ( cg.time - le->pos.trTime ) * 0.001f;
+		if ( dt > 0.0f ) {
+			float damp = 1.0f - BLOOD_DRAG * dt;
+			if ( damp < 0.0f ) damp = 0.0f;
+			le->pos.trDelta[2] -= DEFAULT_GRAVITY * dt;
+			VectorScale( le->pos.trDelta, damp, le->pos.trDelta );
+			VectorMA( le->pos.trBase, dt, le->pos.trDelta, le->pos.trBase );
+			le->pos.trTime = cg.time;
+		}
+		VectorCopy( le->pos.trBase, newOrigin );
+	} else {
+		BG_EvaluateTrajectory( &le->pos, cg.time, newOrigin );
+	}
 
 	// Particle entered water - spawn sinking blood cloud
 	if ( CG_PointContents( newOrigin, -1 ) & MASK_WATER ) {
@@ -431,15 +526,20 @@ static void CG_AddBloodParticle( localEntity_t *le ) {
 	CG_Trace( &trace, re->origin, NULL, NULL, newOrigin, -1, CONTENTS_SOLID );
 
 	if ( trace.fraction < 1.0f ) {
-		// Hit a surface - leave a matching mark
-		CG_ImpactMark( cgs.media.bloodMarkShader, trace.endpos, trace.plane.normal,
-			random() * 360, 1, 1, 1, 1, qtrue, le->radius, qfalse );
+		// Hit a surface. Gouts/spray (LEF_NO_MARK) splat via their own dedicated
+		// decals, so they just disappear here; small droplets leave a mark.
+		if ( !( le->leFlags & LEF_NO_MARK ) ) {
+			CG_ImpactMark( cgs.media.bloodSplatShader[ rand() & 3 ], trace.endpos, trace.plane.normal,
+				random() * 360, 1, 1, 1, 1, qtrue, le->radius, qfalse );
+		}
 		CG_FreeLocalEntity( le );
 		return;
 	} else {
 		// Still in flight
 		VectorCopy( newOrigin, re->origin );
 	}
+
+	CG_UpdateGoutSprite( le );
 
 	trap_R_AddRefEntityToScene( re );
 }
@@ -743,7 +843,7 @@ void CG_AddInvulnerabilityJuiced( localEntity_t *le ) {
 	}
 	if ( t > 5000 ) {
 		le->endTime = 0;
-		CG_GibPlayer( le->refEntity.origin );
+		CG_GibPlayer( le->refEntity.origin, vec3_origin );
 	}
 	else {
 		trap_R_AddRefEntityToScene( &le->refEntity );
@@ -931,17 +1031,15 @@ void CG_AddDamagePlum( localEntity_t *le ) {
 	VectorSubtract(cg.refdef.vieworg, origin, dir);
 	VectorNormalize(dir);
 
-	// Set up world-oriented sprite axis so digits don't roll with head tilt
-	// but still face the camera (including vertical tilt)
-	// axis[0] = forward (toward camera)
-	// axis[1] = left (horizontal, no roll)
-	// axis[2] = up (perpendicular to forward and left)
+	// World-oriented so digits don't roll with head tilt. axis[0] faces into the
+	// scene to keep the basis right-handed; a mirrored (left-handed) basis gets
+	// face culling inverted, hiding the one-sided digit shader.
 	re->renderfx |= RF_WORLD_ORIENTED;
-	VectorCopy(dir, re->axis[0]);
+	VectorNegate(dir, re->axis[0]);
 	CrossProduct(dir, up, vec);
 	VectorNormalize(vec);
 	VectorCopy(vec, re->axis[1]);
-	CrossProduct(vec, dir, re->axis[2]);  // Derive up from forward and left
+	CrossProduct(vec, dir, re->axis[2]);  // up, from forward and left
 
 	negative = qfalse;
 	if (damage < 0) {
