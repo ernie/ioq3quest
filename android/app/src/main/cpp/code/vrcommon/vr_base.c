@@ -16,6 +16,7 @@
 
 #if __ANDROID__
 #include <assert.h>
+#include <android/log.h>
 #include <unistd.h>
 #endif
 
@@ -26,7 +27,7 @@ qboolean vr_initialized = qfalse;
 qboolean vr_shutdown = qfalse;
 
 // Required extensions first, optional extensions only if the runtime advertises them.
-#define MAX_REQUIRED_EXTENSIONS 9
+#define MAX_REQUIRED_EXTENSIONS 10
 static const char* requiredExtensionNames[MAX_REQUIRED_EXTENSIONS];
 static uint32_t numRequiredExtensions = 0;
 
@@ -85,6 +86,17 @@ static void VR_BuildExtensionList(void)
 	{
 		requiredExtensionNames[numRequiredExtensions++] = "XR_KHR_vulkan_swapchain_format_list";
 	}
+	// Color-accurate wide gamut on Quest panels that support it (e.g. Quest Pro QD-OLED);
+	// keeps the runtime from treating our sRGB/Rec709 content as P3 and oversaturating.
+	qboolean haveColorSpace = (numRequiredExtensions < MAX_REQUIRED_EXTENSIONS &&
+		VR_HasInstanceExtension("XR_FB_color_space"));
+	if (haveColorSpace)
+	{
+		requiredExtensionNames[numRequiredExtensions++] = "XR_FB_color_space";
+	}
+#if __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "OpenXR", "XR_FB_color_space advertised: %s", haveColorSpace ? "yes" : "no");
+#endif
 }
 
 // Part of init
@@ -101,6 +113,13 @@ VR_Engine* VR_Init( void )
 	memset(&vr, 0, sizeof(vr));
 
 	vr.follow_mode = VRFM_THIRDPERSON_1;
+
+#if __ANDROID__
+	// The Android OpenXR loader must be initialized before enumerating instance
+	// extensions, or the enumeration comes back empty. Idempotent — VR_CreateInstance
+	// calls it again as a no-op.
+	VR_InitializeLoaderAndroid();
+#endif
 
 	// Build extension list with appropriate graphics API extension
 	VR_BuildExtensionList();

@@ -13,6 +13,7 @@
 // Android-specific: stored context for XR instance creation
 static JavaVM* s_javaVM = NULL;
 static jobject s_activityObject = NULL;
+static qboolean s_loaderInitialized = qfalse;
 
 void VR_SetAndroidContext(void* javaVM, void* activityObject)
 {
@@ -20,8 +21,12 @@ void VR_SetAndroidContext(void* javaVM, void* activityObject)
 	s_activityObject = (jobject)activityObject;
 }
 
-static XrResult VR_InitializeLoaderAndroid(void)
+XrResult VR_InitializeLoaderAndroid(void)
 {
+	if (s_loaderInitialized) {
+		return XR_SUCCESS;
+	}
+	s_loaderInitialized = qtrue;
 	// On Android, we must initialize the OpenXR loader before creating an instance
 	PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR = NULL;
 	XrResult result = xrGetInstanceProcAddr(

@@ -16,6 +16,9 @@
 
 #include <string.h>
 #include <stdio.h>
+#if __ANDROID__
+#include <android/log.h>
+#endif
 
 // Create XR session with Vulkan graphics binding
 XrResult VR_VK_CreateSession(XrInstance instance, XrSystemId systemId, XrSession* session)
@@ -45,7 +48,39 @@ XrResult VR_VK_CreateSession(XrInstance instance, XrSystemId systemId, XrSession
 	sessionCreateInfo.createFlags = 0;
 	sessionCreateInfo.systemId = systemId;
 
-	return xrCreateSession(instance, &sessionCreateInfo, session);
+	XrResult result = xrCreateSession(instance, &sessionCreateInfo, session);
+	if (XR_SUCCEEDED(result)) {
+		// Declare Rec.709; keeps wide-gamut Quest panels (e.g. Quest Pro QD-OLED) from
+		// over-saturating our sRGB content as P3. No-op where XR_FB_color_space is absent.
+		PFN_xrEnumerateColorSpacesFB pfnEnumerate = NULL;
+		PFN_xrSetColorSpaceFB pfnSet = NULL;
+		qboolean colorManaged = qfalse;
+		xrGetInstanceProcAddr(instance, "xrEnumerateColorSpacesFB", (PFN_xrVoidFunction*)&pfnEnumerate);
+		xrGetInstanceProcAddr(instance, "xrSetColorSpaceFB", (PFN_xrVoidFunction*)&pfnSet);
+		if (pfnEnumerate && pfnSet) {
+			uint32_t count = 0;
+			if (XR_SUCCEEDED(pfnEnumerate(*session, 0, &count, NULL)) && count > 0) {
+				XrColorSpaceFB spaces[16];
+				if (count > 16) count = 16;
+				if (XR_SUCCEEDED(pfnEnumerate(*session, count, &count, spaces))) {
+					uint32_t i;
+					qboolean have709 = qfalse;
+					for (i = 0; i < count; i++) {
+						if (spaces[i] == XR_COLOR_SPACE_REC709_FB) { have709 = qtrue; break; }
+					}
+					if (have709 && XR_SUCCEEDED(pfnSet(*session, XR_COLOR_SPACE_REC709_FB))) {
+						colorManaged = qtrue;
+					}
+				}
+			}
+		}
+#if __ANDROID__
+		// stdout is discarded on Quest; log the outcome so it is verifiable.
+		__android_log_print(ANDROID_LOG_INFO, "OpenXR", "headset color space: %s",
+			colorManaged ? "Rec709 (color-managed)" : "runtime default (XR_FB_color_space unavailable)");
+#endif
+	}
+	return result;
 }
 
 // VR_Graphics interface implementation
