@@ -1,13 +1,77 @@
-# Quake 3 Port to Oculus Quest
+# Trinity Quest
+
+Trinity Quest is the Meta Quest standalone VR client for the Trinity Quake III Arena
+ecosystem — a fork of [ioq3quest](https://github.com/Team-Beef-Studios/ioq3quest)
+(Team Beef's port of [ioquake3](https://github.com/ioquake/ioq3) to Quest) with the
+[Trinity](https://github.com/ernie/trinity) mod and Trinity engine features compiled in.
+It runs natively on Meta Quest headsets and plays crossplay with the flatscreen
+[Trinity Engine](https://github.com/ernie/trinity-engine) and
+[Trinity VR](https://github.com/ernie/trinity-vr) (PCVR) clients on Trinity servers,
+where the [Trinity Tracker](https://github.com/ernie/trinity-tracker) platform tracks
+match stats and streams matches to the web.
+
+## Features beyond ioq3quest
+
+### Crossplay with Trinity servers
+
+Connects to Trinity flatscreen dedicated servers and plays crossplay with flatscreen and
+Trinity VR players. The client packs head and torso orientation into 32-bit usercmds and
+reads `vr_support` from serverinfo to negotiate the extended protocol. See
+[VR_PROTOCOL.md](https://github.com/ernie/trinity/blob/main/docs/VR_PROTOCOL.md) for the
+specification.
+
+### Trinity mod integration
+
+The Trinity mod's VR features — head and torso tracking, an orbital follow camera for
+spectating and demo playback, Quake Live-style damage indicators, and visual
+enhancements — are compiled directly into the client, because flatscreen QVMs would
+replace the VR-specific function implementations.
+
+### Rec.709 headset color
+
+Declares Rec.709 color to the OpenXR runtime (`XR_COLOR_SPACE_REC709_FB`, requested via
+the `XR_FB_color_space` extension), which keeps wide-gamut Quest panels (e.g. the Quest
+Pro's QD-OLED) from over-saturating the game's sRGB/Rec.709 content as P3. It's a no-op on
+runtimes without the extension. **Quest does not support HDR output** — true HDR is a
+flatscreen / PCVR-desktop-mirror feature.
+
+### Improved stencil shadows
+
+The same z-fail stencil shadow rework as Trinity Engine (`cg_shadows 2`): welded
+silhouettes, capped volumes, and BSP clipping. Heavier than blob shadows — reasonable on
+Quest 3, not recommended on older headsets.
+
+### Modern blood
+
+Damage-scaled blood (`com_blood 2`, the default): blood gouts and gib spray that grow
+with the hit, lingering trails, and splats painted onto nearby walls and floors. `1` is
+classic sprite blood, `0` off.
+
+### TrinityVision demo playback
+
+Plays back TrinityVision (`.tvd`) demos recorded by Trinity servers.
+
+## The Trinity Ecosystem
+
+- **[Trinity](https://github.com/ernie/trinity)** — the unified Quake III Arena / Team
+  Arena game mod (server-side support for VR clients; flatscreen feature parity where
+  possible).
+- **[Trinity Engine](https://github.com/ernie/trinity-engine)** — the flatscreen engine
+  (dedicated servers, demo playback), forked from Quake3e.
+- **[Trinity VR](https://github.com/ernie/trinity-vr)** — PCVR client (Windows,
+  OpenXR/SteamVR).
+- **[Trinity Quest](https://github.com/ernie/trinity-quest)** — this project. Meta Quest
+  standalone VR client.
+- **[Trinity Tracker](https://github.com/ernie/trinity-tracker)** — statistics and server
+  administration platform.
 
 ## Building
 
 ### Prerequisites
-1. Install your copy of Quake III Arena from Steam.
-2. Android Studio with NDK version 21.1.6352462.
-3. Download the Oculus OpenXR SDK from https://developer.oculus.com/downloads/package/oculus-openxr-mobile-sdk/
-4. Extract the OpenXR folder to ./android/app/src/main/cpp/code/OpenXR/
-5. Extract the 3rdParty/khronos/openxr/OpenXR-SDK folder to ./android/app/src/main/cpp/code/OpenXR-SDK/
+1. Install your copy of Quake III Arena from Steam (for the `pak0.pk3` game data).
+2. Android Studio with NDK version 27.3.13750724.
+3. The OpenXR SDK is vendored in the repository (under
+   `android/app/src/main/cpp/code/OpenXR/` and `OpenXR-SDK/`) — no separate download needed.
 
 ### Building and running the build
 The scripts assume that you installed everything in the default locations. In case you want to deviate from that, the paths are in ./android/run.(sh|bat) and in Makefile.local.
@@ -23,6 +87,10 @@ The scripts assume that you installed everything in the default locations. In ca
 #### Windows
 1. Replace \<username\> with your windows username folder as it appears in C:\Users.
 2. Open git bash and run ./android/run.bat.
+
+---
+
+_The following is the original ioquake3 / ioq3quest README, preserved for reference._
 
 # Original ioq3 README:
                    ,---------------------------------------.
