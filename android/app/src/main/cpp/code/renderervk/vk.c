@@ -2302,15 +2302,26 @@ static void init_vulkan_library( void )
 		// depth clamp is enabled at device creation (vrvk passes the full queried
 		// features2); record support here for the z-fail shadow pipeline.
 		vk.depthClamp = features2.features.depthClamp ? qtrue : qfalse;
+		// storage-buffer writes from vertex+fragment stages are likewise already
+		// enabled at device creation (vrvk passes the full queried features2); the
+		// flare visibility probe (dot.vert/dot.frag) needs both. Without this flag
+		// R_ClearFlares never initializes the flare pool and no flare can ever be
+		// allocated.
+		vk.fragmentStores = ( features2.features.fragmentStoresAndAtomics &&
+			features2.features.vertexPipelineStoresAndAtomics ) ? qtrue : qfalse;
 		ri.Printf( PRINT_ALL, "...VK_KHR_multiview: %s\n",
 			vk.multiviewSupported ? "supported" : "not supported" );
 		ri.Printf( PRINT_ALL, "...samplerAnisotropy: %s\n",
 			vk.samplerAnisotropy ? "supported" : "not supported" );
+		ri.Printf( PRINT_ALL, "...fragmentStores: %s\n",
+			vk.fragmentStores ? "supported" : "not supported" );
 	} else {
 		VkPhysicalDeviceFeatures features;
 		qvkGetPhysicalDeviceFeatures( vk.physical_device, &features );
 		vk.samplerAnisotropy = features.samplerAnisotropy ? qtrue : qfalse;
 		vk.depthClamp = features.depthClamp ? qtrue : qfalse;
+		vk.fragmentStores = ( features.fragmentStoresAndAtomics &&
+			features.vertexPipelineStoresAndAtomics ) ? qtrue : qfalse;
 		vk.multiviewSupported = qfalse;
 		ri.Printf( PRINT_WARNING, "...vkGetPhysicalDeviceFeatures2 not available, multiview disabled\n" );
 		ri.Printf( PRINT_ALL, "...samplerAnisotropy: %s\n",
@@ -3212,6 +3223,7 @@ static void vk_create_shader_modules( void )
 	SET_OBJECT_NAME( vk.modules.fog_fs, "fog-only fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
 
 	vk.modules.dot_vs = SHADER_MODULE( dot_vert_spv );
+	vk.modules.dot_tri_vs = SHADER_MODULE( dot_tri_vert_spv );
 	vk.modules.dot_fs = SHADER_MODULE( dot_frag_spv );
 
 	SET_OBJECT_NAME( vk.modules.dot_vs, "dot vertex module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
@@ -3387,14 +3399,20 @@ static void vk_alloc_persistent_pipelines( void )
 		vk.surface_axis_pipeline = vk_find_pipeline_ext( 0, &def, qfalse );
 	}
 
-	// flare visibility test dot
+	// flare visibility test probe (topology per FLARE_PROBE_POINT_LIST;
+	// the point variant hangs NVIDIA — bug 6413598 — but Adreno is its own
+	// driver and gets the cheaper probe if it proves stable)
 	if ( vk.fragmentStores )
 	{
 		Com_Memset( &def, 0, sizeof( def ) );
 		//def.state_bits = GLS_DEFAULT;
 		def.face_culling = CT_TWO_SIDED;
 		def.shader_type = TYPE_DOT;
+#if FLARE_PROBE_POINT_LIST
 		def.primitives = POINT_LIST;
+#else
+		def.primitives = TRIANGLE_LIST;
+#endif
 		vk.dot_pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
 	}
 
@@ -4959,6 +4977,7 @@ void vk_shutdown( refShutdownCode_t code )
 	qvkDestroyShaderModule(vk.device, vk.modules.fog_fs, NULL);
 
 	qvkDestroyShaderModule(vk.device, vk.modules.dot_vs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.dot_tri_vs, NULL);
 	qvkDestroyShaderModule(vk.device, vk.modules.dot_fs, NULL);
 
 	qvkDestroyShaderModule(vk.device, vk.modules.bloom_fs, NULL);
@@ -6050,7 +6069,11 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 			break;
 
 		case TYPE_DOT:
+#if FLARE_PROBE_POINT_LIST
 			vs_module = &vk.modules.dot_vs;
+#else
+			vs_module = &vk.modules.dot_tri_vs;
+#endif
 			fs_module = &vk.modules.dot_fs;
 			break;
 
@@ -6626,11 +6649,7 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	rasterization_state.flags = 0;
 	rasterization_state.depthClampEnable = ((def->shadow_phase == SHADOW_FS_QUAD || def->shadow_phase == SHADOW_EDGES) && vk.depthClamp) ? VK_TRUE : VK_FALSE;
 	rasterization_state.rasterizerDiscardEnable = VK_FALSE;
-	if ( def->shader_type == TYPE_DOT ) {
-		rasterization_state.polygonMode = VK_POLYGON_MODE_POINT;
-	} else {
-		rasterization_state.polygonMode = (state_bits & GLS_POLYMODE_LINE) ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-	}
+	rasterization_state.polygonMode = (state_bits & GLS_POLYMODE_LINE) ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
 
 	switch ( def->face_culling ) {
 		case CT_TWO_SIDED:

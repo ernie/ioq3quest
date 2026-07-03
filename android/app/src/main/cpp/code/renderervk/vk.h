@@ -56,6 +56,13 @@
 #define VK_DESC_FOG_ONLY     VK_DESC_TEXTURE1
 #define VK_DESC_FOG_DLIGHT   VK_DESC_TEXTURE1
 
+// Flare visibility probe topology. 1 = one-vertex POINT_LIST probe;
+// 0 = sub-pixel triangle. The point variant's VS reads gl_ViewIndex and
+// writes gl_PointSize under multiview — that exact combination hangs NVIDIA
+// desktop GPUs (NVIDIA bug 6413598), so trinity-vr ships the triangle;
+// Adreno is its own driver and gets the cheaper probe if it proves stable.
+#define FLARE_PROBE_POINT_LIST 1
+
 typedef enum {
 	TYPE_COLOR_BLACK,
 	TYPE_COLOR_WHITE,
@@ -624,7 +631,8 @@ typedef struct {
 		VkShaderModule fog_vs;  // multiview
 
 		VkShaderModule dot_fs;
-		VkShaderModule dot_vs;
+		VkShaderModule dot_vs;      // POINT_LIST probe (dot.vert)
+		VkShaderModule dot_tri_vs;  // sub-pixel triangle probe (dot_tri.vert)
 
 		// Subpass optimization shaders (input attachments)
 		VkShaderModule bloom_extract_subpass_fs;
