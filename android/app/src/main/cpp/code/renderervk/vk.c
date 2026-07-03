@@ -2507,25 +2507,32 @@ static void vk_create_4sampler_layout( VkDescriptorSetLayout *layout )
 
 void vk_update_uniform_descriptor( VkDescriptorSet descriptor, VkBuffer buffer )
 {
-	VkDescriptorBufferInfo info;
-	VkWriteDescriptorSet desc;
+	VkDescriptorBufferInfo info[2];
+	VkWriteDescriptorSet desc[2];
+	int i;
 
-	info.buffer = buffer;
-	info.offset = 0;
-	info.range = sizeof( vkUniform_t );
+	info[0].buffer = buffer;
+	info[0].offset = 0;
+	info[0].range = sizeof( vkUniform_t );
 
-	desc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	desc.dstSet = descriptor;
-	desc.dstBinding = 0;
-	desc.dstArrayElement = 0;
-	desc.descriptorCount = 1;
-	desc.pNext = NULL;
-	desc.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	desc.pImageInfo = NULL;
-	desc.pBufferInfo = &info;
-	desc.pTexelBufferView = NULL;
+	info[1].buffer = buffer;
+	info[1].offset = 0;
+	info[1].range = sizeof( float ) * 32; // eyeProj[2]
 
-	qvkUpdateDescriptorSets( vk.device, 1, &desc, 0, NULL );
+	for ( i = 0; i < 2; i++ ) {
+		desc[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		desc[i].pNext = NULL;
+		desc[i].dstSet = descriptor;
+		desc[i].dstBinding = i;
+		desc[i].dstArrayElement = 0;
+		desc[i].descriptorCount = 1;
+		desc[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		desc[i].pImageInfo = NULL;
+		desc[i].pBufferInfo = &info[i];
+		desc[i].pTexelBufferView = NULL;
+	}
+
+	qvkUpdateDescriptorSets( vk.device, 2, desc, 0, NULL );
 }
 
 
@@ -4125,6 +4132,12 @@ void vk_initialize( void )
 	qvkGetPhysicalDeviceProperties( vk.physical_device, &props );
 
 	vk.cmd = vk.tess + 0;
+
+	// identity until the first RB_BeginDrawingView() computes real per-view matrices
+	Com_Memset( vk_view_eyeproj, 0, sizeof( vk_view_eyeproj ) );
+	vk_view_eyeproj[0][0] = vk_view_eyeproj[0][5] = vk_view_eyeproj[0][10] = vk_view_eyeproj[0][15] = 1.0f;
+	vk_view_eyeproj[1][0] = vk_view_eyeproj[1][5] = vk_view_eyeproj[1][10] = vk_view_eyeproj[1][15] = 1.0f;
+
 	vk.uniform_alignment = props.limits.minUniformBufferOffsetAlignment;
 	vk.uniform_item_size = PAD( (uint32_t)sizeof( vkUniform_t ), vk.uniform_alignment );
 
@@ -4380,7 +4393,7 @@ void vk_initialize( void )
 		pool_size[0].descriptorCount = MAX_DRAWIMAGES + 1 + 1 + 1 + VK_NUM_BLOOM_PASSES * 2 + 4; // color, screenmap, bloom descriptors, +4 for combined blur descriptor
 
 		pool_size[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		pool_size[1].descriptorCount = NUM_COMMAND_BUFFERS;
+		pool_size[1].descriptorCount = NUM_COMMAND_BUFFERS * 2; // binding 0 (fog/dlight) + binding 1 (per-view eyeProj)
 
 		pool_size[2].type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 		pool_size[2].descriptorCount = NUM_COMMAND_BUFFERS;
@@ -4406,7 +4419,30 @@ void vk_initialize( void )
 	// Descriptor set layout.
 	//
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_sampler );
-	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_uniform );
+	{
+		VkDescriptorSetLayoutBinding b[2];
+		VkDescriptorSetLayoutCreateInfo ci;
+
+		b[0].binding = 0;
+		b[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		b[0].descriptorCount = 1;
+		b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+		b[0].pImmutableSamplers = NULL;
+
+		// per-view eyeProj[2] (P_eye * E'_eye), written once per view
+		b[1].binding = 1;
+		b[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		b[1].descriptorCount = 1;
+		b[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		b[1].pImmutableSamplers = NULL;
+
+		ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		ci.pNext = NULL;
+		ci.flags = 0;
+		ci.bindingCount = 2;
+		ci.pBindings = b;
+		VK_CHECK( qvkCreateDescriptorSetLayout( vk.device, &ci, NULL, &vk.set_layout_uniform ) );
+	}
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT, &vk.set_layout_storage );
 	vk_create_layout_binding( 0, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VK_SHADER_STAGE_FRAGMENT_BIT, &vk.set_layout_input_attachment );
 	vk_create_4sampler_layout( &vk.set_layout_4samplers );
@@ -4419,6 +4455,7 @@ void vk_initialize( void )
 		VkPipelineLayoutCreateInfo desc;
 		VkPushConstantRange push_range;
 
+		// vertex stage: mono modelview; per-eye projection lives in set 0 binding 1
 		push_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		push_range.offset = 0;
 		push_range.size = 64; // 16 floats
@@ -4429,9 +4466,6 @@ void vk_initialize( void )
 		set_layouts[2] = vk.set_layout_sampler; // lightmap / fog-only
 		set_layouts[3] = vk.set_layout_sampler; // blend
 		set_layouts[4] = vk.set_layout_sampler; // collapsed fog texture
-
-		// Main pipeline uses 128-byte push constants for per-eye MVP matrices
-		push_range.size = 128; // 2 x mat4 = 2 per-eye MVP matrices
 
 		desc.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		desc.pNext = NULL;
@@ -7136,54 +7170,126 @@ void vk_clear_depth( qboolean clear_stencil ) {
 }
 
 
+// Inverse of a rigid/orthonormal affine GL matrix (rotation|reflection + translation).
+// Valid for view matrices incl. s_flipMatrix axis permutations.
+static void Matrix4x4_OrthonormalInvert( const float in[16], float out[16] )
+{
+	out[0] = in[0];  out[4] = in[1];  out[8]  = in[2];
+	out[1] = in[4];  out[5] = in[5];  out[9]  = in[6];
+	out[2] = in[8];  out[6] = in[9];  out[10] = in[10];
+	out[3] = 0.0f;   out[7] = 0.0f;   out[11] = 0.0f;
+	out[12] = -( in[12]*out[0] + in[13]*out[4] + in[14]*out[8]  );
+	out[13] = -( in[12]*out[1] + in[13]*out[5] + in[14]*out[9]  );
+	out[14] = -( in[12]*out[2] + in[13]*out[6] + in[14]*out[10] );
+	out[15] = 1.0f;
+}
+
+
+float vk_view_eyeproj[2][16];
+
+void vk_set_view_eyeproj( void )
+{
+	int e;
+
+	if ( tr.vrParms.valid && !backEnd.projection2D &&
+		!( backEnd.isDrawingHUD || backEnd.refdef.isHUD ) &&
+		!( vr.virtual_screen || vr.weapon_zoomed ) ) {
+		// Stereo (normal or portal): eyeProj = E'_e then P_e, where
+		// E'_e = inverse(world monoView) * world eyeView_e. Exact because,
+		// for any entity's local-to-world transform L, L * E'_e equals what
+		// L folded against world.eyeViewMatrix[e] would produce (both share
+		// the same L against world.modelMatrix / world.eyeViewMatrix[e]).
+		float invMono[16], eprime[16];
+		const float *proj[2];
+
+		if ( backEnd.viewParms.portalView != PV_NONE ) {
+			proj[0] = tr.vrParms.mirrorProjectionEye[0];
+			proj[1] = tr.vrParms.mirrorProjectionEye[1];
+		} else {
+			proj[0] = tr.vrParms.projectionEye[0];
+			proj[1] = tr.vrParms.projectionEye[1];
+		}
+
+		Matrix4x4_OrthonormalInvert( backEnd.viewParms.world.modelMatrix, invMono );
+		for ( e = 0; e < 2; e++ ) {
+			myGlMultMatrix( invMono, backEnd.viewParms.world.eyeViewMatrix[e], eprime );
+			myGlMultMatrix( eprime, proj[e], vk_view_eyeproj[e] );
+		}
+		return;
+	}
+
+	// All cyclopean/mono flavors: both slots get the same projection the old
+	// code multiplied per draw. Guards mirror vk_update_mvp's ladder exactly.
+	// QUEST specifics (differ from trinity-vr): aspect correction is
+	// (4:3)/nativeAspect and applies only when vr.virtual_screen;
+	// RDF_NOWORLDMODEL uses the raw refdef FOV (no crop factor).
+	{
+		float proj[16];
+
+		if ( tr.vrParms.valid && ( backEnd.isDrawingHUD || backEnd.refdef.isHUD ) ) {
+			Com_Memcpy( proj, tr.vrParms.monoVRProjection, sizeof( proj ) );
+		} else if ( tr.vrParms.valid && backEnd.viewParms.portalView != PV_NONE &&
+				( vr.virtual_screen || vr.weapon_zoomed ) ) {
+			// Portal cyclopean: oblique projection from R_SetupProjection
+			Com_Memcpy( proj, backEnd.viewParms.projectionMatrix, sizeof( proj ) );
+			if ( vr.virtual_screen ) {
+				float viewportAspect = 4.0f / 3.0f;
+				float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+				float aspectCorrection = viewportAspect / nativeAspect;
+				proj[5] *= aspectCorrection;
+			}
+			proj[8] = 0.0f;
+			proj[9] = 0.0f;
+		} else if ( tr.vrParms.valid && ( vr.virtual_screen || vr.weapon_zoomed ) ) {
+			Com_Memcpy( proj, tr.vrParms.projection, sizeof( proj ) );
+			if ( vr.virtual_screen ) {
+				if ( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
+					// UI model scenes: refdef FOV, keep Z components from VR projection
+					proj[0] = 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f );
+					proj[5] = -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f );
+				} else {
+					float viewportAspect = 4.0f / 3.0f;
+					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+					float aspectCorrection = viewportAspect / nativeAspect;
+					proj[5] *= aspectCorrection;
+				}
+			}
+			proj[8] = 0.0f;
+			proj[9] = 0.0f;
+		} else {
+			Com_Memcpy( proj, backEnd.viewParms.projectionMatrix, sizeof( proj ) );
+		}
+
+		Com_Memcpy( vk_view_eyeproj[0], proj, sizeof( proj ) );
+		Com_Memcpy( vk_view_eyeproj[1], proj, sizeof( proj ) );
+	}
+}
+
+
 void vk_update_mvp( const float *m ) {
-	float push_constants[32]; // 2 x mat4 = per-eye MVP matrices (128 bytes)
+	float push_constants[16]; // mono modelview
 
 	// Don't issue commands if we're not recording (e.g., during RE_Shutdown transition)
 	if ( !vk.recordingCommands ) {
 		return;
 	}
 
-	//
-	// Multiview: Compute per-eye MVP and push 128 bytes (2 x mat4)
-	//
-	// For 3D VR rendering:
-	//   MVP[eye] = eyeViewMatrix[eye] * projectionEye[eye]
-	// where eyeViewMatrix[eye] is the combined entity-to-world-to-eye transform
-	// built by R_RotateForViewer (for world) or R_RotateForEntity (for entities)
-	//
-
 	if ( backEnd.projection2D ) {
-		// For 2D, build orthographic MVP directly
-		// Use vk.renderWidth/Height which are set to HUD buffer dimensions
-		// when rendering to the HUD buffer, otherwise they're glConfig dimensions
+		// 2D ortho: common scale/translate in the push; per-eye asymmetry and
+		// HUD parallax become clip-space translations in eyeProj (view slot).
 		int hudStatus = vr_currentHudDrawStatus ? vr_currentHudDrawStatus->integer : -1;
 		qboolean isHudMode1 = ( backEnd.isDrawingHUD && hudStatus == 1 );
 		// vr.virtual_screen can be stale when we are between levels showing loading screens
 		qboolean isVirtualScreen = VR_Gameplay_ShouldRenderInVirtualScreen();
 
-		// HUD mode 2 scale (2/3 factor aligns with mode 1's sprite size)
 		float hudScale = 1.0f;
 		if ( backEnd.isDrawingHUD && hudStatus == 2 && !isVirtualScreen ) {
-			hudScale = (vr_hudScale ? vr_hudScale->value : 1.0f) * (2.0f / 3.0f);
+			hudScale = ( vr_hudScale ? vr_hudScale->value : 1.0f ) * ( 2.0f / 3.0f );
 		}
 
 		float mvp0 = 2.0f * hudScale / vk.renderWidth;
 		float mvp5 = 2.0f * hudScale / vk.renderHeight;
 
-		Com_Memset( push_constants, 0, sizeof( push_constants ) );
-
-		// Per-eye asymmetry compensation for <100% binocular overlap
-		// VR headsets have asymmetric horizontal FOV per eye (more to the outside than nose).
-		// The per-eye projection matrices have element [8] = (tanRight + tanLeft) / tanWidth
-		// which represents how far the optical center is offset from screen center:
-		//   Left eye:  negative [8] = optical center is LEFT of screen center
-		//   Right eye: positive [8] = optical center is RIGHT of screen center
-		//
-		// For 2D content rendered directly to eye buffers (not virtual screen), we SUBTRACT
-		// the asymmetry offset to shift content toward each eye's optical center, allowing
-		// comfortable fusion at optical infinity. Without this, content rendered at screen
-		// center would require wall-eyed viewing.
 		float asymmetryOffsetX[2] = { 0.0f, 0.0f };
 		float asymmetryOffsetY = 0.0f;
 		if ( tr.vrParms.valid && !isVirtualScreen && !isHudMode1 && !vr.weapon_zoomed ) {
@@ -7192,18 +7298,13 @@ void vk_update_mvp( const float *m ) {
 			asymmetryOffsetY = tr.vrParms.projectionEye[0][9];
 		}
 
-		// Calculate stereo parallax offset for HUD depth perception
-		// Only apply stereo offset for HUD mode 2 (direct-to-screen HUD)
-		// Uses height-fraction for resolution/aspect-ratio independence
-		// Inverse relationship (0.05 / (depth+1)) matches mode 1's linear distance scaling
 		float depthOffset = 0.0f;
 		if ( backEnd.isDrawingHUD && hudStatus == 2 && !vr.first_person_following && !vr.weapon_zoomed ) {
 			float hudDepth = vr_currentHudDepth ? vr_currentHudDepth->value : 3.0f;
-			float heightFraction = 0.05f / (hudDepth + 1.0f);
+			float heightFraction = 0.05f / ( hudDepth + 1.0f );
 			depthOffset = heightFraction * (float)vk.renderHeight * mvp0;
 		}
 
-		// Y offset for HUD mode 2: vertical asymmetry compensation + user offset
 		float yOffset = 0.0f;
 		if ( backEnd.isDrawingHUD && hudStatus == 2 && !isVirtualScreen ) {
 			yOffset = -asymmetryOffsetY * 0.5f;
@@ -7211,156 +7312,37 @@ void vk_update_mvp( const float *m ) {
 			yOffset += -userOffset * mvp5 * 0.5f;
 		}
 
-		// Eye 0 (left)
-		// Base translation: -hudScale maps input 0 to NDC -hudScale (scaled origin)
-		// Asymmetry compensation: SUBTRACT asymmetryOffsetX to shift content TOWARD optical center
-		//   Left eye has negative asymmetry (optical center LEFT of screen center)
-		//   Subtracting negative offset shifts content RIGHT toward optical center
-		// Depth offset: add depthOffset to shift content RIGHT for convergence
+		// Common part -> push
+		Com_Memset( push_constants, 0, sizeof( push_constants ) );
 		push_constants[0]  = mvp0;
 		push_constants[5]  = mvp5;
-#ifdef USE_REVERSED_DEPTH
-		push_constants[12] = -hudScale - asymmetryOffsetX[0] + depthOffset;
+		push_constants[12] = -hudScale;
 		push_constants[13] = -hudScale + yOffset;
+#ifdef USE_REVERSED_DEPTH
 		push_constants[14] = 1.0f;
-		push_constants[15] = 1.0f;
 #else
 		push_constants[10] = 1.0f;
-		push_constants[12] = -hudScale - asymmetryOffsetX[0] + depthOffset;
-		push_constants[13] = -hudScale + yOffset;
-		push_constants[15] = 1.0f;
 #endif
+		push_constants[15] = 1.0f;
 
-		// Eye 1 (right)
-		// Asymmetry compensation: SUBTRACT asymmetryOffsetX[1] (positive for right eye)
-		//   Right eye has positive asymmetry (optical center RIGHT of screen center)
-		//   Subtracting positive offset shifts content LEFT toward optical center
-		// Depth offset: subtract depthOffset to shift content LEFT for convergence
-		Com_Memcpy( &push_constants[16], push_constants, sizeof(float) * 16 );
-		push_constants[28] = -hudScale - asymmetryOffsetX[1] - depthOffset;
-		push_constants[29] = -hudScale + yOffset;
-
-		qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout,
-			VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof( push_constants ), push_constants );
-		vk.stats.push_size += sizeof( push_constants );
-		return;
-	}
-
-	if ( m ) {
-		// Explicit modelview provided (e.g., for shadows, flares)
-		if ( tr.vrParms.valid && (vr.virtual_screen || vr.weapon_zoomed) && !backEnd.projection2D ) {
-			// Cyclopean: zero the asymmetric optical-axis offset so content lands
-			// on the geometric framebuffer center for the head-locked quad layer.
-			float mvp[16];
-			float proj[16];
-			Com_Memcpy( proj, tr.vrParms.projection, sizeof(proj) );
-			proj[8] = 0.0f;
-			proj[9] = 0.0f;
-			myGlMultMatrix( m, proj, mvp );
-			Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
-			Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
-		} else {
-			// Build per-eye MVP using the provided modelview
-			for ( int eye = 0; eye < 2; eye++ ) {
-				myGlMultMatrix( m, tr.vrParms.projectionEye[eye], &push_constants[eye * 16] );
-			}
+		// Per-eye part -> view slot (pure clip-space translation)
+		Com_Memset( vk_view_eyeproj, 0, sizeof( vk_view_eyeproj ) );
+		for ( int e = 0; e < 2; e++ ) {
+			vk_view_eyeproj[e][0] = vk_view_eyeproj[e][5] =
+			vk_view_eyeproj[e][10] = vk_view_eyeproj[e][15] = 1.0f;
 		}
-	} else if ( tr.vrParms.valid && !backEnd.projection2D ) {
-		// VR 3D rendering: Use per-eye view matrices from backend orientation
-		// backEnd.or.eyeViewMatrix contains the combined entity-to-eye transform
-		// (built by R_RotateForViewer for world, R_RotateForEntity for entities)
-		//
-		// Check backEnd.refdef.isHUD (from the draw command's refdef copy) to detect 3D HUD icons
-		// because in HUD mode 2 / virtual screen, the HUD buffer command isn't used but
-		// CG_Draw3DModel still sets refdef.isHUD = true to indicate 3D HUD icons.
-		// Note: use backEnd.refdef (per-command) not tr.refdef (global, may be stale).
-		if ( backEnd.isDrawingHUD || backEnd.refdef.isHUD ) {
-			// HUD 3D content: use mono VR projection (30° symmetric FOV)
-			// tr.vrParms.monoVRProjection already has Vulkan Y-flip and reversed depth
-			// This matches renderergl2's MONO_VR_PROJECTION pattern
-			float mvp[16];
-			myGlMultMatrix( vk_world.modelview_transform, tr.vrParms.monoVRProjection, mvp );
-			Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
-			Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
-		} else if ( backEnd.viewParms.portalView != PV_NONE ) {
-			// Portal/mirror view: use mirror projections with oblique near-plane clipping
-			// Must check BEFORE virtual_screen so portals/mirrors render correctly
-			if ( vr.virtual_screen || vr.weapon_zoomed ) {
-				// Virtual screen / weapon zoom renders mono - use mono modelview with oblique projection
-				// backEnd.viewParms.projectionMatrix already has oblique clipping from R_SetupProjection
-				float mvp[16];
-				float proj[16];
-				Com_Memcpy( proj, backEnd.viewParms.projectionMatrix, sizeof(proj) );
-
-				// In virtual screen mode, apply the same aspect correction as normal
-				// virtual screen rendering to prevent vertically squished mirror reflections
-				if ( vr.virtual_screen ) {
-					float viewportAspect = 4.0f / 3.0f;
-					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
-					float aspectCorrection = viewportAspect / nativeAspect;
-					proj[5] *= aspectCorrection;  // Adjust Y scale (M[1][1] in column-major)
-				}
-
-				// Zero asymmetric optical-axis offset for the cyclopean / quad path.
-				proj[8] = 0.0f;
-				proj[9] = 0.0f;
-
-				myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
-				Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
-				Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
-			} else {
-				// Normal stereo VR - use per-eye view matrices with per-eye mirror projections
-				myGlMultMatrix( backEnd.or.eyeViewMatrix[0], tr.vrParms.mirrorProjectionEye[0], &push_constants[0] );
-				myGlMultMatrix( backEnd.or.eyeViewMatrix[1], tr.vrParms.mirrorProjectionEye[1], &push_constants[16] );
-			}
-		} else if ( vr.virtual_screen || vr.weapon_zoomed ) {
-			// Virtual screen / weapon zoom: cyclopean mono rendering
-			float mvp[16];
-			float proj[16];
-			Com_Memcpy( proj, tr.vrParms.projection, sizeof(proj) );
-
-			if ( vr.virtual_screen ) {
-				if ( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
-					// UI model scenes (player preview, 3D logo, etc.): build projection
-					// from the refdef's FOV so the UI code's framing is respected.
-					// Keep Z components from VR projection (reversed depth, Vulkan conventions).
-					proj[0] = 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f );
-					proj[5] = -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f );  // Vulkan Y-flip
-				} else {
-					// Game world behind virtual screen: viewport is full framebuffer but
-					// virtual screen constrains visible output to 4:3, so use hardcoded 4:3.
-					float viewportAspect = 4.0f / 3.0f;
-					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
-					float aspectCorrection = viewportAspect / nativeAspect;
-					proj[5] *= aspectCorrection;
-				}
-			}
-
-			// Zero asymmetric optical-axis offset so cyclopean content lands on
-			// the geometric framebuffer center for the head-locked quad layer.
-			proj[8] = 0.0f;
-			proj[9] = 0.0f;
-
-			myGlMultMatrix( vk_world.modelview_transform, proj, mvp );
-
-			Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
-			Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
-		} else {
-			// Normal stereo VR: per-eye modelview * per-eye projection
-			myGlMultMatrix( backEnd.or.eyeViewMatrix[0], tr.vrParms.projectionEye[0], &push_constants[0] );
-			myGlMultMatrix( backEnd.or.eyeViewMatrix[1], tr.vrParms.projectionEye[1], &push_constants[16] );
-		}
+		vk_view_eyeproj[0][12] = -asymmetryOffsetX[0] + depthOffset;
+		vk_view_eyeproj[1][12] = -asymmetryOffsetX[1] - depthOffset;
+		VK_PushEyeProj();
+	} else if ( m ) {
+		// Explicit modelview (shadows, flares): eyeProj already set per view.
+		Com_Memcpy( push_constants, m, sizeof( push_constants ) );
 	} else {
-		// Fallback: mono rendering (same matrix for both eyes)
-		float mvp[16];
-		myGlMultMatrix( vk_world.modelview_transform, backEnd.viewParms.projectionMatrix, mvp );
-		Com_Memcpy( &push_constants[0], mvp, sizeof(float) * 16 );
-		Com_Memcpy( &push_constants[16], mvp, sizeof(float) * 16 );
+		Com_Memcpy( push_constants, vk_world.modelview_transform, sizeof( push_constants ) );
 	}
 
 	qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout,
 		VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof( push_constants ), push_constants );
-
 	vk.stats.push_size += sizeof( push_constants );
 }
 
@@ -7632,11 +7614,20 @@ void vk_bind_descriptor_sets( void )
 	if ( start == ~0U )
 		return;
 
+	// set 0 (uniform + eyeProj) is statically used by every standard pipeline
+	// since the matrix split; if its tracking was wiped by a render-pass
+	// transition, fold it back into this bind so no draw runs without it.
+	if ( start != VK_DESC_UNIFORM && vk.cmd->descriptor_set.current[ VK_DESC_UNIFORM ] == VK_NULL_HANDLE ) {
+		vk.cmd->descriptor_set.current[ VK_DESC_UNIFORM ] = vk.cmd->uniform_descriptor;
+		start = VK_DESC_UNIFORM;
+	}
+
 	end = vk.cmd->descriptor_set.end;
 
 	offset_count = 0;
-	if ( /*start == VK_DESC_STORAGE || */ start == VK_DESC_UNIFORM ) { // uniform offset or storage offset
+	if ( start == VK_DESC_UNIFORM ) { // uniform + eyeproj dynamic offsets, binding order
 		offsets[ offset_count++ ] = vk.cmd->descriptor_set.offset[ start ];
+		offsets[ offset_count++ ] = vk.cmd->eyeproj_offset;
 	}
 
 	// Ensure we always bind at least up to VK_DESC_TEXTURE1 (set 2) when starting from set 0,
@@ -7655,7 +7646,8 @@ void vk_bind_descriptor_sets( void )
 		}
 	}
 
-	// Always use multiview layout - per-eye MVP matrices passed via 128-byte push constants
+	// Always use multiview layout - mono modelview passed via 64-byte push
+	// constants, per-eye projection via the ViewTransform UBO (set 0, binding 1)
 	qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		vk.pipeline_layout, start, count, vk.cmd->descriptor_set.current + start, offset_count, offsets );
 
@@ -7758,6 +7750,15 @@ void vk_draw_dot( uint32_t storage_offset )
 	vk_update_depth_range( DEPTH_RANGE_NORMAL );
 
 	qvkCmdDraw( vk.cmd->command_buffer, tess.numVertexes, 1, 0, 0 );
+
+	// vk.storage.descriptor was just bound at set 0 via vk.pipeline_layout_storage, which is
+	// NOT compatible-for-set-0 with vk.pipeline_layout (2 UNIFORM_BUFFER_DYNAMIC bindings vs.
+	// 1 STORAGE_BUFFER_DYNAMIC binding). Every gen/color/fog/light vertex shader statically
+	// reads set 0 binding 1 (eyeProj), so re-dirty set 0 here, the same way VK_PushEyeProj's
+	// tail does, to force the next main-layout draw to rebind set 0 with both dynamic offsets.
+	// The offsets themselves are still valid from earlier pushes; nothing new needs pushing.
+	vk_reset_descriptor( VK_DESC_UNIFORM );
+	vk_update_descriptor( VK_DESC_UNIFORM, vk.cmd->uniform_descriptor );
 }
 
 
@@ -7952,15 +7953,15 @@ void vk_begin_main_render_pass( qboolean clear )
 	qvkCmdBeginRenderPass( vk.cmd->command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE );
 	vk.inRenderPass = qtrue;
 
-	// Note: Per-eye MVP matrices are passed via push constants (128 bytes),
-	// no VR matrices UBO needed
+	// Note: mono modelview is passed via push constants (64 bytes); per-eye
+	// projection lives in the ViewTransform UBO (set 0, binding 1)
 
 	vk.cmd->last_pipeline = VK_NULL_HANDLE;
 	vk.cmd->depth_range = DEPTH_RANGE_COUNT;
 
-	// Reset descriptor set tracking - descriptors bound in previous render pass are invalid
-	// and must be rebound for this render pass. This prevents validation errors when
-	// resuming the main pass after HUD rendering.
+	// Conservative reset of binding tracking across the render-pass transition;
+	// vk_bind_descriptor_sets self-heals set 0 (see there) so the next draw is
+	// never left without the uniform/eyeProj descriptor.
 	Com_Memset( vk.cmd->descriptor_set.current, 0, sizeof( vk.cmd->descriptor_set.current ) );
 	vk.cmd->descriptor_set.start = ~0U;
 	vk.cmd->descriptor_set.end = 0;
@@ -8156,7 +8157,9 @@ void vk_begin_hud_render_pass( qboolean clear )
 
 	vk.cmd->last_pipeline = VK_NULL_HANDLE;
 
-	// Reset descriptor set tracking - descriptors bound in previous render pass are invalid
+	// Conservative reset of binding tracking across the render-pass transition;
+	// vk_bind_descriptor_sets self-heals set 0 (see there) so the next draw is
+	// never left without the uniform/eyeProj descriptor.
 	Com_Memset( vk.cmd->descriptor_set.current, 0, sizeof( vk.cmd->descriptor_set.current ) );
 	vk.cmd->descriptor_set.start = ~0U;
 	vk.cmd->descriptor_set.end = 0;
@@ -8454,6 +8457,10 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 	vk.cmd->descriptor_set.start = ~0U;
 
 	Com_Memset( &vk.cmd->scissor_rect, 0, sizeof( vk.cmd->scissor_rect ) );
+
+	// prime set 0 binding 1 so every dynamic-offset bind this frame has a
+	// valid eyeproj_offset even before the first RB_BeginDrawingView() (e.g. 2D/menu draws)
+	VK_PushEyeProj();
 
 	vk.stats.push_size = 0;
 }

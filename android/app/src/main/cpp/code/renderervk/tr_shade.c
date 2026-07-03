@@ -1299,6 +1299,25 @@ uint32_t VK_PushUniform( const vkUniform_t *uniform ) {
 }
 
 
+uint32_t VK_PushEyeProj( void ) {
+	const uint32_t size = sizeof( float ) * 32;
+	const uint32_t offset = PAD( vk.cmd->vertex_buffer_offset, vk.uniform_alignment );
+
+	if ( offset + size > vk.geometry_buffer_size )
+		return ~0U;
+
+	Com_Memcpy( vk.cmd->vertex_buffer_ptr + offset, vk_view_eyeproj, size );
+	vk.cmd->vertex_buffer_offset = offset + PAD( size, vk.uniform_alignment );
+	vk.cmd->eyeproj_offset = offset;
+
+	// dirty set 0 so the next vk_bind_descriptor_sets rebinds with new offsets
+	vk_reset_descriptor( VK_DESC_UNIFORM );
+	vk_update_descriptor( VK_DESC_UNIFORM, vk.cmd->uniform_descriptor );
+
+	return offset;
+}
+
+
 #ifdef USE_PMLIGHT
 void VK_LightingPass( void )
 {

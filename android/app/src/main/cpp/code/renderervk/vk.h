@@ -56,15 +56,6 @@
 #define VK_DESC_FOG_ONLY     VK_DESC_TEXTURE1
 #define VK_DESC_FOG_DLIGHT   VK_DESC_TEXTURE1
 
-// Multiview descriptor bindings (VR matrices at binding 0)
-#define VK_DESC_MV_VRMATRICES  0
-#define VK_DESC_MV_UNIFORM     1
-#define VK_DESC_MV_TEXTURE0    2
-#define VK_DESC_MV_TEXTURE1    3
-#define VK_DESC_MV_TEXTURE2    4
-#define VK_DESC_MV_FOG_COLLAPSE 5
-#define VK_DESC_MV_COUNT       6
-
 typedef enum {
 	TYPE_COLOR_BLACK,
 	TYPE_COLOR_WHITE,
@@ -324,6 +315,10 @@ qboolean vk_init_xr_resources( void );  // Initialize XR swapchain resources
 qboolean vk_alloc_vbo( const byte *vbo_data, int vbo_size );
 void vk_update_mvp( const float *m );
 
+extern float vk_view_eyeproj[2][16];
+void vk_set_view_eyeproj( void );
+uint32_t VK_PushEyeProj( void );
+
 uint32_t vk_tess_index( uint32_t numIndexes, const void *src );
 void vk_bind_index_buffer( VkBuffer buffer, uint32_t offset );
 #ifdef USE_VBO
@@ -359,6 +354,7 @@ typedef struct vk_tess_s {
 
 	VkDescriptorSet uniform_descriptor;
 	uint32_t		uniform_read_offset;
+	uint32_t		eyeproj_offset;	// dynamic offset for set 0 binding 1 (per-view eyeProj)
 	VkDeviceSize	buf_offset[8];
 	VkDeviceSize	vbo_offset[8];
 
@@ -476,7 +472,7 @@ typedef struct {
 	VkDescriptorSetLayout set_layout_input_attachment;	// subpass input attachment
 	VkDescriptorSetLayout set_layout_4samplers;			// 4 combined image samplers for bloom blur
 
-	VkPipelineLayout pipeline_layout;			// main shaders (128-byte push constants for per-eye MVP)
+	VkPipelineLayout pipeline_layout;			// main shaders (64-byte mono modelview push; per-eye projection in set 0 binding 1)
 	VkPipelineLayout pipeline_layout_storage;	// flare test shader layout
 	VkPipelineLayout pipeline_layout_post_process;	// post-processing
 	VkPipelineLayout pipeline_layout_blend;		// post-processing
