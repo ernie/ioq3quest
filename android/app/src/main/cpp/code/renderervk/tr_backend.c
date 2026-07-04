@@ -1773,6 +1773,7 @@ static const void *RB_SwapBuffers( const void *data ) {
 #ifdef USE_VULKAN
 	backEnd.doneBloom = qfalse;
 	backEnd.doneFlares = qfalse;
+	backEnd.hudDeferred = qfalse;
 #endif
 
 	return (const void *)(cmd + 1);
@@ -1857,6 +1858,9 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 		// captured by bloom / don't inflate the fixture's bloom blob. The
 		// post-bloom 2D subpass stays open for this draw and subsequent 2D commands.
 		RB_RenderDeferredFlares();
+		// Replay the in-world VR HUD sprite over the corona (Option B): opaque HUD pixels
+		// composite over the additive corona; the corona shows through transparent regions.
+		RB_DrawDeferredHud();
 	}
 
 	return (const void*)(cmd + 1);

@@ -8520,6 +8520,9 @@ void vk_end_frame( void )
 				// Fallback deferred-corona site for frames without an RC_BEGIN_POST_BLOOM_2D
 				// command; doneFlares makes this a no-op once the tr_backend hook ran.
 				RB_RenderDeferredFlares();
+				// Fallback replay of the in-world HUD sprite over the corona; hudDeferred
+				// makes this a no-op once the tr_backend hook already replayed it.
+				RB_DrawDeferredHud();
 
 				// Now end the post-bloom 2D subpass
 				vk_end_post_bloom_subpass();
