@@ -49,6 +49,7 @@ COMFORT OPTIONS MENU
 #define ID_HUDYOFFSET		    133
 #define ID_HUDSCALE			    134
 #define ID_SCREENCURVATURE	    135
+#define ID_VIRTUALSCREENMODE	137
 
 #define ID_BACK					136
 
@@ -70,6 +71,7 @@ typedef struct {
 	menuslider_s 		hudyoffset;
 	menuslider_s 		hudscale;
 	menuslider_s 		screencurvature;
+	menulist_s			virtualscreenmode;
 
 	menubitmap_s		back;
 } comfort_t;
@@ -92,6 +94,7 @@ static void Comfort_SetMenuItems( void ) {
 	s_comfort.hudyoffset.curvalue			= trap_Cvar_VariableValue( "vr_hudYOffset" ) + 200;
 	s_comfort.hudscale.curvalue				= trap_Cvar_VariableValue( "vr_hudScale" );
 	s_comfort.screencurvature.curvalue		= trap_Cvar_VariableValue( "vr_screenCurvature" );
+	s_comfort.virtualscreenmode.curvalue	= trap_Cvar_VariableValue( "vr_virtualScreenMode" );
 }
 
 
@@ -141,6 +144,10 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 			trap_Cvar_SetValue( "vr_screenCurvature", s_comfort.screencurvature.curvalue);
 			break;
 
+		case ID_VIRTUALSCREENMODE:
+			trap_Cvar_SetValue( "vr_virtualScreenMode", s_comfort.virtualscreenmode.curvalue );
+			break;
+
 		case ID_BACK:
 			UI_PopMenu();
 			break;
@@ -149,6 +156,13 @@ static void Comfort_MenuEvent( void* ptr, int notification ) {
 
 static void Comfort_MenuInit( void ) {
 	int				y;
+
+	static const char *s_virtualScreenModes[] =
+	{
+		"Fixed",
+		"Follow",
+		NULL,
+	};
 
 	memset( &s_comfort, 0 ,sizeof(comfort_t) );
 
@@ -285,6 +299,17 @@ static void Comfort_MenuInit( void ) {
 	s_comfort.screencurvature.minvalue		     = 0.0f;
 	s_comfort.screencurvature.maxvalue		     = 1.0f;
 
+	y += BIGCHAR_HEIGHT+2;
+	s_comfort.virtualscreenmode.generic.type	 = MTYPE_SPINCONTROL;
+	s_comfort.virtualscreenmode.generic.x		 = VR_X_POS;
+	s_comfort.virtualscreenmode.generic.y		 = y;
+	s_comfort.virtualscreenmode.generic.flags	 = QMF_PULSEIFFOCUS|QMF_SMALLFONT;
+	s_comfort.virtualscreenmode.generic.name	 = "Virtual screen mode:";
+	s_comfort.virtualscreenmode.generic.id 	 = ID_VIRTUALSCREENMODE;
+	s_comfort.virtualscreenmode.generic.callback = Comfort_MenuEvent;
+	s_comfort.virtualscreenmode.itemnames		 = s_virtualScreenModes;
+	s_comfort.virtualscreenmode.numitems		 = 2;
+
 	s_comfort.back.generic.type	    = MTYPE_BITMAP;
 	s_comfort.back.generic.name     = ART_BACK0;
 	s_comfort.back.generic.flags    = QMF_LEFT_JUSTIFY|QMF_PULSEIFFOCUS;
@@ -310,6 +335,7 @@ static void Comfort_MenuInit( void ) {
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hudyoffset );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.hudscale );
 	Menu_AddItem( &s_comfort.menu, &s_comfort.screencurvature );
+	Menu_AddItem( &s_comfort.menu, &s_comfort.virtualscreenmode );
 
 	Menu_AddItem( &s_comfort.menu, &s_comfort.back );
 

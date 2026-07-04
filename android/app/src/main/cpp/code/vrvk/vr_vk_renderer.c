@@ -34,6 +34,7 @@ extern vr_clientinfo_t vr;
 extern cvar_t *vr_heightAdjust;
 extern cvar_t *vr_refreshrate;
 extern cvar_t *vr_desktopMode;
+extern cvar_t *vr_virtualScreenMode;
 
 const float hudScale = M_PI * 15.0f / 180.0f;
 
@@ -42,6 +43,7 @@ XrTime lastPredictedDisplayTime = 0;
 qboolean frameStarted = qfalse;
 qboolean needRecenter = qtrue;
 qboolean fullscreenMode = qfalse;
+qboolean menuYawTracking = qfalse;
 
 // Per-frame data held between BeginFrame and EndFrame
 XrFovf fov = { 0 };
@@ -382,11 +384,46 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 	const int use_virtual_screen = VR_Gameplay_ShouldRenderInVirtualScreen();
 	if (use_virtual_screen)
 	{
-		// Capture menuYaw on FIRST FRAME of virtual screen mode (not during gameplay)
-		if (!fullscreenMode && !vr.menuYawLocked) {
+		// Capture menuYaw on the first frame of the window, and re-capture
+		// when the client state changes mid-window (e.g. a map load
+		// beginning) so the screen appears where the player is facing
+		if ((!fullscreenMode || VR_Gameplay_VirtualScreenContextChanged()) && !vr.menuYawLocked) {
 			vr.menuYaw = vr.hmdorientation[YAW];
 		}
 		fullscreenMode = qtrue;
+
+		// Follow mode: re-face the cylinder when the head yaw drifts far,
+		// with hysteresis so it settles instead of chattering. Angular
+		// thresholds are the chord-angle equivalents of the PC ladder's
+		// distance ratios (settle ~2.3 deg, re-target 35 deg, snap 70 deg);
+		// drift is 1%/frame of the remaining angle.
+		if (vr_virtualScreenMode && vr_virtualScreenMode->integer == 1 && !vr.menuYawLocked)
+		{
+			float yawDelta = AngleSubtract(vr.hmdorientation[YAW], vr.menuYaw);
+			float absDelta = fabsf(yawDelta);
+
+			if (absDelta < 2.3f)
+			{
+				menuYawTracking = qfalse;
+			}
+			else if (absDelta > 35.0f || menuYawTracking)
+			{
+				menuYawTracking = qtrue;
+				if (absDelta > 70.0f)
+				{
+					// Too far - snap; we probably just started or switched into the virtual screen
+					vr.menuYaw = vr.hmdorientation[YAW];
+				}
+				else
+				{
+					vr.menuYaw += yawDelta * 0.01f;
+				}
+			}
+		}
+		else
+		{
+			menuYawTracking = qfalse;
+		}
 	}
 	else
 	{
