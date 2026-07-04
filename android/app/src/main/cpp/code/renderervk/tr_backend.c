@@ -1772,6 +1772,7 @@ static const void *RB_SwapBuffers( const void *data ) {
 	backEnd.doneSurfaces = qfalse;
 #ifdef USE_VULKAN
 	backEnd.doneBloom = qfalse;
+	backEnd.doneFlares = qfalse;
 #endif
 
 	return (const void *)(cmd + 1);
@@ -1850,6 +1851,12 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 		// Transition through bloom extract/composite (or gamma) to post-bloom 2D subpass
 		vk_finish_subpass_post();
 		// Now in post-bloom/post-gamma 2D subpass - vk.inPostBloom2DSubpass is set
+
+		// 3D->2D boundary: draw the deferred main-view coronas now, after the
+		// bloom bright-pass has already sampled the scene, so they aren't
+		// captured by bloom / don't inflate the fixture's bloom blob. The
+		// post-bloom 2D subpass stays open for this draw and subsequent 2D commands.
+		RB_RenderDeferredFlares();
 	}
 
 	return (const void*)(cmd + 1);

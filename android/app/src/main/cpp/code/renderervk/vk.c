@@ -8516,6 +8516,11 @@ void vk_end_frame( void )
 				vk.cmd->last_pipeline = VK_NULL_HANDLE;
 				vk_finish_subpass_post();
 				// vk_finish_subpass_post transitions to post-bloom 2D subpass but doesn't end it
+
+				// Fallback deferred-corona site for frames without an RC_BEGIN_POST_BLOOM_2D
+				// command; doneFlares makes this a no-op once the tr_backend hook ran.
+				RB_RenderDeferredFlares();
+
 				// Now end the post-bloom 2D subpass
 				vk_end_post_bloom_subpass();
 			}
