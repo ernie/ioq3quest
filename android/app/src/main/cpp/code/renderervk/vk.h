@@ -297,6 +297,7 @@ void vk_clear_depth( qboolean clear_stencil );
 void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex );
 void vk_end_frame( void );
 void vk_finish_frame( void );  // Force-end an interrupted frame (for shutdown)
+void vk_discard_frame( void ); // End an interrupted frame without submitting it (shutdown)
 
 void vk_end_render_pass( void );
 void vk_begin_main_render_pass( qboolean clear );
@@ -746,6 +747,7 @@ typedef struct {
 	renderPass_t renderPassIndex;
 	qboolean inRenderPass;		// true when actually inside a render pass
 	qboolean recordingCommands;	// true when command buffer is recording (between Begin/End)
+	qboolean descriptorsReady;	// qfalse between vk_release_resources() and vk_init_descriptors() - pool contents are dead
 
 	// Subpass optimization: track when HUD rendering completes the combined pass
 	// When using combined subpass render pass, if HUD rendering is requested,

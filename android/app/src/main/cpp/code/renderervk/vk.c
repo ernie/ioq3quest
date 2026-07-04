@@ -2837,6 +2837,8 @@ void vk_init_descriptors( void )
 
 		vk_update_attachment_descriptors();
 	}
+
+	vk.descriptorsReady = qtrue;
 }
 
 
@@ -4378,6 +4380,7 @@ void vk_initialize( void )
 		alloc_info.commandBufferCount = 1;
 
 		VK_CHECK( qvkAllocateCommandBuffers( vk.device, &alloc_info, &vk.staging_command_buffer ) );
+		SET_OBJECT_NAME( vk.staging_command_buffer, "staging cmd", VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT );
 	}
 #endif
 
@@ -4395,9 +4398,17 @@ void vk_initialize( void )
 		alloc_info.commandBufferCount = 1;
 
 		VK_CHECK( qvkAllocateCommandBuffers( vk.device, &alloc_info, &vk.tess[i].command_buffer ) );
-
-		//SET_OBJECT_NAME( vk.tess[i].command_buffer, va( "command buffer %i", i ), VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT );
+		SET_OBJECT_NAME( vk.tess[i].command_buffer, va( "tess cmd %i", i ), VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT );
 	}
+
+#ifdef USE_UPLOAD_QUEUE
+	ri.Printf( PRINT_ALL, "Command buffers: staging=%p tess0=%p tess1=%p\n",
+		(void *)vk.staging_command_buffer, (void *)vk.tess[0].command_buffer,
+		(void *)vk.tess[1].command_buffer );
+#else
+	ri.Printf( PRINT_ALL, "Command buffers: tess0=%p tess1=%p\n",
+		(void *)vk.tess[0].command_buffer, (void *)vk.tess[1].command_buffer );
+#endif
 
 	//
 	// Descriptor pool.
@@ -5020,6 +5031,9 @@ void vk_queue_wait_idle( void )
 }
 
 
+// Precondition: callers must end (discard or finish) any in-flight frame
+// first — the pool reset below frees every set, and descriptorsReady only
+// guards frames that haven't started yet.
 void vk_release_resources( void ) {
 	int i, j;
 
@@ -5046,8 +5060,19 @@ void vk_release_resources( void ) {
 
 	VK_CHECK( qvkResetDescriptorPool( vk.device, vk.descriptor_pool, 0 ) );
 
-	// Reallocate XR descriptor sets that were invalidated by pool reset
-	// (includes FBO color, bloom, desktop mirror, and virtual screen mirror descriptors)
+	// Pool reset freed every set. vk_reallocate_xr_fbo_descriptors() below
+	// restores only the bloom-chain sampler sets; the rest (storage, tess
+	// uniform, screenmap) stay dead until R_Init reruns vk_init_descriptors().
+	// NULL them so a gate bypass binds NULL rather than a freed handle.
+	vk.descriptorsReady = qfalse;
+	vk.storage.descriptor = VK_NULL_HANDLE;
+	vk.screenMap.color_descriptor = VK_NULL_HANDLE;
+	for ( i = 0; i < NUM_COMMAND_BUFFERS; i++ ) {
+		vk.tess[i].uniform_descriptor = VK_NULL_HANDLE;
+	}
+
+	// Reallocate the bloom-chain descriptor sets invalidated by the pool reset
+	// (quest has no desktop mirror or virtual screen mirror descriptors)
 	vk_reallocate_xr_fbo_descriptors();
 
 	if ( vk_world.num_image_chunks > 1 ) {
@@ -8264,6 +8289,20 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 {
 	VkCommandBufferBeginInfo begin_info;
 
+	// Descriptor sets are dead during the map-load window (between
+	// vk_release_resources() and vk_init_descriptors()); refuse to start a
+	// frame that would bind freed or dangling descriptors.
+	if ( !vk.descriptorsReady ) {
+		ri.Printf( PRINT_DEVELOPER, "vk_begin_frame: skipped, descriptor sets not initialized\n" );
+		// Guard: abandon a frame left open across the pool reset rather than
+		// let vk_end_frame submit dead-set binds.
+		if ( vk.recordingCommands || vk.inRenderPass ) {
+			vk_discard_frame();
+		}
+		vk.frame_count = 0;
+		return;
+	}
+
 	// If a frame is already in progress, we need to properly finish it first
 	// This can happen during loading when VR_Renderer_SubmitLoadingFrame starts new frames
 	// but the renderer doesn't always render to them (e.g., during reinit when uivm is NULL)
@@ -8665,6 +8704,86 @@ void vk_finish_frame( void )
 }
 
 
+/*
+==============================================================================
+
+vk_discard_frame - Abandon an interrupted frame without submitting it
+
+The frame is incomplete and its output is irrelevant at teardown; submitting
+it would hand the queue draws referencing resources RE_Shutdown is about to
+destroy, with attachments possibly left mid-pass (VUID-vkCmdDraw-None-09600).
+
+Mirrors vk_finish_frame's subpass-advance logic (required by the subpass
+optimization path — the recorded EndRenderPass is validated at record time
+even though the buffer is never submitted) but skips the queue submit.
+
+==============================================================================
+*/
+void vk_discard_frame( void )
+{
+	// Safety check - if cmd is null or command buffer is invalid, we can't do anything
+	if ( !vk.cmd || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
+		vk.inRenderPass = qfalse;
+		vk.inPostBloom2DSubpass = qfalse;
+		vk.recordingCommands = qfalse;
+		vk.frame_count = 0;
+		vk.renderPassIndex = RENDER_PASS_MAIN;
+		return;
+	}
+
+	// If we're in a render pass, end it first
+	if ( vk.inRenderPass && vk.recordingCommands ) {
+		// For subpass render passes, we need to advance through remaining subpasses before ending.
+		// Bloom path uses 4 subpasses (0-1-2-3), gamma-only path uses 3 subpasses (0-1-2).
+		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
+			qboolean useBloom = ( r_bloom && r_bloom->integer );
+			if ( useBloom ) {
+				// 4-subpass bloom path: scene(0) → extract(1) → composite(2) → post-bloom 2D(3)
+				if ( !vk.subpassPostDone ) {
+					// Still in subpass 0 (scene) - advance through 1, 2, 3
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 1 (extract)
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (composite)
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 3 (post-bloom 2D)
+				} else if ( !vk.inPostBloom2DSubpass ) {
+					// subpassPostDone but not in post-bloom 2D - we're in subpass 2, need to go to 3
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 3 (post-bloom 2D)
+				}
+				// Now in final subpass (3), safe to end
+			} else {
+				// 3-subpass gamma-only path: scene(0) → gamma(1) → post-gamma 2D(2)
+				if ( !vk.subpassPostDone ) {
+					// Still in subpass 0 - advance through 1, 2
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 1 (gamma)
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (post-gamma 2D)
+				} else if ( !vk.inPostBloom2DSubpass ) {
+					// subpassPostDone but not in post-gamma 2D - we're in subpass 1, need to go to 2
+					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (post-gamma 2D)
+				}
+				// Now in final subpass (2), safe to end
+			}
+		} else if ( vk.renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+			// Already in post-bloom 2D subpass (vk_finish_subpass_post changed renderPassIndex)
+			// Already in final subpass, safe to end
+		}
+		// All other render pass types (RENDER_PASS_MAIN, HUD, etc.) just end directly
+		qvkCmdEndRenderPass( vk.cmd->command_buffer );
+		vk.inRenderPass = qfalse;
+		vk.inPostBloom2DSubpass = qfalse;
+		vk.subpassPostDone = qfalse;
+	}
+
+	// If we're recording commands, end (but never submit) the command buffer
+	if ( vk.recordingCommands ) {
+		VK_CHECK( qvkEndCommandBuffer( vk.cmd->command_buffer ) );
+		vk.recordingCommands = qfalse;
+	}
+
+	// Do not touch vk.cmd->waitForFence: it may still track this slot's
+	// previous real submission, which vk_begin_frame must still wait on.
+	vk.frame_count = 0;
+	vk.renderPassIndex = RENDER_PASS_MAIN;
+	vk.inPostBloom2DSubpass = qfalse;
+}
 
 
 static qboolean is_bgr( VkFormat format ) {
