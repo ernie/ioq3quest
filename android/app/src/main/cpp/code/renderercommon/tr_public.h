@@ -256,12 +256,6 @@ typedef struct {
 	// VR Vulkan swapchain accessor (pull model for XR swapchain initialization)
 	// Returns const VR_VulkanSwapchainInfo* (void* to avoid Vulkan header dependency)
 	const void* (*VR_Vulkan_GetSwapchainInfo)( void );
-
-	// Virtual screen state query (renderer pulls from VR layer)
-	// Returns qtrue if virtual screen should be rendered, filling in precomputed MVP matrices
-	// screenMVP: per-eye MVP matrices for the virtual screen cylinder
-	// floorMVP: per-eye MVP matrices for the floor grid quad
-	qboolean (*VR_GetVirtualScreenState)( float screenMVP[2][16], float floorMVP[2][16] );
 } refimport_t;
 
 extern	refimport_t	ri;

@@ -42,7 +42,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // VR Vulkan accessors - renderer pulls XR-created resources during init
 extern const void* VR_Vulkan_GetDeviceInfo(void);
 extern const void* VR_Vulkan_GetSwapchainInfo(void);
-extern qboolean VR_GetVirtualScreenMVP(float screenMVP[2][16], float floorMVP[2][16]);
 
 // Vulkan platform functions
 #ifdef USE_VULKAN
@@ -3260,9 +3259,6 @@ void CL_InitRef( void ) {
 	// VR Vulkan accessors - renderer pulls XR-created resources during init
 	ri.VR_Vulkan_GetDeviceInfo = VR_Vulkan_GetDeviceInfo;
 	ri.VR_Vulkan_GetSwapchainInfo = VR_Vulkan_GetSwapchainInfo;
-
-	// Virtual screen state query - renderer pulls virtual screen MVP matrices
-	ri.VR_GetVirtualScreenState = VR_GetVirtualScreenMVP;
 
 	// VR session initialization (called from renderer after graphics init)
 	ri.GLimp_InitVR = GLimp_InitVR;

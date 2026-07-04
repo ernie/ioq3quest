@@ -30,7 +30,6 @@ set(VR_VK_SOURCES
     ${SOURCE_DIR}/vrvk/vr_vk_session.c
     ${SOURCE_DIR}/vrvk/vr_vk_swapchains.c
     ${SOURCE_DIR}/vrvk/vr_vk_renderer.c
-    ${SOURCE_DIR}/vrvk/vr_vk_virtual_screen.c
 )
 
 # Combine VR sources

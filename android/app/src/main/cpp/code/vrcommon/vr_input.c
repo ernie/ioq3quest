@@ -1827,10 +1827,6 @@ static void IN_VRButtons( qboolean isRightController, uint32_t buttons )
 				IN_ActivateInput(&controller->buttons, VR_Button_B);
 				vr.recenter_follow_camera = qtrue;
 			}
-			else
-			{
-				VR_VirtualScreen_ResetPosition();
-			}
 		}
 		IN_HandleActiveInput(&controller->buttons, VR_Button_B, "B", 0, qfalse);
 	}

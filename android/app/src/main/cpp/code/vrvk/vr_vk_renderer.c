@@ -29,7 +29,6 @@
 #include "vr_vk.h"
 #include "vr_vk_debug.h"
 #include "vr_vk_swapchains.h"
-#include "vr_vk_virtual_screen.h"
 
 extern vr_clientinfo_t vr;
 extern cvar_t *vr_heightAdjust;
@@ -175,15 +174,11 @@ void VR_InitRenderer(VR_Engine* engine)
 	if (!re.InitXRResources()) {
 		Com_Printf("[VR Vulkan] Warning: Failed to initialize XR resources\n");
 	}
-
-	VR_VirtualScreen_Init();
-	VR_VirtualScreen_ResetPosition();
 }
 
 
 void VR_DestroyRenderer(VR_Engine* engine)
 {
-	VR_VirtualScreen_Destroy();
 	VR_VK_DestroySwapchains(&engine->appState.Renderer.Swapchains);
 
 	// Destroy VIEW reference space
@@ -395,7 +390,6 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 	}
 	else
 	{
-		VR_VirtualScreen_ResetPosition();
 		if (!vr.menuYawLocked) {
 			vr.menuYaw = vr.hmdorientation[YAW];
 		}
@@ -517,9 +511,6 @@ void VR_Recenter(VR_Engine* engine, XrTime predictedDisplayTime)
 
 	// Update menu orientation
 	vr.menuYaw = 0;
-
-	// Reset VirtualScreen's position
-	VR_VirtualScreen_ResetPosition();
 }
 
 

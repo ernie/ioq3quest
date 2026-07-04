@@ -42,9 +42,4 @@ void VR_Graphics_InvalidateFunctionPointers(void);
 // Returns XR_SUCCESS on success
 XrResult VR_Graphics_CreateSession(XrInstance instance, XrSystemId systemId, XrSession* session);
 
-// Virtual screen interface
-// These have graphics-specific implementations but graphics-agnostic signatures
-void VR_VirtualScreen_ResetPosition(void);
-float VR_VirtualScreen_GetCurrentYaw(void);
-
 #endif // __VR_GRAPHICS_H
