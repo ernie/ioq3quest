@@ -8596,6 +8596,13 @@ void vk_end_frame( void )
 			vk_end_render_pass();
 		}
 		else {
+			// Direct-mode fallback for frames without an RC_BEGIN_POST_BLOOM_2D
+			// command; doneFlares/hudDeferred no-op these once the tr_backend
+			// hook ran, and both refuse to draw once 2D projection is active.
+			if ( vk.renderPassIndex == RENDER_PASS_MAIN && vk.inRenderPass ) {
+				RB_RenderDeferredFlares();
+				RB_DrawDeferredHud();
+			}
 			// Fallback: end current render pass (non-subpass path)
 			// This can happen if subpass resources failed to create or for r_fbo 0
 			vk_end_render_pass();

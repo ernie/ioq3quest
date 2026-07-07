@@ -671,9 +671,10 @@ void RB_RenderFlares( void ) {
 ==================
 RB_RenderDeferredFlares
 
-Draws main-view (PV_NONE) coronas once per frame at the 3D->2D boundary, after
-the bloom-extract subpass has sampled the scene, so coronas aren't re-bloomed.
-doneFlares guards the once-per-frame; the draw is idempotent across the two hook sites.
+Draws main-view (PV_NONE) coronas once per frame at the 3D->2D boundary: in FBO
+mode after the bloom-extract subpass has sampled the scene (so coronas aren't
+re-bloomed), in direct mode (r_fbo 0) into the still-open main pass. doneFlares
+guards the once-per-frame; the draw is idempotent across the hook sites.
 
 The coronas are world-space billboards, so unlike the engine's window-space
 deferred draw this must re-establish the MAIN view's camera: by the time we run,
@@ -767,12 +768,13 @@ void RB_CaptureDeferredHud( const vec3_t origin, const vec3_t left, const vec3_t
 ==================
 RB_DrawDeferredHud
 
-Replays the captured in-world HUD sprite in the post-bloom subpass, AFTER
-RB_RenderDeferredFlares has drawn the corona. Draws once per frame even though two
-hook sites call it. Runs unconditionally of r_flares so the HUD still appears when
-flares are disabled. The post-bloom 2D subpass has no depth attachment (depth
-test/write are force-disabled there), so the HUD draws unoccluded and simply
-alpha-blends over the corona by virtue of drawing after it.
+Replays the captured in-world HUD sprite at the 3D->2D boundary, AFTER
+RB_RenderDeferredFlares has drawn the corona; draws once per frame across the
+hook sites and runs independent of r_flares. In FBO mode it lands in the
+post-bloom 2D subpass (no depth attachment, so unoccluded); in direct mode
+(r_fbo 0) in the still-open main pass, where DEPTH_RANGE_WEAPON reproduces the
+original inline RF_DEPTHHACK draw. Either way it composites over the corona by
+drawing after it.
 ==================
 */
 void RB_DrawDeferredHud( void ) {
@@ -804,7 +806,8 @@ void RB_DrawDeferredHud( void ) {
 	vk_update_mvp( deferredHudModelMatrix );
 
 	RB_BeginSurface( tr.hudShader, deferredHudFogNum );
-	// weapon depth range as in the main pass (no-op here: this subpass has no depth attachment)
+	// weapon depth range: no-op in the FBO subpass (no depth attachment),
+	// load-bearing in direct mode so world geometry can't occlude the HUD quad
 	tess.depthRange = DEPTH_RANGE_WEAPON;
 	RB_AddQuadStamp( deferredHudOrigin, deferredHudLeft, deferredHudUp, deferredHudColor );
 	RB_EndSurface();

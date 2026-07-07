@@ -1845,8 +1845,8 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 		tess.shader = NULL;
 	}
 
-	// Only applies to subpass-based rendering (r_fbo 1)
-	// RENDER_PASS_MAIN_WITH_POST is used for both bloom and gamma-only paths
+	// Subpass-based rendering (r_fbo 1): RENDER_PASS_MAIN_WITH_POST covers both
+	// the bloom and gamma-only paths
 	// Also requires that we're actually in a render pass with a valid command buffer
 	if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.inRenderPass ) {
 		// Transition through bloom extract/composite (or gamma) to post-bloom 2D subpass
@@ -1860,6 +1860,13 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 		RB_RenderDeferredFlares();
 		// Replay the in-world VR HUD sprite over the corona (Option B): opaque HUD pixels
 		// composite over the additive corona; the corona shows through transparent regions.
+		RB_DrawDeferredHud();
+	}
+	else if ( vk.renderPassIndex == RENDER_PASS_MAIN && vk.inRenderPass ) {
+		// Direct mode (r_fbo 0): same 3D->2D boundary, no subpass to cross.
+		// The corona/HUD deferral out of the main draw list is unconditional,
+		// so replay here into the still-open main pass or they never draw.
+		RB_RenderDeferredFlares();
 		RB_DrawDeferredHud();
 	}
 
