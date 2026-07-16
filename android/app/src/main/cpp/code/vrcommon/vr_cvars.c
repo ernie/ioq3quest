@@ -43,10 +43,12 @@ cvar_t *vr_thumbstickFullDeflection = NULL;
 cvar_t *vr_weaponAdjust = NULL;
 cvar_t *vr_triggerSensitivity = NULL;
 cvar_t *vr_analogWalk = NULL;
+cvar_t *vr_frameTimingLog = NULL;
 
 void VR_InitCvars( void )
 {
 	Cvar_Get ("skip_ioq3_credits", "0.0", CVAR_ARCHIVE);
+	Cvar_Get ("vr_platform", "quest", CVAR_ROM);	// advertise the VR platform to UI modules
 	vr_worldscale = Cvar_Get ("vr_worldscale", "32.0", CVAR_ARCHIVE);
 	vr_worldscaleScaler = Cvar_Get ("vr_worldscaleScaler", "1.0", CVAR_ARCHIVE);
 	vr_hudDepth = Cvar_Get ("vr_hudDepth", "3", CVAR_ARCHIVE);
@@ -87,6 +89,7 @@ void VR_InitCvars( void )
 	vr_triggerSensitivity = Cvar_Get ("vr_triggerSensitivity", "0.25", CVAR_ARCHIVE);
 	Cvar_CheckRange( vr_triggerSensitivity, 0.1f, 0.9f, qfalse );
 	vr_analogWalk = Cvar_Get ("vr_analogWalk", "1", CVAR_ARCHIVE); // 0 - classic always-run, 1 - silent walk below run speed
+	vr_frameTimingLog = Cvar_Get ("vr_frameTimingLog", "0", 0); // diagnostic: log XR frame pacing (shouldRender/predictedDisplayTime) to console
 
 	// Values are:  scale,right,up,forward,pitch,yaw,roll
 	// VALUES PROVIDED BY SkillFur - Thank-you!

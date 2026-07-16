@@ -18,6 +18,82 @@ static inline float radians(float degrees) {
 	return degrees * (float)M_PI / 180.0f;
 }
 
+extern cvar_t *vr_frameTimingLog;
+
+// Diagnostic only: logs XR frame pacing (shouldRender transitions and
+// predictedDisplayTime deltas) to the console when vr_frameTimingLog is
+// nonzero. Never touches frame submission. No-op (aside from re-arming
+// its own priming state) when disabled.
+static void VR_LogFrameTiming( const XrFrameState *fs, qboolean enabled )
+{
+	static qboolean primed = qfalse;
+	static XrBool32 lastShouldRender = 0;
+	static XrTime lastDisplayTime = 0;
+	static XrTime windowAccumTime = 0;
+	static XrTime windowMaxDelta = 0;
+	static XrDuration windowPeriod = 0;
+	static int windowFrameCount = 0;
+	static int windowLongCount = 0;
+	XrTime delta;
+
+	if ( !enabled )
+	{
+		// Re-arm so the next enable primes cleanly instead of logging a
+		// spurious delta spanning the disabled interval.
+		primed = qfalse;
+		return;
+	}
+
+	if ( !primed )
+	{
+		primed = qtrue;
+		lastShouldRender = fs->shouldRender;
+		lastDisplayTime = fs->predictedDisplayTime;
+		windowPeriod = fs->predictedDisplayPeriod;
+		windowAccumTime = 0;
+		windowMaxDelta = 0;
+		windowFrameCount = 0;
+		windowLongCount = 0;
+		return;
+	}
+
+	if ( fs->shouldRender != lastShouldRender )
+	{
+		Com_Printf( "VR timing: shouldRender -> %d\n", (int)fs->shouldRender );
+		lastShouldRender = fs->shouldRender;
+	}
+
+	delta = fs->predictedDisplayTime - lastDisplayTime;
+	lastDisplayTime = fs->predictedDisplayTime;
+	windowPeriod = fs->predictedDisplayPeriod;
+
+	windowAccumTime += delta;
+	windowFrameCount++;
+	if ( delta > windowMaxDelta )
+	{
+		windowMaxDelta = delta;
+	}
+	if ( windowPeriod > 0 && delta > ( windowPeriod + windowPeriod / 2 ) )
+	{
+		windowLongCount++;
+	}
+
+	if ( windowAccumTime >= 1000000000LL )
+	{
+		Com_Printf( "VR timing: %d frames, period %.2fms, avg %.2fms, max %.2fms, long(>1.5x) %d\n",
+			windowFrameCount,
+			(double)windowPeriod / 1000000.0,
+			( (double)windowAccumTime / (double)windowFrameCount ) / 1000000.0,
+			(double)windowMaxDelta / 1000000.0,
+			windowLongCount );
+
+		windowAccumTime = 0;
+		windowMaxDelta = 0;
+		windowFrameCount = 0;
+		windowLongCount = 0;
+	}
+}
+
 XrFrameState VR_WaitFrame(XrSession session)
 {
 	XrFrameWaitInfo waitFrameInfo = {};
@@ -31,6 +107,8 @@ XrFrameState VR_WaitFrame(XrSession session)
 	XR_CHECK(
 		xrWaitFrame(session, &waitFrameInfo, &frameState),
 		"Failed to wait for XR frame");
+
+	VR_LogFrameTiming( &frameState, vr_frameTimingLog->integer != 0 );
 
 	return frameState;
 }
@@ -159,12 +237,58 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 		cylinder_layer.space = worldSpace;
 		cylinder_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
 
+		// The client draws the virtual screen into a centred 4:3 region of the
+		// eye buffer: 2D is scaled to that region and the scene is rendered with
+		// a symmetric FOV to be cropped down to it. Sample that region rather
+		// than the whole buffer, or the full framebuffer is squished onto a 4:3
+		// surface. The cylinder samples the sub-rect directly, so no blit.
+		int srcWidth, srcHeight, srcX, srcY;
+		int heightFromWidth = (width * 3) / 4;	// 4:3 height using the full width
+		int widthFromHeight = (height * 4) / 3;	// 4:3 width using the full height
+
+		if (heightFromWidth <= height)
+		{
+			// Width-limited: full width fits with a 4:3 height
+			srcWidth = width;
+			srcHeight = heightFromWidth;
+			srcX = 0;
+		}
+		else
+		{
+			// Height-limited (very wide buffers): constrain width to fit 4:3
+			srcHeight = height;
+			srcWidth = widthFromHeight;
+			srcX = (width - srcWidth) / 2;
+		}
+
+		// Centre the crop on the optical rather than the geometric centre: the
+		// headset's FOV is asymmetric (more down-look than up-look) and the
+		// client offsets its 2D by the same amount, so a geometric crop would
+		// shear the two apart. Y grows downward here, so the sign is not
+		// flipped the way a GL blit would need.
+		srcY = (height - srcHeight) / 2;
+		{
+			float tanUp = tanf(vr.fov_angle_up);
+			float tanDown = tanf(vr.fov_angle_down);
+			float tanHeight = tanUp - tanDown;
+
+			if (fabsf(tanHeight) > 0.001f)
+			{
+				float m9 = (tanUp + tanDown) / tanHeight;
+				srcY += (int)( 240.0f * m9 * (srcHeight / 480.0f) );
+			}
+		}
+		if (srcY < 0)
+			srcY = 0;
+		if (srcY > height - srcHeight)
+			srcY = height - srcHeight;
+
 		memset(&cylinder_layer.subImage, 0, sizeof(XrSwapchainSubImage));
 		cylinder_layer.subImage.swapchain = swapchains->color.swapchain;
-		cylinder_layer.subImage.imageRect.offset.x = 0;
-		cylinder_layer.subImage.imageRect.offset.y = 0;
-		cylinder_layer.subImage.imageRect.extent.width = width;
-		cylinder_layer.subImage.imageRect.extent.height = height;
+		cylinder_layer.subImage.imageRect.offset.x = srcX;
+		cylinder_layer.subImage.imageRect.offset.y = srcY;
+		cylinder_layer.subImage.imageRect.extent.width = srcWidth;
+		cylinder_layer.subImage.imageRect.extent.height = srcHeight;
 		cylinder_layer.subImage.imageArrayIndex = 0;  // Cylinder uses single image, not array
 
 		// Position cylinder in front of player at menuYaw direction
@@ -193,6 +317,8 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 
 		cylinder_layer.radius = radius;
 		cylinder_layer.centralAngle = centralAngle;
+		// The cropped region is 4:3 in pixels, corrected by the buffer's own
+		// aspect because its pixels are not angularly square.
 		cylinder_layer.aspectRatio = width / (float)height / 0.75f;
 	}
 
