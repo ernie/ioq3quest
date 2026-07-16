@@ -645,7 +645,7 @@ qboolean FS_FileExists( const char *file );
 qboolean FS_CreatePath (char *OSPath);
 
 int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, qboolean findQvm);
-int FS_GetVMVRAPIVersion( const char *name, void *searchPath );
+int FS_GetVMVRAPIVersion( const char *name, void *searchPath, int *outMinor );
 const char *FS_VMSearchPathName( void *searchPath );
 
 char   *FS_BuildOSPath( const char *base, const char *game, const char *qpath );
