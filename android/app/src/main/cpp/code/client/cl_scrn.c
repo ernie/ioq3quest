@@ -59,6 +59,33 @@ void SCR_DrawNamedPic( float x, float y, float width, float height, const char *
 
 /*
 ================
+SCR_GetViewable4x3Dimensions
+
+Calculate the maximum 4:3 area that fits within the framebuffer.
+For ultra-wide headsets (e.g., Pimax 8KX with ~2:1 ratio), we may be height-limited
+rather than width-limited.
+================
+*/
+static void SCR_GetViewable4x3Dimensions(float *outWidth, float *outHeight) {
+	float fbWidth = cls.glconfig.vidWidth;
+	float fbHeight = cls.glconfig.vidHeight;
+
+	float heightFromWidth = fbWidth * 0.75f;  // 4:3 height if we use full width
+	float widthFromHeight = fbHeight * (4.0f / 3.0f); // 4:3 width if we use full height
+
+	if (heightFromWidth <= fbHeight) {
+		// Normal case: width-limited, full width fits with 4:3 height
+		*outWidth = fbWidth;
+		*outHeight = heightFromWidth;
+	} else {
+		// Ultra-wide case: height-limited, constrain width to fit 4:3
+		*outHeight = fbHeight;
+		*outWidth = widthFromHeight;
+	}
+}
+
+/*
+================
 SCR_AdjustFrom640
 
 Adjusted for resolution and screen aspect ratio
@@ -80,20 +107,38 @@ void SCR_AdjustFrom640( float *x, float *y, float *w, float *h ) {
 	yscale = cls.glconfig.vidHeight / 480.0;
 
 	if (vr.virtual_screen) {
-		// In virtual screen mode, use non-uniform scaling to fill the full framebuffer.
-		// The OpenXR cylinder layer handles 4:3 cropping/display, so we should NOT
-		// pre-correct for aspect ratio here. This matches how UI code works.
+		// In virtual screen mode, scale to 4:3 viewable area and center
+		// For ultra-wide headsets, we may be height-limited rather than width-limited
+		float viewableWidth, viewableHeight;
+		SCR_GetViewable4x3Dimensions(&viewableWidth, &viewableHeight);
+		float viewableXScale = viewableWidth / 640.0f;
+		float viewableYScale = viewableHeight / 480.0f;
+
+		// Use optical center offset to account for asymmetric FOV
+		float opticalOffsetVirtual = 0.0f;
+		float tanUp = tanf(vr.fov_angle_up);
+		float tanDown = tanf(vr.fov_angle_down);
+		float tanHeight = tanUp - tanDown;
+		if (fabsf(tanHeight) > 0.001f) {
+			float m9 = (tanUp + tanDown) / tanHeight;
+			opticalOffsetVirtual = 240.0f * m9;
+		}
+		float xoffset = (cls.glconfig.vidWidth - viewableWidth) / 2.0f;
+		float yoffset = (cls.glconfig.vidHeight - viewableHeight) / 2.0f + opticalOffsetVirtual * viewableYScale;
+
 		if (x) {
-			*x *= xscale;
+			*x *= viewableXScale;
+			*x += xoffset;
 		}
 		if (y) {
-			*y *= yscale;
+			*y *= viewableYScale;
+			*y += yoffset;
 		}
 		if (w) {
-			*w *= xscale;
+			*w *= viewableXScale;
 		}
 		if (h) {
-			*h *= yscale;
+			*h *= viewableYScale;
 		}
 	} else if (vr.weapon_zoomed) {
 		// Weapon zoomed: scaled down with 1:1 square layout (640x640)
