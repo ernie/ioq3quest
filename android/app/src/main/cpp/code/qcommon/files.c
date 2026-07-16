@@ -248,7 +248,6 @@ static	char		fs_gamedir[MAX_OSPATH];	// this will be a single file name with no 
 static	cvar_t		*fs_debug;
 static	cvar_t		*fs_homepath;
 
-static	cvar_t		*fs_forceNativeVM;
 static	cvar_t		*fs_nativeVMBase;
 
 #ifdef __APPLE__
@@ -1473,32 +1472,69 @@ long FS_FOpenFileRead(const char *filename, fileHandle_t *file, qboolean uniqueF
 
 /*
 =================
+FS_GetVMVRAPIVersion
+
+Scan a candidate .qvm (at the given searchpath) for the VR API sentinel
+string. Returns the declared version, or 0 if the QVM is not VR-aware.
+=================
+*/
+int FS_GetVMVRAPIVersion( const char *name, void *searchPath )
+{
+	static const char needle[] = "TRINITY_VR_API/";
+	const int needleLen = (int)sizeof( needle ) - 1;
+	char qvmName[MAX_OSPATH];
+	fileHandle_t f;
+	long len;
+	byte *buf;
+	long i;
+	int version = 0;
+
+	Com_sprintf( qvmName, sizeof( qvmName ), "vm/%s.qvm", name );
+	len = FS_FOpenFileReadDir( qvmName, (searchpath_t *)searchPath, &f, qfalse, qfalse );
+	if ( len <= 0 ) {
+		if ( f )
+			FS_FCloseFile( f );
+		return 0;
+	}
+	buf = Hunk_AllocateTempMemory( len + 1 );
+	FS_Read( buf, len, f );
+	FS_FCloseFile( f );
+	buf[len] = '\0';
+	for ( i = 0; i + needleLen <= len; i++ ) {
+		if ( buf[i] == needle[0] && !memcmp( buf + i, needle, needleLen ) ) {
+			version = atoi( (char *)buf + i + needleLen );
+			break;
+		}
+	}
+	Hunk_FreeTempMemory( buf );
+	return version;
+}
+
+/*
+=================
 FS_FindVM
 
 Find a suitable VM file in search path order.
 
 In each searchpath try:
- - open DLL file if DLL loading enabled
- - open QVM file
-
-Enable search for DLL by setting enableDll to FSVM_ENABLEDLL
+ - if findQvm is qfalse, open a DLL file (native fallback phase)
+ - if findQvm is qtrue, open a QVM file (VR-aware sentinel scan phase)
 
 write found DLL or QVM to "found" and return VMI_NATIVE if DLL, VMI_COMPILED if QVM
 Return the searchpath in "startSearch".
 =================
 */
 
-int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, int enableDll)
+int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, qboolean findQvm)
 {
 	searchpath_t *search, *lastSearch;
 	pack_t *pack;
 	char dllName[MAX_OSPATH], qvmName[MAX_OSPATH];
-	char *netpath;
 
     if(!fs_searchpaths)
 		Com_Error(ERR_FATAL, "Filesystem call made without initialization");
 
-	if(enableDll) {
+	if(!findQvm) {
 		//If the game dir is not mission pack, then use the cvar to tell us which
 		//base game libraries to load
 		char nativeVMBase[256];
@@ -1527,18 +1563,23 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 
 	while(search)
 	{
-		if(search->dir && (!fs_numServerPaks || fs_forceNativeVM->integer != 0))
+		if(!findQvm)
 		{
-			if(enableDll)
+			// DLL phase: unconditional fallback floor
+			if(search->dir)
 			{
 #ifdef __ANDROID__
+				// Android modules are resolved by the dynamic linker out of the
+				// APK's native library directory, not from a filesystem path, so
+				// there is no path to probe for existence: hand Sys_LoadGameDll
+				// the soname and let dlopen resolve it.
 				Com_sprintf(found, foundlen, "lib%s", dllName);
 				*startSearch = search;
 				return VMI_NATIVE;
 #else
 				{
 				directory_t *dir = search->dir;
-				netpath = FS_BuildOSPath(dir->path, dir->gamedir, dllName);
+				char *netpath = FS_BuildOSPath(dir->path, dir->gamedir, dllName);
 
 				if(FS_FileInPathExists(netpath))
 				{
@@ -1550,35 +1591,59 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 				}
 #endif
 			}
-
-			if(FS_FOpenFileReadDir(qvmName, search, NULL, qfalse, qfalse) > 0)
-			{
-				*startSearch = search;
-				return VMI_COMPILED;
-			}
 		}
-		else if(search->pack &&
-		    fs_forceNativeVM->integer == 0)
+		else
 		{
-			pack = search->pack;
-
-			if(lastSearch && lastSearch->pack)
+			// The QVM scan resolves within a single gamedir: the one that
+			// produced the first candidate in search order. Any candidate seen
+			// there - accepted or rejected - makes lower-precedence gamedirs
+			// ineligible, so a rejected candidate falls back to the native
+			// module instead of picking up another game's QVM. When the active
+			// gamedir ships no QVM at all, the first candidate simply comes
+			// from further down the search path and resolution happens within
+			// that gamedir instead.
+			if(lastSearch)
 			{
-				// make sure we only try loading one VM file per game dir
-				// i.e. if VM from pak7.pk3 fails we won't try one from pak6.pk3
+				const char *firstGamedir = lastSearch->pack ? lastSearch->pack->pakGamename : lastSearch->dir->gamedir;
+				const char *thisGamedir = search->pack ? search->pack->pakGamename : search->dir->gamedir;
 
-				if(!FS_FilenameCompare(lastSearch->pack->pakPathname, pack->pakPathname))
+				if(FS_FilenameCompare(firstGamedir, thisGamedir))
 				{
 					search = search->next;
 					continue;
 				}
 			}
 
-			if(FS_FOpenFileReadDir(qvmName, search, NULL, qfalse, qfalse) > 0)
+			if(search->dir && !fs_numServerPaks)
 			{
-				*startSearch = search;
+				if(FS_FOpenFileReadDir(qvmName, search, NULL, qfalse, qfalse) > 0)
+				{
+					*startSearch = search;
+					return VMI_COMPILED;
+				}
+			}
+			else if(search->pack)
+			{
+				pack = search->pack;
 
-				return VMI_COMPILED;
+				if(lastSearch && lastSearch->pack)
+				{
+					// make sure we only try loading one VM file per game dir
+					// i.e. if VM from pak7.pk3 fails we won't try one from pak6.pk3
+
+					if(!FS_FilenameCompare(lastSearch->pack->pakPathname, pack->pakPathname))
+					{
+						search = search->next;
+						continue;
+					}
+				}
+
+				if(FS_FOpenFileReadDir(qvmName, search, NULL, qfalse, qfalse) > 0)
+				{
+					*startSearch = search;
+
+					return VMI_COMPILED;
+				}
 			}
 		}
 
@@ -1586,6 +1651,28 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, i
 	}
 
 	return -1;
+}
+
+/*
+=================
+FS_VMSearchPathName
+
+Human-readable name of the searchpath a VM was found in: the pk3 filename for
+pack entries, or the on-disk gamedir path for loose-file entries. Used to name
+where a module came from when its VR handshake fails.
+=================
+*/
+const char *FS_VMSearchPathName( void *searchPath )
+{
+	searchpath_t *search = (searchpath_t *)searchPath;
+
+	if ( !search )
+		return "?";
+	if ( search->pack )
+		return search->pack->pakFilename;
+	if ( search->dir )
+		return search->dir->fullpath;
+	return "?";
 }
 
 /*
@@ -4049,7 +4136,6 @@ void FS_InitFilesystem( void ) {
 	Com_StartupVariable("fs_homepath");
 	Com_StartupVariable("fs_game");
 
-    fs_forceNativeVM = Cvar_Get( "fs_forceNativeVM", "1", CVAR_ARCHIVE );
 	fs_nativeVMBase = Cvar_Get( "fs_nativeVMBase", "baseq3", CVAR_ARCHIVE );
 
 

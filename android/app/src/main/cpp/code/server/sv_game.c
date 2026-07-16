@@ -24,10 +24,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "server.h"
 
 #include "../botlib/botlib.h"
-#include "../vrcommon/vr_clientinfo.h"
 
 botlib_export_t	*botlib_export;
-extern vr_clientinfo_t vr;
 
 // these functions must be used instead of pointer arithmetic, because
 // the game allocates gentities with private information after the server shared part
@@ -282,6 +280,22 @@ static int	FloatAsInt( float f ) {
 	floatint_t fi;
 	fi.f = f;
 	return fi.i;
+}
+
+/*
+====================
+SV_GetValue
+
+Query engine-side values from game. Returns qtrue if key is recognized
+and writes the value into the provided buffer.
+====================
+*/
+static qboolean SV_GetValue( char *value, int valueSize, const char *key ) {
+	if ( !Q_stricmp( key, "trap_VR_RegisterState" ) ) {
+		Com_sprintf( value, valueSize, "%i", G_VR_REGISTERSTATE );
+		return qtrue;
+	}
+	return qfalse;
 }
 
 /*
@@ -844,6 +858,12 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
 	case TRAP_CEIL:
 		return FloatAsInt( ceil( VMF(1) ) );
 
+	case G_TRAP_GETVALUE:
+		return SV_GetValue( VMA(1), args[2], VMA(3) );
+
+	case G_VR_REGISTERSTATE:
+		VM_RegisterVRShared( gvm, VR_WRITER_GAME, args[1], args[2], args[3] );
+		return 0;
 
 	default:
 		Com_Error( ERR_DROP, "Bad game system trap: %ld", (long int) args[0] );
@@ -888,13 +908,13 @@ static void SV_InitGameVM( qboolean restart ) {
 		svs.clients[i].gentity = NULL;
 	}
 
-	//Ensure the game library has our VR client info
-	long val = (long)(&vr);
-	int *ptr = (int*)(&val);	 //HACK!!
-
 	// use the current msec count for a random seed
 	// init for this gamestate
-	VM_Call (gvm, GAME_INIT, sv.time, Com_Milliseconds(), restart, ptr[0], ptr[1]);
+	VM_Call (gvm, GAME_INIT, sv.time, Com_Milliseconds(), restart);
+
+	if ( VM_VRSentinel( gvm ) && !VM_VRRegistered( gvm ) ) {
+		Com_Error( ERR_DROP, "game declares VR support but never registered its VR state" );
+	}
 }
 
 
@@ -943,7 +963,8 @@ void SV_InitGameProgs( void ) {
 	}
 
 	// load the dll or bytecode
-	gvm = VM_Create( "qagame", SV_GameSystemCalls, Cvar_VariableValue( "vm_game" ) );
+	gvm = VM_Create( "qagame", SV_GameSystemCalls,
+		Cvar_VariableValue( "vm_game" ) == VMI_BYTECODE ? VMI_BYTECODE : VMI_COMPILED );
 	if ( !gvm ) {
 		Com_Error( ERR_FATAL, "VM_Create on game failed" );
 	}
