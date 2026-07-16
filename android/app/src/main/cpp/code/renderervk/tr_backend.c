@@ -1174,11 +1174,13 @@ static const void *RB_SetColor( const void *data ) {
 	cmd = (const setColorCommand_t *)data;
 
 	// Gamma compensation for 2D colors:
-	// - Subpass 0 (before gamma): pre-darken so gamma pass produces correct output
-	// - HUD buffer (mode 1): no gamma compensation, bypasses gamma entirely
-	// - Post-bloom 2D (including HUD mode 2): gamma correction is applied in fragment shader
-	if ( (backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass) || cmd->fullBrightness ) {
-		// HUD buffer (mode 1) bypasses gamma entirely - use colors as-is
+	// - Before the gamma pass: pre-darken so the pass produces correct output.
+	//   HUD buffer content belongs here too - it is gamma-passed later, when the
+	//   hud sprite that samples it is drawn.
+	// - Post-bloom 2D (including HUD mode 2): the fragment shader applies gamma
+	//   itself, so pre-compensating here would apply it twice.
+	if ( cmd->fullBrightness ) {
+		// gamma is applied downstream in the fragment shader - use colors as-is
 		backEnd.color2D.rgba[0] = cmd->color[0] * 255;
 		backEnd.color2D.rgba[1] = cmd->color[1] * 255;
 		backEnd.color2D.rgba[2] = cmd->color[2] * 255;

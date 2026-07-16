@@ -680,13 +680,7 @@ void R_ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage
 			break;
 		default:
 		case CGEN_IDENTITY_LIGHTING:
-			// When rendering to HUD buffer (mode 1), use full brightness (no gamma needed).
-			// HUD mode 2 renders in post-bloom 2D subpass which applies gamma in fragment shader.
-			if ( backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass ) {
-				Com_Memset( dest, 0xff, tess.numVertexes * 4 );
-			} else {
-				Com_Memset( dest, tr.identityLightByte, tess.numVertexes * 4 );
-			}
+			Com_Memset( dest, tr.identityLightByte, tess.numVertexes * 4 );
 			break;
 		case CGEN_LIGHTING_DIFFUSE:
 			RB_CalcDiffuseColor( ( unsigned char * ) dest );
@@ -700,9 +694,7 @@ void R_ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage
 			}
 			break;
 		case CGEN_VERTEX:
-			// When rendering to HUD buffer (mode 1), use full brightness (no gamma applied).
-			// HUD mode 2 renders in post-bloom 2D subpass which applies gamma in fragment shader.
-			if ( tr.identityLight == 1 || (backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass) )
+			if ( tr.identityLight == 1 )
 			{
 				Com_Memcpy( dest, tess.vertexColors, tess.numVertexes * sizeof( tess.vertexColors[0] ) );
 			}
@@ -718,9 +710,7 @@ void R_ComputeColors( const int b, color4ub_t *dest, const shaderStage_t *pStage
 			}
 			break;
 		case CGEN_ONE_MINUS_VERTEX:
-			// When rendering to HUD buffer (mode 1), use full brightness (no gamma applied).
-			// HUD mode 2 renders in post-bloom 2D subpass which applies gamma in fragment shader.
-			if ( tr.identityLight == 1 || (backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass) )
+			if ( tr.identityLight == 1 )
 			{
 				for ( i = 0; i < tess.numVertexes; i++ )
 				{
@@ -1033,19 +1023,6 @@ static void RB_IterateStagesGeneric( const shaderCommands_t *input )
 #ifdef USE_VULKAN
 		tess_flags |= pStage->tessFlags;
 
-		// When rendering to HUD buffer (mode 1, which bypasses gamma entirely),
-		// shaders using CGEN_IDENTITY_LIGHTING need runtime color computation instead of
-		// fixed-color pipeline. Force TESS_RGBA to compute full-brightness colors.
-		// HUD mode 2 doesn't need this since it renders in post-bloom 2D subpass
-		// which applies gamma correction in fragment shader.
-		if ( backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass ) {
-			for ( i = 0; i < pStage->numTexBundles; i++ ) {
-				if ( pStage->bundle[i].rgbGen == CGEN_IDENTITY_LIGHTING ) {
-					tess_flags |= (TESS_RGBA0 << i);
-				}
-			}
-		}
-
 		for ( i = 0;  i < pStage->numTexBundles; i++ ) {
 			if ( pStage->bundle[i].image[0] != NULL ) {
 				GL_SelectTexture( i );
@@ -1082,57 +1059,6 @@ static void RB_IterateStagesGeneric( const shaderCommands_t *input )
 			pipeline = pStage->vk_mirror_pipeline[fog_stage];
 		} else {
 			pipeline = pStage->vk_pipeline[fog_stage];
-		}
-
-		// When rendering to HUD buffer (mode 1) with CGEN_IDENTITY_LIGHTING shaders,
-		// the fixed-color pipeline optimization uses baked-in dim colors
-		// (tr.identityLightByte). We need a vertex-color pipeline instead to use
-		// the full-brightness colors computed above.
-		// HUD mode 2 doesn't need this since it renders in post-bloom 2D subpass
-		// which applies gamma correction in fragment shader.
-		if ( backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass && pStage->bundle[0].rgbGen == CGEN_IDENTITY_LIGHTING ) {
-			Vk_Pipeline_Def def;
-			vk_get_pipeline_def( pipeline, &def );
-			switch ( def.shader_type ) {
-				case TYPE_SIGNLE_TEXTURE_FIXED_COLOR:
-					def.shader_type = TYPE_SIGNLE_TEXTURE;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				case TYPE_SIGNLE_TEXTURE_FIXED_COLOR_ENV:
-					def.shader_type = TYPE_SIGNLE_TEXTURE_ENV;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				case TYPE_MULTI_TEXTURE_ADD2_FIXED_COLOR:
-					def.shader_type = TYPE_MULTI_TEXTURE_ADD2;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				case TYPE_MULTI_TEXTURE_ADD2_FIXED_COLOR_ENV:
-					def.shader_type = TYPE_MULTI_TEXTURE_ADD2_ENV;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				case TYPE_MULTI_TEXTURE_MUL2_FIXED_COLOR:
-					def.shader_type = TYPE_MULTI_TEXTURE_MUL2;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				case TYPE_MULTI_TEXTURE_MUL2_FIXED_COLOR_ENV:
-					def.shader_type = TYPE_MULTI_TEXTURE_MUL2_ENV;
-					def.color.rgb = 0;
-					def.color.alpha = 0;
-					pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
-					break;
-				default:
-					break;
-			}
 		}
 
 		// mark entity model pixels with stencil bit 0x80 so shadows skip them

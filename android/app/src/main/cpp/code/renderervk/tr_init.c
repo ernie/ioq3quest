@@ -106,7 +106,7 @@ cvar_t	*r_bloom_modulate;
 cvar_t	*r_renderWidth;
 cvar_t	*r_renderHeight;
 cvar_t	*r_renderScale;
-cvar_t	*r_ext_framebuffer_multisample;
+cvar_t	*r_ext_multisample;
 #endif // USE_VULKAN
 
 cvar_t	*r_dlightBacks;
@@ -1798,9 +1798,9 @@ static void R_Register( void )
 	ri.Cvar_CheckRange( r_bloom, 0, 1, qtrue );
 	ri.Cvar_SetDescription(r_bloom, "Enables bloom post-processing effect.");
 
-	r_ext_framebuffer_multisample = ri.Cvar_Get( "r_ext_framebuffer_multisample", "0", CVAR_ARCHIVE | CVAR_LATCH );  // Mobile: no MSAA
-	ri.Cvar_CheckRange( r_ext_framebuffer_multisample, 0, 8, qtrue );
-	ri.Cvar_SetDescription( r_ext_framebuffer_multisample, "MSAA anti-aliasing, valid values: 0|2|4|8." );
+	r_ext_multisample = ri.Cvar_Get( "r_ext_multisample", "0", CVAR_ARCHIVE | CVAR_LATCH );  // Mobile: no MSAA
+	ri.Cvar_CheckRange( r_ext_multisample, 0, 8, qtrue );
+	ri.Cvar_SetDescription( r_ext_multisample, "MSAA anti-aliasing, valid values: 0|2|4|8." );
 
 	r_renderWidth = ri.Cvar_Get( "r_renderWidth", "800", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	ri.Cvar_CheckRange( r_renderWidth, 96, 7680, qtrue );  // 8K max

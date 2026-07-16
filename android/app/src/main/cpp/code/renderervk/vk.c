@@ -4177,7 +4177,7 @@ void vk_initialize( void )
 	// r_fbo 0 = direct rendering to XR swapchain (faster, no post-processing)
 	// r_fbo 1 = FBO with post-processing (slower but has bloom/gamma)
 	vk.fboActive = ( r_fbo->integer != 0 ) ? qtrue : qfalse;
-	if ( vk.fboActive && r_ext_framebuffer_multisample->integer ) {
+	if ( vk.fboActive && r_ext_multisample->integer ) {
 		vk.msaaActive = qtrue;
 	}
 
@@ -4191,7 +4191,7 @@ void vk_initialize( void )
 
 	if ( vk.msaaActive ) {
 		VkSampleCountFlags mask = vkMaxSamples;
-		vkSamples = MAX( log2pad( r_ext_framebuffer_multisample->integer, 1 ), VK_SAMPLE_COUNT_2_BIT );
+		vkSamples = MAX( log2pad( r_ext_multisample->integer, 1 ), VK_SAMPLE_COUNT_2_BIT );
 		while ( vkSamples > mask )
 				vkSamples >>= 1;
 		ri.Printf( PRINT_ALL, "...using %ix MSAA\n", vkSamples );
@@ -7272,9 +7272,6 @@ void vk_set_view_eyeproj( void )
 
 	// All cyclopean/mono flavors: both slots get the same projection the old
 	// code multiplied per draw. Guards mirror vk_update_mvp's ladder exactly.
-	// QUEST specifics (differ from trinity-vr): aspect correction is
-	// (4:3)/nativeAspect and applies only when vr.virtual_screen;
-	// RDF_NOWORLDMODEL uses the raw refdef FOV (no crop factor).
 	{
 		float proj[16];
 
@@ -7282,29 +7279,27 @@ void vk_set_view_eyeproj( void )
 			Com_Memcpy( proj, tr.vrParms.monoVRProjection, sizeof( proj ) );
 		} else if ( tr.vrParms.valid && backEnd.viewParms.portalView != PV_NONE &&
 				( vr.virtual_screen || vr.weapon_zoomed ) ) {
-			// Portal cyclopean: oblique projection from R_SetupProjection
+			// Portal cyclopean: plain aspect scale, no refdef-FOV override
 			Com_Memcpy( proj, backEnd.viewParms.projectionMatrix, sizeof( proj ) );
-			if ( vr.virtual_screen ) {
-				float viewportAspect = 4.0f / 3.0f;
-				float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
-				float aspectCorrection = viewportAspect / nativeAspect;
-				proj[5] *= aspectCorrection;
+			if ( vr.weapon_zoomed ) {
+				proj[5] *= (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+			} else {
+				proj[5] *= (float)glConfig.vidHeight / (float)glConfig.vidWidth;
 			}
 			proj[8] = 0.0f;
 			proj[9] = 0.0f;
 		} else if ( tr.vrParms.valid && ( vr.virtual_screen || vr.weapon_zoomed ) ) {
 			Com_Memcpy( proj, tr.vrParms.projection, sizeof( proj ) );
-			if ( vr.virtual_screen ) {
-				if ( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
-					// UI model scenes: refdef FOV, keep Z components from VR projection
-					proj[0] = 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f );
-					proj[5] = -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f );
-				} else {
-					float viewportAspect = 4.0f / 3.0f;
-					float nativeAspect = (float)glConfig.vidWidth / (float)glConfig.vidHeight;
-					float aspectCorrection = viewportAspect / nativeAspect;
-					proj[5] *= aspectCorrection;
-				}
+			if ( backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
+				// UI model scenes: refdef FOV scaled by the 4:3 crop factor
+				float cropHeight = (float)( glConfig.vidWidth * 3 ) / 4.0f;
+				float cropFactor = (float)glConfig.vidHeight / cropHeight;
+				proj[0] = ( 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f ) ) / cropFactor;
+				proj[5] = ( -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f ) ) / cropFactor;
+			} else if ( vr.weapon_zoomed ) {
+				proj[5] *= (float)glConfig.vidWidth / (float)glConfig.vidHeight;
+			} else {
+				proj[5] *= (float)glConfig.vidHeight / (float)glConfig.vidWidth;
 			}
 			proj[8] = 0.0f;
 			proj[9] = 0.0f;

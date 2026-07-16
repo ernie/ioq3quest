@@ -689,10 +689,6 @@ void RB_CalcWaveColor( const waveForm_t *wf, unsigned char *dstColors )
 
 	if ( wf->func == GF_NOISE ) {
 		glow = wf->base + R_NoiseGet4f( 0, 0, 0, ( tess.shaderTime + wf->phase ) * wf->frequency ) * wf->amplitude;
-	} else if ( backEnd.isDrawingHUD && !vk.inPostBloom2DSubpass ) {
-		// HUD buffer (mode 1) bypasses gamma entirely - use full brightness
-		// HUD mode 2 renders in post-bloom 2D subpass which applies gamma in fragment shader
-		glow = EvalWaveForm( wf );
 	} else {
 		// Dim by identityLight. Gamma pass (or fragment shader for post-bloom 2D) will brighten.
 		glow = EvalWaveForm( wf ) * tr.identityLight;

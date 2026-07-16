@@ -313,30 +313,23 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 	}
 
 	// if NOWORLDMODEL, only use dynamic lights (menu system, etc)
-	// When rendering to HUD buffer, use full brightness (no identityLight dimming)
-	// since HUD buffer doesn't go through gamma pass.
-	// Check refdef->isHUD since we're in scene processing phase (backEnd.isDrawingHUD
-	// isn't set yet at this point).
-	float lightScale = refdef->isHUD ? 1.0f : tr.identityLight;
-	int lightClamp = refdef->isHUD ? 255 : tr.identityLightByte;
-
 	if ( !(refdef->rdflags & RDF_NOWORLDMODEL )
 		&& tr.world->lightGridData ) {
 		R_SetupEntityLightingGrid( ent );
 	} else {
 		ent->ambientLight[0] = ent->ambientLight[1] =
-			ent->ambientLight[2] = lightScale * 150;
+			ent->ambientLight[2] = tr.identityLight * 150;
 		ent->directedLight[0] = ent->directedLight[1] =
-			ent->directedLight[2] = lightScale * 150;
+			ent->directedLight[2] = tr.identityLight * 150;
 		VectorCopy( tr.sunDirection, ent->lightDir );
 	}
 
 	// bonus items and view weapons have a fixed minimum add
 	if ( 1 /* ent->e.renderfx & RF_MINLIGHT */ ) {
 		// give everything a minimum light add
-		ent->ambientLight[0] += lightScale * 32;
-		ent->ambientLight[1] += lightScale * 32;
-		ent->ambientLight[2] += lightScale * 32;
+		ent->ambientLight[0] += tr.identityLight * 32;
+		ent->ambientLight[1] += tr.identityLight * 32;
+		ent->ambientLight[2] += tr.identityLight * 32;
 	}
 
 	//
@@ -384,8 +377,8 @@ void R_SetupEntityLighting( const trRefdef_t *refdef, trRefEntity_t *ent ) {
 
 	// clamp ambient
 	for ( i = 0 ; i < 3 ; i++ ) {
-		if ( ent->ambientLight[i] > lightClamp ) {
-			ent->ambientLight[i] = lightClamp;
+		if ( ent->ambientLight[i] > tr.identityLightByte ) {
+			ent->ambientLight[i] = tr.identityLightByte;
 		}
 	}
 
