@@ -17,6 +17,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # TRINITY_VERSION (single line at the repo root) pins the ernie/trinity
+      # release this build ships: the game module libraries are compiled from
+      # that tag's source, and the pak assets baked into the APK come from
+      # that same release. One pin drives both; no job may reference the
+      # "latest" trinity release.
+      - name: Read Trinity pin
+        run: |
+          v="$(tr -d '[:space:]' < TRINITY_VERSION)"
+          test -n "$v"
+          echo "TRINITY_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Checkout Trinity source (pinned)
+        uses: actions/checkout@v6
+        with:
+          repository: ernie/trinity
+          ref: ${{ env.TRINITY_VERSION }}
+          path: trinity
+
       - name: Setup JDK 17
         uses: actions/setup-java@v5
         with:
@@ -29,11 +47,12 @@ jobs:
           yes | $SDKMANAGER --licenses > /dev/null 2>&1 || true
           $SDKMANAGER "ndk;27.3.13750724" "cmake;3.22.1" "build-tools;32.0.0"
 
-      - name: Download latest Trinity
+      - name: Download Trinity assets (pinned)
         run: |
-          curl -fL -o android/app/src/main/assets/pak8t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak8t.pk3
-          curl -fL -o android/app/src/main/assets/pak3t.pk3 https://github.com/ernie/trinity/releases/latest/download/pak3t.pk3
-          curl -fL -o android/app/src/main/assets/zzz-trinity-announcer.pk3 https://github.com/ernie/trinity/releases/latest/download/zzz-trinity-announcer.pk3
+          BASE=https://github.com/ernie/trinity/releases/download/$TRINITY_VERSION
+          curl -fL -o android/app/src/main/assets/pak8t.pk3 $BASE/pak8t.pk3
+          curl -fL -o android/app/src/main/assets/pak3t.pk3 $BASE/pak3t.pk3
+          curl -fL -o android/app/src/main/assets/zzz-trinity-announcer.pk3 $BASE/zzz-trinity-announcer.pk3
 
       - name: CMake configure
         run: |
@@ -43,6 +62,7 @@ jobs:
             -DANDROID_PLATFORM=android-26 \
             -DCMAKE_BUILD_TYPE=Release \
             -DFULL_BUILD=ON \
+            -DTRINITY_SOURCE_DIR="${{ github.workspace }}/trinity" \
             -G Ninja
 
       - name: CMake build

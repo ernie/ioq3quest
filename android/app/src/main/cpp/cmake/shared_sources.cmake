@@ -43,7 +43,6 @@ set(ZSTD_SOURCES
 # System sources
 set(SYSTEM_SOURCES
     ${SOURCE_DIR}/sys/con_log.c
-    ${SOURCE_DIR}/sys/sys_autoupdater.c
     ${SOURCE_DIR}/sys/sys_main.c
     ${SYSTEM_PLATFORM_SOURCES}
     ${CONSOLE_SOURCES}

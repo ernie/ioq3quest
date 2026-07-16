@@ -89,9 +89,6 @@ if(FULL_BUILD)
     endif()
 
     add_definitions(-DPRODUCT_VERSION="${PRODUCT_VERSION}")
-    add_definitions(-DUPDATE_GITHUB_OWNER="ernie")
-    add_definitions(-DUPDATE_GITHUB_REPO="ioq3quest")
-    add_definitions(-DUPDATE_ASSET_PREFIX="ioq3quest")
     message(STATUS "Building ${PROJECT_NAME} version ${PRODUCT_VERSION}")
 
     #############################################################################
@@ -99,12 +96,6 @@ if(FULL_BUILD)
     #############################################################################
 
     include(libraries/all)
-
-    #############################################################################
-    # Asset Packaging (pakQ3Q.pk3)
-    #############################################################################
-
-    include(pakQ3Q)
 
     #############################################################################
     # Client Executable
@@ -207,8 +198,7 @@ if(FULL_BUILD)
     #############################################################################
 
     if(BUILD_GAME_LIBRARIES)
-        include(basegame)
-        include(missionpack)
+        include(trinity_modules)
     endif()
 
     #############################################################################

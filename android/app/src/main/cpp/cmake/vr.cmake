@@ -18,6 +18,7 @@ set(VR_COMMON_SOURCES
     ${SOURCE_DIR}/vrcommon/vr_math.c
     ${SOURCE_DIR}/vrcommon/vr_render_loop.c
     ${SOURCE_DIR}/vrcommon/vr_session.c
+    ${SOURCE_DIR}/vrcommon/vr_shared_sync.c
     ${SOURCE_DIR}/vrcommon/vr_spaces.c
     ${SOURCE_DIR}/vrcommon/vr_swapchains.c
 )

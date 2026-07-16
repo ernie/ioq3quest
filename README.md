@@ -305,8 +305,8 @@ The defaults for these variables differ depending on the target platform.
   s_alAvailableDevices              - list of available OpenAL devices
   s_alInputDevice                   - which OpenAL input device to use
   s_alAvailableInputDevices         - list of available OpenAL input devices
+  s_khz                             - sound sampling rate in kHz (8, 11, 22, 44, 48)
   s_sdlBits                         - SDL bit resolution
-  s_sdlSpeed                        - SDL sample rate
   s_sdlChannels                     - SDL number of channels
   s_sdlDevSamps                     - SDL DMA buffer size override
   s_sdlMixSamps                     - SDL mix buffer size override
