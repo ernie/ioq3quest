@@ -66,7 +66,10 @@ extern CURLMsg *(*qcurl_multi_info_read)(CURLM *multi_handle, int *msgs_in_queue
 
 // APK download path
 #define UPDATE_DIR				"/sdcard/ioquake3Quest/.updates"
-#define UPDATE_APK_PATH			UPDATE_DIR "/ioq3quest-update.apk"
+#define UPDATE_APK_PATH			UPDATE_DIR "/trinity-quest-update.apk"
+
+// the name staged downloads used before this one; only ever removed
+#define UPDATE_LEGACY_APK_PATH	UPDATE_DIR "/ioq3quest-update.apk"
 
 // from sys_android.c
 extern void Sys_InstallApk( const char *apkPath );
@@ -209,6 +212,9 @@ static void Update_SetError( const char *msg )
 Update_CleanupDownload
 
 Remove leftover APK from a previous download.
+
+Also removes a download staged under the older file name, which an install
+that last updated before the rename still has sitting in UPDATE_DIR.
 ==================
 */
 static void Update_CleanupDownload( void )
@@ -217,6 +223,10 @@ static void Update_CleanupDownload( void )
 	if ( stat( UPDATE_APK_PATH, &st ) == 0 ) {
 		remove( UPDATE_APK_PATH );
 		Com_DPrintf( "Update: cleaned up previous download\n" );
+	}
+	if ( stat( UPDATE_LEGACY_APK_PATH, &st ) == 0 ) {
+		remove( UPDATE_LEGACY_APK_PATH );
+		Com_DPrintf( "Update: cleaned up previous download under the old name\n" );
 	}
 }
 

@@ -141,7 +141,6 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		copy_asset("/sdcard/ioquake3Quest", "commandline.txt", false);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "autoexec.cfg", false);
 		// Copy our special pak files and demo
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "pakQ3Q.pk3", true);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak0.pk3", false);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak8t.pk3", true);
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "zzz-trinity-announcer.pk3", true);
@@ -149,19 +148,14 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		copy_asset("/sdcard/ioquake3Quest/baseq3", "z_custom_background66.pk3", false);
 		// Cleanup incompatible shaders
 		delete_asset("/sdcard/ioquake3Quest/baseq3/glsl");
+		// Cleanup the retired pak, superseded by pak8t.pk3/pak3t.pk3
+		delete_asset("/sdcard/ioquake3Quest/baseq3/pakQ3Q.pk3");
 
 		// If Team Arena is installed then copy necessary stuff
 		if (new File("/sdcard/ioquake3Quest/missionpack").exists()) {
-			copy_asset("/sdcard/ioquake3Quest/missionpack", "pakQ3Q.pk3", true);
 			copy_asset("/sdcard/ioquake3Quest/missionpack", "pak3t.pk3", true);
 			delete_asset("/sdcard/ioquake3Quest/missionpack/glsl");
-		}
-
-		// If Open Arena is installed then copy necessary stuff
-		if (new File("/sdcard/ioquake3Quest/baseoa").exists()) {
-			copy_asset("/sdcard/ioquake3Quest/baseoa", "autoexec_oa.cfg", "autoexec.cfg", false);
-			copy_asset("/sdcard/ioquake3Quest/baseoa", "pakQ3Q.pk3", true);
-			delete_asset("/sdcard/ioquake3Quest/baseoa/glsl");
+			delete_asset("/sdcard/ioquake3Quest/missionpack/pakQ3Q.pk3");
 		}
 
 		//Read these from a file and pass through

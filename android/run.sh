@@ -42,10 +42,6 @@ if [ "$1" == "clean" ] || [ "$2" == "clean" ] || [ "$3" == "clean" ] || [ "$4" =
 	rm -rf $SCRIPTDIR/app/src/main/jniLibs
 fi
 
-cd $SCRIPTDIR/app/src/main/pakQ3Q
-rm -f $SCRIPTDIR/app/src/main/assets/pakQ3Q.pk3
-zip -r $SCRIPTDIR/app/src/main/assets/pakQ3Q.pk3 .
-
 echo "#define Q3QVERSION  \"$APP_VERSION"\" > $SCRIPTDIR/app/src/main/cpp/code/vr/vr_version.h
 
 cd $SCRIPTDIR/..
