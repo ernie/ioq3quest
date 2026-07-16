@@ -173,6 +173,27 @@ void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context)
 	// TEST pthread_mutex_unlock(&dma_mutex);
 }
 
+/*
+===============
+SNDDMA_KHzToHz
+
+Maps the legal s_khz values onto their sampling rate in Hz. Anything else
+falls back to the 22 kHz default.
+===============
+*/
+static int SNDDMA_KHzToHz( int khz )
+{
+	switch ( khz )
+	{
+		default:
+		case 22: return 22050;
+		case 48: return 48000;
+		case 44: return 44100;
+		case 11: return 11025;
+		case  8: return  8000;
+	}
+}
+
 qboolean SNDDMA_Init( void ) {
 	int rc;
 	int fmt;
@@ -193,8 +214,7 @@ qboolean SNDDMA_Init( void ) {
 	dma.samples = 1024*16;
 	dma.submission_chunk = 1024*2;
 	//dma.submission_chunk = 1;
-	dma.speed = 44100;
-	dma.speed = 22050;
+	dma.speed = SNDDMA_KHzToHz( s_khz->integer );
 	dmasize = (dma.samples * (dma.samplebits/8));
 	dma.buffer = calloc(1, dmasize);
 
@@ -223,8 +243,13 @@ qboolean SNDDMA_Init( void ) {
 	//CREATE THE PLAYER
 
 	// configure audio source
+	// OpenSL expresses samplesPerSec in milliHertz, so every SL_SAMPLINGRATE_*
+	// constant is exactly its rate in Hz times 1000 (SL_SAMPLINGRATE_8 = 8000000,
+	// _11_025 = 11025000, _22_05 = 22050000, _44_1 = 44100000, _48 = 48000000).
+	// Deriving it from dma.speed rather than naming a constant keeps the format
+	// and the mixer's rate in lockstep - they must agree or playback is pitched.
 	SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 1};
-	SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_22_05,
+	SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, (SLuint32)dma.speed * 1000,
 			SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
 			SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN};
 	SLDataSource audioSrc = {&loc_bufq, &format_pcm};
