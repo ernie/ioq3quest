@@ -894,7 +894,7 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
 		return SV_GetValue( VMA(1), args[2], VMA(3) );
 
 	case G_VR_REGISTERSTATE:
-		VM_RegisterVRShared( gvm, VR_WRITER_GAME, args[1], args[2], args[3] );
+		VM_RegisterVRShared( gvm, VR_WRITER_GAME, args[1], args[2], args[3], args[4] );
 		return 0;
 
 	default:
@@ -968,7 +968,7 @@ static void SV_InitGameVM( qboolean restart ) {
 	VM_Call (gvm, 3, GAME_INIT, sv.time, Com_Milliseconds(), restart);
 
 	if ( VM_VRSentinel( gvm ) && !VM_VRRegistered( gvm ) ) {
-		Com_Error( ERR_DROP, "game declares VR support but never registered its VR state" );
+		Com_Error( ERR_DROP, "game QVM declared VR API support but never registered VR state" );
 	}
 }
 

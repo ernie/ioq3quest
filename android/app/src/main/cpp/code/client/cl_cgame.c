@@ -920,7 +920,7 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		return 0;
 
 	case CG_VR_REGISTERSTATE:
-		VM_RegisterVRShared( cgvm, VR_WRITER_CGAME, args[1], args[2], args[3] );
+		VM_RegisterVRShared( cgvm, VR_WRITER_CGAME, args[1], args[2], args[3], args[4] );
 		return 0;
 
 	default:
@@ -1005,7 +1005,7 @@ void CL_InitCGame( void ) {
 	VM_Call( cgvm, 3, CG_INIT, clc.serverMessageSequence, clc.lastExecutedServerCommand, clc.clientNum );
 
 	if ( VM_VRSentinel( cgvm ) && !VM_VRRegistered( cgvm ) ) {
-		Com_Error( ERR_DROP, "cgame declares VR support but never registered its VR state" );
+		Com_Error( ERR_DROP, "cgame QVM declared VR API support but never registered VR state" );
 	}
 
 	// reset any CVAR_CHEAT cvars registered by cgame

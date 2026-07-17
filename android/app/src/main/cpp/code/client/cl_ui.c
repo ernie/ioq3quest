@@ -1142,7 +1142,7 @@ intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return CL_UIGetValue( VMA(1), args[2], VMA(3) );
 
 	case UI_VR_REGISTERSTATE:
-		VM_RegisterVRShared( uivm, VR_WRITER_UI, args[1], args[2], args[3] );
+		VM_RegisterVRShared( uivm, VR_WRITER_UI, args[1], args[2], args[3], args[4] );
 		return 0;
 
 	default:
@@ -1239,7 +1239,7 @@ void CL_InitUI( void ) {
 	}
 
 	if ( uivm && VM_VRSentinel( uivm ) && !VM_VRRegistered( uivm ) ) {
-		Com_Error( ERR_DROP, "ui declares VR support but never registered its VR state" );
+		Com_Error( ERR_DROP, "ui QVM declared VR API support but never registered VR state" );
 	}
 }
 
