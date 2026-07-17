@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "client.h"
+#include "../qcommon/vm_vr.h"
 
 #include "../botlib/botlib.h"
 #include "../vrcommon/vr_input.h"
@@ -700,6 +701,22 @@ static int FloatAsInt( float f ) {
 
 /*
 ====================
+VM_ArgPtr
+====================
+*/
+static void *VM_ArgPtr( intptr_t intValue ) {
+
+	if ( !intValue || uivm == NULL )
+		return NULL;
+
+	if ( uivm->entryPoint )
+		return (void *)(intValue);
+	else
+		return (void *)(uivm->dataBase + (intValue & uivm->dataMask));
+}
+
+/*
+====================
 CL_UIGetValue
 
 Query engine-side values from ui. Returns qtrue if key is recognized
@@ -1138,6 +1155,29 @@ intptr_t CL_UISystemCalls( intptr_t *args ) {
 
 /*
 ====================
+UI_DllSyscall
+====================
+*/
+static intptr_t QDECL UI_DllSyscall( intptr_t arg, ... ) {
+#if !id386 || defined __clang__
+	intptr_t	args[16]; // headroom for VR traps (stock UI max is 10)
+	va_list	ap;
+	int i;
+
+	args[0] = arg;
+	va_start( ap, arg );
+	for (i = 1; i < ARRAY_LEN( args ); i++ )
+		args[ i ] = va_arg( ap, intptr_t );
+	va_end( ap );
+
+	return CL_UISystemCalls( args );
+#else
+	return CL_UISystemCalls( &arg );
+#endif
+}
+
+/*
+====================
 CL_ShutdownUI
 ====================
 */
@@ -1148,7 +1188,7 @@ void CL_ShutdownUI( void ) {
 	if ( !uivm ) {
 		return;
 	}
-	VM_Call( uivm, UI_SHUTDOWN );
+	VM_Call( uivm, 0, UI_SHUTDOWN );
 	VM_Free( uivm );
 	uivm = NULL;
 }
@@ -1170,17 +1210,17 @@ void CL_InitUI( void ) {
 	if ( interpret == VMI_NATIVE )
 		interpret = VMI_COMPILED;
 
-	uivm = VM_Create( "ui", CL_UISystemCalls, interpret );
+	uivm = VM_Create( VM_UI, CL_UISystemCalls, UI_DllSyscall, interpret );
 	if ( !uivm ) {
 		Com_Error( ERR_FATAL, "VM_Create on UI failed" );
 	}
 
 	// sanity check
-	v = VM_Call( uivm, UI_GETAPIVERSION );
+	v = VM_Call( uivm, 0, UI_GETAPIVERSION );
 	if (v == UI_OLD_API_VERSION) {
 //		Com_Printf(S_COLOR_YELLOW "WARNING: loading old Quake III Arena User Interface version %d\n", v );
 		// init for this gamestate
-		VM_Call( uivm, UI_INIT, (clc.state >= CA_AUTHORIZING && clc.state < CA_ACTIVE));
+		VM_Call( uivm, 1, UI_INIT, (clc.state >= CA_AUTHORIZING && clc.state < CA_ACTIVE));
 	}
 	else if (v != UI_API_VERSION) {
 		// Free uivm now, so UI_SHUTDOWN doesn't get called later.
@@ -1192,7 +1232,7 @@ void CL_InitUI( void ) {
 	}
 	else {
 		// init for this gamestate
-		VM_Call( uivm, UI_INIT, (clc.state >= CA_AUTHORIZING && clc.state < CA_ACTIVE) );
+		VM_Call( uivm, 1, UI_INIT, (clc.state >= CA_AUTHORIZING && clc.state < CA_ACTIVE) );
 	}
 
 	if ( uivm && VM_VRSentinel( uivm ) && !VM_VRRegistered( uivm ) ) {
@@ -1203,7 +1243,7 @@ void CL_InitUI( void ) {
 #ifndef STANDALONE
 qboolean UI_usesUniqueCDKey( void ) {
 	if (uivm) {
-		return (VM_Call( uivm, UI_HASUNIQUECDKEY) == qtrue);
+		return (VM_Call( uivm, 0, UI_HASUNIQUECDKEY) == qtrue);
 	} else {
 		return qfalse;
 	}
@@ -1222,5 +1262,5 @@ qboolean UI_GameCommand( void ) {
 		return qfalse;
 	}
 
-	return VM_Call( uivm, UI_CONSOLE_COMMAND, cls.realtime );
+	return VM_Call( uivm, 1, UI_CONSOLE_COMMAND, cls.realtime );
 }

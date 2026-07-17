@@ -195,6 +195,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define Q3_LITTLE_ENDIAN
 #endif
 
+// [vm_vr]: the vendored Quake3e VM sources key 64-bit paths off glibc's
+// __WORDSIZE (vm_interpreted.c syscall marshalling); define it if the libc
+// headers didn't, same as trinity-engine's q_platform.h does
+#ifndef __WORDSIZE
+#define __WORDSIZE 64
+#endif
+
 #define DLL_EXT ".so"
 
 #endif

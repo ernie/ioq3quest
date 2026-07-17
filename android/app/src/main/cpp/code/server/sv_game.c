@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // sv_game.c -- interface to the game dll
 
 #include "server.h"
+#include "../qcommon/vm_vr.h"
 
 #include "../botlib/botlib.h"
 
@@ -281,6 +282,37 @@ static int	FloatAsInt( float f ) {
 	fi.f = f;
 	return fi.i;
 }
+
+
+/*
+====================
+VM_ArgPtr
+====================
+*/
+static void *VM_ArgPtr( intptr_t intValue ) {
+
+	if ( !intValue || gvm == NULL )
+		return NULL;
+
+	if ( gvm->entryPoint )
+		return (void *)(intValue);
+	else
+		return (void *)(gvm->dataBase + (intValue & gvm->dataMask));
+}
+
+
+/*
+====================
+GVM_ArgPtr
+
+exported version, for resolving a game VM pointer outside of a VM_Call
+(e.g. after GAME_CLIENT_CONNECT returns a denial reason string)
+====================
+*/
+void *GVM_ArgPtr( intptr_t intValue ) {
+	return VM_ArgPtr( intValue );
+}
+
 
 /*
 ====================
@@ -872,6 +904,29 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
 }
 
 /*
+====================
+SV_DllSyscall
+====================
+*/
+static intptr_t QDECL SV_DllSyscall( intptr_t arg, ... ) {
+#if !id386 || defined __clang__
+	intptr_t	args[16]; // headroom for VR traps (stock qagame max is 14)
+	va_list	ap;
+	int i;
+
+	args[0] = arg;
+	va_start( ap, arg );
+	for (i = 1; i < ARRAY_LEN( args ); i++ )
+		args[ i ] = va_arg( ap, intptr_t );
+	va_end( ap );
+
+	return SV_GameSystemCalls( args );
+#else
+	return SV_GameSystemCalls( &arg );
+#endif
+}
+
+/*
 ===============
 SV_ShutdownGameProgs
 
@@ -882,7 +937,7 @@ void SV_ShutdownGameProgs( void ) {
 	if ( !gvm ) {
 		return;
 	}
-	VM_Call( gvm, GAME_SHUTDOWN, qfalse );
+	VM_Call( gvm, 1, GAME_SHUTDOWN, qfalse );
 	VM_Free( gvm );
 	gvm = NULL;
 }
@@ -910,7 +965,7 @@ static void SV_InitGameVM( qboolean restart ) {
 
 	// use the current msec count for a random seed
 	// init for this gamestate
-	VM_Call (gvm, GAME_INIT, sv.time, Com_Milliseconds(), restart);
+	VM_Call (gvm, 3, GAME_INIT, sv.time, Com_Milliseconds(), restart);
 
 	if ( VM_VRSentinel( gvm ) && !VM_VRRegistered( gvm ) ) {
 		Com_Error( ERR_DROP, "game declares VR support but never registered its VR state" );
@@ -930,10 +985,10 @@ void SV_RestartGameProgs( void ) {
 	if ( !gvm ) {
 		return;
 	}
-	VM_Call( gvm, GAME_SHUTDOWN, qtrue );
+	VM_Call( gvm, 1, GAME_SHUTDOWN, qtrue );
 
 	// do a restart instead of a free
-	gvm = VM_Restart(gvm, qtrue);
+	gvm = VM_Restart( gvm );
 	if ( !gvm ) {
 		Com_Error( ERR_FATAL, "VM_Restart on game failed" );
 	}
@@ -963,7 +1018,7 @@ void SV_InitGameProgs( void ) {
 	}
 
 	// load the dll or bytecode
-	gvm = VM_Create( "qagame", SV_GameSystemCalls,
+	gvm = VM_Create( VM_GAME, SV_GameSystemCalls, SV_DllSyscall,
 		Cvar_VariableValue( "vm_game" ) == VMI_BYTECODE ? VMI_BYTECODE : VMI_COMPILED );
 	if ( !gvm ) {
 		Com_Error( ERR_FATAL, "VM_Create on game failed" );
@@ -1011,6 +1066,6 @@ qboolean SV_GameCommand( void ) {
 		}
 	}
 
-	return VM_Call( gvm, GAME_CONSOLE_COMMAND );
+	return VM_Call( gvm, 0, GAME_CONSOLE_COMMAND );
 }
 

@@ -25,7 +25,8 @@ set(COMMON_SOURCES
     ${SOURCE_DIR}/qcommon/puff.c
     ${SOURCE_DIR}/qcommon/vm.c
     ${SOURCE_DIR}/qcommon/vm_interpreted.c
-    ${SOURCE_DIR}/qcommon/vm_none.c
+    ${SOURCE_DIR}/qcommon/vm_vr.c
+    ${SOURCE_DIR}/qcommon/vm_aarch64.c
 )
 
 # Suppress warnings in vendored minizip code

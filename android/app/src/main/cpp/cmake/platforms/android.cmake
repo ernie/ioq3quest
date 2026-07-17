@@ -46,5 +46,3 @@ list(APPEND RENDERER_LIBRARIES
     EGL
 )
 
-# No VM compiled code on Android aarch64
-set(HAVE_VM_COMPILED FALSE)
