@@ -1803,10 +1803,9 @@ static void R_GenerateDrawSurfs( void ) {
 ================
 R_SetupSpriteAxis
 
-Steep-sightline anchor for RB_SpriteEyeAxis (tr_surface.c): world up
-projected against VIEW forward, so up is pinned to world up and does
-not roll with the HMD. Within ~2.5 degrees of straight up/down the
-horizon projection collapses; fall back to the raw view axes there.
+Near-vertical ramp anchor for RB_SpriteEyeAxis: world up projected
+against view forward, so it is stable under head roll. Falls back to
+the raw view axes within ~2.5 degrees of a vertical view.
 ================
 */
 static void R_SetupSpriteAxis( viewParms_t *view ) {
