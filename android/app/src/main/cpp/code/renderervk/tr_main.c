@@ -1779,6 +1779,8 @@ static void R_GenerateDrawSurfs( void ) {
 
 	R_AddPolygonSurfaces();
 
+	R_AddSpritePolySurfaces();
+
 	R_AddDecalSurfaces();
 
 	// set the projection matrix with the minimum zfar
@@ -1794,6 +1796,37 @@ static void R_GenerateDrawSurfs( void ) {
 	R_SetupProjectionZ( &tr.viewParms );
 
 	R_AddEntitySurfaces();
+}
+
+
+/*
+================
+R_SetupSpriteAxis
+
+Horizon-locked billboard basis for the default sprite/autosprite path:
+still faces the view plane, but up is pinned to world up so sprites do
+not roll with the HMD. Within ~2.5 degrees of straight up/down the
+horizon projection collapses; fall back to the raw view axes there.
+================
+*/
+static void R_SetupSpriteAxis( viewParms_t *view ) {
+	static const vec3_t worldUp = { 0.0f, 0.0f, 1.0f };
+	float d;
+
+	VectorCopy( view->or.axis[0], view->sprite_axis[0] );
+
+	d = DotProduct( view->or.axis[0], worldUp );
+	if ( fabsf( d ) > 0.999f ) {
+		// exact-vertical view (~2.5 degree cone, which roll cannot
+		// traverse): raw view axes
+		VectorCopy( view->or.axis[1], view->sprite_axis[1] );
+		VectorCopy( view->or.axis[2], view->sprite_axis[2] );
+		return;
+	}
+
+	VectorMA( worldUp, -d, view->or.axis[0], view->sprite_axis[2] );
+	VectorNormalize( view->sprite_axis[2] );
+	CrossProduct( view->sprite_axis[2], view->sprite_axis[0], view->sprite_axis[1] );
 }
 
 
@@ -1818,6 +1851,8 @@ void R_RenderView( const viewParms_t *parms ) {
 	tr.viewParms = *parms;
 	tr.viewParms.frameSceneNum = tr.frameSceneNum;
 	tr.viewParms.frameCount = tr.frameCount;
+
+	R_SetupSpriteAxis( &tr.viewParms );
 
 	firstDrawSurf = tr.refdef.numDrawSurfs;
 
