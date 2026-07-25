@@ -707,7 +707,9 @@ void Update_Init( void )
 	Cmd_AddCommand( "update", Update_Check_f );
 	Cmd_AddCommand( "updatedownload", Update_Download_f );
 	Cmd_AddCommand( "updatecancel", Update_Cancel_f );
-	Cmd_AddCommand( "updateinstall", Update_Install_f );
+	// same command name as trinity-engine/trinity-vr (and what the trinity UI
+	// issues); on Android it launches the package installer instead of restarting
+	Cmd_AddCommand( "updaterestart", Update_Install_f );
 
 	// clean up leftover APK from a previous download
 	Update_CleanupDownload();
@@ -763,7 +765,7 @@ void Update_Shutdown( void )
 	Cmd_RemoveCommand( "update" );
 	Cmd_RemoveCommand( "updatedownload" );
 	Cmd_RemoveCommand( "updatecancel" );
-	Cmd_RemoveCommand( "updateinstall" );
+	Cmd_RemoveCommand( "updaterestart" );
 }
 
 
@@ -828,7 +830,7 @@ void Update_Cancel_f( void )
 ==================
 Update_Install_f
 
-Console command: \updateinstall
+Console command: \updaterestart
 Launches the Android package installer with the downloaded APK.
 ==================
 */

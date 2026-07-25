@@ -3,11 +3,14 @@
 
 #ifdef USE_HTTP
 
+// Numbering must stay aligned with trinity-engine's updateState_t: the trinity
+// UI (compiled into both clients) maps the update_state cvar by value.
 typedef enum {
 	UPDATE_IDLE,        // no update activity
 	UPDATE_CHECKING,    // querying GitHub API
 	UPDATE_AVAILABLE,   // newer version found, waiting for user
 	UPDATE_DOWNLOADING, // downloading APK
+	UPDATE_EXTRACTING,  // unused on Android (APK installs whole); reserved for enum alignment
 	UPDATE_READY,       // APK downloaded, ready to install
 	UPDATE_ERROR        // something went wrong
 } updateState_t;
