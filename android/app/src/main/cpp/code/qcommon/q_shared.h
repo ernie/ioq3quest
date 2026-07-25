@@ -602,6 +602,7 @@ static ID_INLINE unsigned int log2pad( unsigned int v, int roundup )
 }
 
 signed char ClampChar( int i );
+signed char ClampCharMove( int i );
 signed short ClampShort( int i );
 
 // this isn't a real cheap function to call!
