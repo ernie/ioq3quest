@@ -317,7 +317,7 @@ static qboolean Update_ParseAPIResponse( void )
 		return qfalse;
 	}
 
-	// find the APK asset — match prefix and .apk suffix
+	// find the APK asset: match prefix and .apk suffix
 	prefixLen = strlen( UPDATE_ASSET_PREFIX );
 
 	assetsValue = JSON_ObjectGetNamedValue( json, jsonEnd, "assets" );
@@ -506,7 +506,7 @@ static void Update_PerformCheck( void )
 ==================
 Update_FileWriteCallback
 
-curl write callback for APK download - writes directly to a raw file handle.
+curl write callback for APK download: writes directly to a raw file handle.
 ==================
 */
 static FILE *updateApkFile;

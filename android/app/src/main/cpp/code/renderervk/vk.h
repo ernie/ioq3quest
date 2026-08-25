@@ -58,7 +58,7 @@
 
 // Flare visibility probe topology. 1 = one-vertex POINT_LIST probe;
 // 0 = sub-pixel triangle. The point variant's VS reads gl_ViewIndex and
-// writes gl_PointSize under multiview — that exact combination hangs NVIDIA
+// writes gl_PointSize under multiview: that exact combination hangs NVIDIA
 // desktop GPUs (NVIDIA bug 6413598), so trinity-vr ships the triangle;
 // Adreno is its own driver and gets the cheaper probe if it proves stable.
 #define FLARE_PROBE_POINT_LIST 1
@@ -749,7 +749,7 @@ typedef struct {
 	renderPass_t renderPassIndex;
 	qboolean inRenderPass;		// true when actually inside a render pass
 	qboolean recordingCommands;	// true when command buffer is recording (between Begin/End)
-	qboolean descriptorsReady;	// qfalse between vk_release_resources() and vk_init_descriptors() - pool contents are dead
+	qboolean descriptorsReady;	// qfalse between vk_release_resources() and vk_init_descriptors(): pool contents are dead
 
 	// Subpass optimization: track when HUD rendering completes the combined pass
 	// When using combined subpass render pass, if HUD rendering is requested,

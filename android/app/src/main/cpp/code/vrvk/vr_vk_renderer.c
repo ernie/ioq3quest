@@ -140,7 +140,7 @@ void VR_InitRenderer(VR_Engine* engine)
 		}
 		else
 		{
-			// No user preference or already at desired rate - just sync cvar
+			// No user preference or already at desired rate: just sync cvar
 			Cvar_SetValue("vr_refreshrate", engine->appState.Renderer.RefreshRate);
 		}
 	}
@@ -199,7 +199,7 @@ void VR_ProcessFrame(VR_Engine* engine)
 	// If swapchains were marked for recreation during the previous frame's Com_Frame,
 	// we destroy and recreate them here at a safe point outside the XR frame lifecycle.
 	if (VR_VK_Swapchains_HandlePendingRecreate(engine)) {
-		// Swapchains were recreated - renderer's XR resources (VkImageViews, VkFramebuffers)
+		// Swapchains were recreated: renderer's XR resources (VkImageViews, VkFramebuffers)
 		// will be recreated when VR_Renderer_BeginFrame calls re.BeginXRFrame
 	}
 
@@ -277,12 +277,12 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	// Update HMD position/views
 	IN_VRUpdateHMD(views, viewCount, &fov);
 
-	// SP intermission state tracking - must be set before rendering
+	// SP intermission state tracking: must be set before rendering
 	// so UI code sees the correct state for scaling/offsets
 	qboolean isSPIntermission = VR_IsSPIntermission();
 	if (isSPIntermission && !vr.sp_intermission_active)
 	{
-		// First frame of SP intermission - capture anchor position
+		// First frame of SP intermission: capture anchor position
 		vr.sp_intermission_active = qtrue;
 		// Store yaw for HUD positioning (in degrees)
 		XrQuaternionf q = views[0].pose.orientation;
@@ -292,7 +292,7 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	}
 	else if (!isSPIntermission && vr.sp_intermission_active)
 	{
-		// Exiting SP intermission - reset state
+		// Exiting SP intermission: reset state
 		vr.sp_intermission_active = qfalse;
 	}
 
@@ -307,7 +307,7 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	// Acquire XR swapchains
 	VR_VK_Swapchains_Acquire(swapchains, &swapchainColorIndex, &swapchainDepthIndex);
 
-	// Begin XR rendering - sets up Vulkan command buffer and binds XR framebuffers
+	// Begin XR rendering: sets up Vulkan command buffer and binds XR framebuffers
 	re.BeginXRFrame(swapchainColorIndex, swapchainDepthIndex);
 
 	// Clear framebuffer
@@ -411,7 +411,7 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 				menuYawTracking = qtrue;
 				if (absDelta > 70.0f)
 				{
-					// Too far - snap; we probably just started or switched into the virtual screen
+					// Too far: snap; we probably just started or switched into the virtual screen
 					vr.menuYaw = vr.hmdorientation[YAW];
 				}
 				else
@@ -553,7 +553,7 @@ void VR_Recenter(VR_Engine* engine, XrTime predictedDisplayTime)
 
 void VR_ClearFrameBuffer(int width, int height)
 {
-	// Delegate to renderer - avoids direct graphics API calls in VR layer
+	// Delegate to renderer: avoids direct graphics API calls in VR layer
 	qboolean isThirdPersonSpectator = Cvar_VariableIntegerValue("vr_thirdPersonSpectator") ? qtrue : qfalse;
 	re.ClearVRFramebuffer(width, height, isThirdPersonSpectator);
 }

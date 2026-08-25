@@ -1614,7 +1614,7 @@ int FS_FindVM(void **startSearch, char *found, int foundlen, const char *name, q
 		{
 			// The QVM scan resolves within a single gamedir: the one that
 			// produced the first candidate in search order. Any candidate seen
-			// there - accepted or rejected - makes lower-precedence gamedirs
+			// there, accepted or rejected, makes lower-precedence gamedirs
 			// ineligible, so a rejected candidate falls back to the native
 			// module instead of picking up another game's QVM. When the active
 			// gamedir ships no QVM at all, the first candidate simply comes

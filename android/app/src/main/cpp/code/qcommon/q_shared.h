@@ -834,7 +834,7 @@ void	COM_ParseError( char *format, ... ) __attribute__ ((format (printf, 1, 2)))
 void	COM_ParseWarning( char *format, ... ) __attribute__ ((format (printf, 1, 2)));
 //int		COM_ParseInfos( char *buf, int max, char infos[][MAX_INFO_STRING] );
 
-// Quake3e enhanced parsing - token types for COM_ParseComplex (renderervk)
+// Quake3e enhanced parsing: token types for COM_ParseComplex (renderervk)
 typedef enum {
 	TK_GENEGIC = 0, // for single-char tokens
 	TK_STRING,

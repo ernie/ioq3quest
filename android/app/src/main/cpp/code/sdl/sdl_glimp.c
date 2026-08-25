@@ -1282,7 +1282,7 @@ Shutdown Vulkan for Quest VR.
 */
 void VKimp_Shutdown(qboolean unloadDLL)
 {
-	(void)unloadDLL;  // Not used - DLL management handled elsewhere
+	(void)unloadDLL;  // Not used: DLL management handled elsewhere
 
 	ri.Printf( PRINT_DEVELOPER, "VKimp_Shutdown()\n" );
 

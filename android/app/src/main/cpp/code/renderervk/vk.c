@@ -482,7 +482,7 @@ static void vk_set_object_name( uint64_t obj, const char *objName, VkDebugReport
 }
 
 
-// Forward declaration - defined later in file
+// Forward declaration: defined later in file
 static VkFormat vk_get_unorm_format( VkFormat format );
 
 
@@ -584,7 +584,7 @@ static void vk_create_subpass_render_passes( void )
 			attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 			// [1] Resolve target - TRANSIENT (input attachment for subpasses 1,2)
-			// DONT_CARE is fine - resolve writes all pixels from MSAA
+			// DONT_CARE is fine: resolve writes all pixels from MSAA
 			attachments[1].format = vk.color_format;
 			attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
 			attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -634,7 +634,7 @@ static void vk_create_subpass_render_passes( void )
 
 			// [0] Scene color - TRANSIENT
 			// Use CLEAR to avoid garbage in unrendered areas (e.g., outside map in death cam)
-			// CLEAR is efficient on tile-based GPUs - just sets tile memory, no DRAM read
+			// CLEAR is efficient on tile-based GPUs: just sets tile memory, no DRAM read
 			attachments[0].format = vk.color_format;
 			attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 			attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -723,7 +723,7 @@ static void vk_create_subpass_render_passes( void )
 		subpasses[2].pColorAttachments = &colorRef2;
 
 		// Subpass 3: Post-bloom 2D (alpha blend onto swapchain)
-		// No input attachment needed - just render 2D content over the composited scene
+		// No input attachment needed: just render 2D content over the composited scene
 		VkAttachmentReference colorRef3;
 		colorRef3.attachment = swapchainAttIdx;
 		colorRef3.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -843,7 +843,7 @@ static void vk_create_subpass_render_passes( void )
 			attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 			// [1] Resolve target - TRANSIENT
-			// DONT_CARE is fine - resolve writes all pixels from MSAA
+			// DONT_CARE is fine: resolve writes all pixels from MSAA
 			attachments[1].format = vk.color_format;
 			attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
 			attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -1302,7 +1302,7 @@ static void vk_create_render_passes( void )
 	depth_format = vk.depth_format;
 	device = vk.device;
 
-	// Common subpass dependencies - used by all render passes
+	// Common subpass dependencies: used by all render passes
 	Com_Memset( &deps, 0, sizeof( deps ) );
 
 	// deps[0]: External -> subpass 0 (wait for previous operations before color/depth output)
@@ -1341,7 +1341,7 @@ static void vk_create_render_passes( void )
 	deps[2].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	deps[2].dependencyFlags = 0;
 
-	// Screenmap render pass - only needed for FBO mode (r_fbo=1)
+	// Screenmap render pass: only needed for FBO mode (r_fbo=1)
 	// In non-FBO mode, we skip directly to XR multiview passes
 	if ( r_fbo->integer )
 	{
@@ -2118,7 +2118,7 @@ static void vk_destroy_instance( void ) {
 		vk_surface = VK_NULL_HANDLE;
 	}
 
-	// DO NOT destroy vk_instance - it's owned by the VR layer (XR_KHR_vulkan_enable2)
+	// DO NOT destroy vk_instance: it's owned by the VR layer (XR_KHR_vulkan_enable2)
 	// The VR layer's VR_Vulkan_Shutdown() handles instance/device destruction
 	vk_instance = VK_NULL_HANDLE;
 }
@@ -2184,7 +2184,7 @@ static void init_vulkan_library( void )
 	}
 #endif
 
-	// Quest/Android: no desktop surface - VR renders directly to XR swapchains
+	// Quest/Android: no desktop surface, VR renders directly to XR swapchains
 	vk_surface = VK_NULL_HANDLE;
 	// Use a common VR format (R8G8B8A8_SRGB is typical for Quest)
 	vk.base_format.format = VK_FORMAT_R8G8B8A8_SRGB;
@@ -2690,7 +2690,7 @@ void vk_update_attachment_descriptors( void ) {
 	desc.pBufferInfo = NULL;
 	desc.pTexelBufferView = NULL;
 
-	// Note: vk.color_descriptor removed - subpass mode uses input attachments
+	// Note: vk.color_descriptor removed: subpass mode uses input attachments
 
 	// screenmap
 	if ( vk.screenMap.color_image_view && vk.screenMap.color_descriptor != VK_NULL_HANDLE )
@@ -2816,7 +2816,7 @@ void vk_init_descriptors( void )
 	}
 
 	// FBO mode: allocate descriptors for bloom blur passes and screenmap (portal/mirror)
-	// Note: vk.color_descriptor removed - subpass mode uses input attachments instead
+	// Note: vk.color_descriptor removed: subpass mode uses input attachments instead
 	if ( vk.fboActive )
 	{
 		alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -3402,7 +3402,7 @@ static void vk_alloc_persistent_pipelines( void )
 	}
 
 	// flare visibility test probe (topology per FLARE_PROBE_POINT_LIST;
-	// the point variant hangs NVIDIA — bug 6413598 — but Adreno is its own
+	// the point variant hangs NVIDIA (bug 6413598), but Adreno is its own
 	// driver and gets the cheaper probe if it proves stable)
 	if ( vk.fragmentStores )
 	{
@@ -3826,7 +3826,7 @@ static void vk_create_attachments( void )
 			}
 		}
 
-		// Screenmap images for portal/mirror rendering - only for FBO mode
+		// Screenmap images for portal/mirror rendering: only for FBO mode
 		// Note: Legacy vk.color_image, vk.msaa_image, vk.depth_image removed -
 		// subpass optimization uses vk.transient.* images instead
 		if ( vk.fboActive ) {
@@ -3848,7 +3848,7 @@ static void vk_create_attachments( void )
 
 	//vk_alloc_attachments();
 
-	// Note: Legacy vk.depth_image removed - subpass optimization uses vk.transient.depth_image instead
+	// Note: Legacy vk.depth_image removed: subpass optimization uses vk.transient.depth_image instead
 
 	vk_alloc_attachments();
 
@@ -3888,7 +3888,7 @@ static void vk_create_framebuffers( void )
 	// created later in vk_create_subpass_framebuffers() once XR swapchains are available.
 	// For direct mode (r_fbo=0), XR framebuffers are created in vk_create_xr_framebuffers().
 
-	// Screenmap and bloom framebuffers - only needed for FBO mode (r_fbo=1)
+	// Screenmap and bloom framebuffers: only needed for FBO mode (r_fbo=1)
 	if ( vk.fboActive ) {
 		// screenmap - used for portal/mirror rendering
 		desc.renderPass = vk.render_pass.screenmap;
@@ -3908,7 +3908,7 @@ static void vk_create_framebuffers( void )
 		// Note: Legacy vk.framebuffers.bloom_extract removed -
 		// subpass optimization does bloom extraction in subpass 1 of main_with_bloom
 
-		// Blur framebuffers - still used by vk_finish_subpass_post() to prepare bloom for next frame
+		// Blur framebuffers: still used by vk_finish_subpass_post() to prepare bloom for next frame
 		if ( r_bloom->integer )
 		{
 			uint32_t width = gls.captureWidth;
@@ -5004,7 +5004,7 @@ __cleanup:
 			// Only destroy device if we created it (non-XR mode)
 			qvkDestroyDevice( vk.device, NULL );
 		}
-		// In XR mode, VR layer owns the device - VR_Vulkan_Shutdown() handles destruction
+		// In XR mode, VR layer owns the device: VR_Vulkan_Shutdown() handles destruction
 	}
 
 	deinit_device_functions();
@@ -5032,7 +5032,7 @@ void vk_queue_wait_idle( void )
 
 
 // Precondition: callers must end (discard or finish) any in-flight frame
-// first — the pool reset below frees every set, and descriptorsReady only
+// first: the pool reset below frees every set, and descriptorsReady only
 // guards frames that haven't started yet.
 void vk_release_resources( void ) {
 	int i, j;
@@ -7176,7 +7176,7 @@ void vk_clear_color( const vec4_t color ) {
 
 	get_scissor_rect( &clear_rect.rect );
 	clear_rect.baseArrayLayer = 0;
-	// In multiview render passes, layerCount must be 1 - the view mask
+	// In multiview render passes, layerCount must be 1: the view mask
 	// automatically broadcasts the clear to all active views (both eyes)
 	clear_rect.layerCount = 1;
 
@@ -7214,7 +7214,7 @@ void vk_clear_depth( qboolean clear_stencil ) {
 
 	get_scissor_rect( &clear_rect[0].rect );
 	clear_rect[0].baseArrayLayer = 0;
-	// In multiview render passes, layerCount must be 1 - the view mask
+	// In multiview render passes, layerCount must be 1: the view mask
 	// automatically broadcasts the clear to all active views (both eyes)
 	clear_rect[0].layerCount = 1;
 
@@ -7693,7 +7693,7 @@ void vk_bind_descriptor_sets( void )
 		}
 	}
 
-	// Always use multiview layout - mono modelview passed via 64-byte push
+	// Always use multiview layout: mono modelview passed via 64-byte push
 	// constants, per-eye projection via the ViewTransform UBO (set 0, binding 1)
 	qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 		vk.pipeline_layout, start, count, vk.cmd->descriptor_set.current + start, offset_count, offsets );
@@ -7907,13 +7907,13 @@ void vk_begin_main_render_pass( qboolean clear )
 			subpassRp = vk.render_pass.main_with_gamma;
 		}
 
-		// Use subpass optimization - resources must be available in FBO mode
+		// Use subpass optimization: resources must be available in FBO mode
 		if ( subpassFb != VK_NULL_HANDLE && subpassRp != VK_NULL_HANDLE ) {
 			frameBuffer = subpassFb;
 			renderPass = subpassRp;
 			vk.renderPassIndex = RENDER_PASS_MAIN_WITH_POST;
 		} else {
-			// Subpass resources not ready - this is a fatal initialization error
+			// Subpass resources not ready: this is a fatal initialization error
 			// (legacy vk.framebuffers.main fallback removed)
 			ri.Error( ERR_FATAL, "vk_begin_main_render_pass: subpass resources not initialized (fb=%p, rp=%p)",
 				(void*)subpassFb, (void*)subpassRp );
@@ -7992,7 +7992,7 @@ void vk_begin_main_render_pass( qboolean clear )
 		render_pass_begin_info.pClearValues = clear_values;
 		vk_world.dirty_depth_attachment = 0;
 	} else {
-		// Resuming after HUD/overlay pass - use mainResume with LOAD_OP_LOAD
+		// Resuming after HUD/overlay pass: use mainResume with LOAD_OP_LOAD
 		render_pass_begin_info.clearValueCount = 0;
 		render_pass_begin_info.pClearValues = NULL;
 	}
@@ -8102,7 +8102,7 @@ void vk_begin_hud_render_pass( qboolean clear )
 		vk.deferredHudPending = qtrue;
 	}
 
-	// Handle post-bloom 2D subpass - need to properly end the subpass render pass
+	// Handle post-bloom 2D subpass: need to properly end the subpass render pass
 	if ( vk.inPostBloom2DSubpass && vk.inRenderPass ) {
 		// We're in subpass 3 (post-bloom 2D), end the whole render pass properly
 		vk_end_post_bloom_subpass();
@@ -8244,7 +8244,7 @@ void vk_end_hud_render_pass( void )
 	// If we didn't use subpass optimization, resume the main pass for subsequent rendering.
 	if ( vk.deferredHudPending ) {
 		vk.deferredHudPending = qfalse;
-		// Don't resume main render pass - combined subpass pass already output to swapchain
+		// Don't resume main render pass: combined subpass pass already output to swapchain
 	} else {
 		// Standard path: resume main XR render pass without clearing (preserve existing content)
 		vk_begin_main_render_pass( qfalse );
@@ -8280,7 +8280,7 @@ static void vk_resize_geometry_buffer( void )
 
 	for ( i = 0; i < NUM_COMMAND_BUFFERS; i++ ) {
 		vk_update_uniform_descriptor( vk.tess[ i ].uniform_descriptor, vk.tess[ i ].vertex_buffer );
-		// fresh buffers - every cached eyeProj slot is gone
+		// fresh buffers: every cached eyeProj slot is gone
 		vk.tess[ i ].eyeproj_cache_valid = qfalse;
 	}
 }
@@ -8321,7 +8321,7 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 		vk_finish_frame();
 	}
 
-	// Always start fresh - increment frame count
+	// Always start fresh: increment frame count
 	vk.frame_count++;
 
 #ifdef USE_UPLOAD_QUEUE
@@ -8510,7 +8510,7 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 	backEnd.screenMapDone = qfalse;
 	vk.subpassPostDone = qfalse;  // Reset subpass post flag for new frame
 
-	// XR always uses the main multiview render pass - no screenmap in VR
+	// XR always uses the main multiview render pass: no screenmap in VR
 	vk_begin_main_render_pass( qtrue );  // Clear framebuffer at start of frame
 
 	// Reset dynamic buffers for new frame
@@ -8527,7 +8527,7 @@ void vk_begin_frame( uint32_t colorIndex, uint32_t depthIndex )
 
 	Com_Memset( &vk.cmd->scissor_rect, 0, sizeof( vk.cmd->scissor_rect ) );
 
-	// the ring restarted at offset 0 - last frame's cached eyeProj slot is gone
+	// the ring restarted at offset 0: last frame's cached eyeProj slot is gone
 	vk.cmd->eyeproj_cache_valid = qfalse;
 
 	// prime set 0 binding 1 so every dynamic-offset bind this frame has a
@@ -8587,7 +8587,7 @@ void vk_end_frame( void )
 		}
 		else if ( vk.subpassPostDone ) {
 			// Subpass post was already done earlier (e.g., before HUD/overlay rendering)
-			// Skip - swapchain already has final output
+			// Skip: swapchain already has final output
 			vk_end_render_pass();
 		}
 		else {
@@ -8634,12 +8634,12 @@ void vk_end_frame( void )
 
 /*
 Shared by vk_finish_frame / vk_discard_frame: end an interrupted render
-pass and report whether a command buffer is open - the finish path submits
+pass and report whether a command buffer is open: the finish path submits
 it, the discard path drops it.
 */
 static qboolean vk_end_interrupted_pass( void )
 {
-	// Safety check - if cmd is null or command buffer is invalid, we can't do anything
+	// Safety check: if cmd is null or command buffer is invalid, we can't do anything
 	if ( !vk.cmd || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
 		vk.inRenderPass = qfalse;
 		vk.inPostBloom2DSubpass = qfalse;
@@ -8658,23 +8658,23 @@ static qboolean vk_end_interrupted_pass( void )
 			if ( useBloom ) {
 				// 4-subpass bloom path: scene(0) → extract(1) → composite(2) → post-bloom 2D(3)
 				if ( !vk.subpassPostDone ) {
-					// Still in subpass 0 (scene) - advance through 1, 2, 3
+					// Still in subpass 0 (scene): advance through 1, 2, 3
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 1 (extract)
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (composite)
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 3 (post-bloom 2D)
 				} else if ( !vk.inPostBloom2DSubpass ) {
-					// subpassPostDone but not in post-bloom 2D - we're in subpass 2, need to go to 3
+					// subpassPostDone but not in post-bloom 2D: we're in subpass 2, need to go to 3
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 3 (post-bloom 2D)
 				}
 				// Now in final subpass (3), safe to end
 			} else {
 				// 3-subpass gamma-only path: scene(0) → gamma(1) → post-gamma 2D(2)
 				if ( !vk.subpassPostDone ) {
-					// Still in subpass 0 - advance through 1, 2
+					// Still in subpass 0: advance through 1, 2
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 1 (gamma)
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (post-gamma 2D)
 				} else if ( !vk.inPostBloom2DSubpass ) {
-					// subpassPostDone but not in post-gamma 2D - we're in subpass 1, need to go to 2
+					// subpassPostDone but not in post-gamma 2D: we're in subpass 1, need to go to 2
 					qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 2 (post-gamma 2D)
 				}
 				// Now in final subpass (2), safe to end
@@ -8744,7 +8744,7 @@ it would hand the queue draws referencing resources RE_Shutdown is about to
 destroy, with attachments possibly left mid-pass (VUID-vkCmdDraw-None-09600).
 
 Uses the shared vk_end_interrupted_pass() helper for the subpass-advance
-logic (required by the subpass optimization path — the recorded
+logic (required by the subpass optimization path: the recorded
 EndRenderPass is validated at record time even though the buffer is never
 submitted) but skips the queue submit.
 
@@ -8811,7 +8811,7 @@ void vk_read_pixels( byte *buffer, uint32_t width, uint32_t height )
 		srcImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		srcImage = vk.color_image;
 	} else {
-		// Subpass FBO mode - screenshots not supported without dedicated capture buffer
+		// Subpass FBO mode: screenshots not supported without dedicated capture buffer
 		// (scene color is transient and written directly to XR swapchain)
 		ri.Printf( PRINT_WARNING, "vk_read_pixels: screenshots not available in subpass FBO mode\n" );
 		Com_Memset( buffer, 0, width * height * 4 );
@@ -9022,7 +9022,7 @@ void vk_read_pixels( byte *buffer, uint32_t width, uint32_t height )
 }
 
 
-// Legacy vk_bloom() function removed - bloom is now handled by subpass optimization
+// Legacy vk_bloom() function removed: bloom is now handled by subpass optimization
 // in vk_finish_subpass_post() which uses tile-local memory for bandwidth savings
 
 
@@ -9098,7 +9098,7 @@ void vk_finish_subpass_post( void )
 		// This shifts the previous frame's bloom to align with current head orientation
 		// If we don't do this, we'll see incorrect bloom "ghosting" during rapid head turns
 		// Use tan(halfFov) for correct perspective projection mapping
-		// Skip reprojection on virtual screen - the world isn't moving with the head
+		// Skip reprojection on virtual screen: the world isn't moving with the head
 		{
 			float uvOffset[2] = { 0.0f, 0.0f };
 
@@ -9139,7 +9139,7 @@ void vk_finish_subpass_post( void )
 		qvkCmdDraw( vk.cmd->command_buffer, 4, 1, 0, 0 );
 
 		// Transition to subpass 3 (post-bloom 2D)
-		// Don't end the render pass - 2D content will render in this subpass
+		// Don't end the render pass: 2D content will render in this subpass
 		qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
 
 		ri.Printf( PRINT_DEVELOPER, "vk_finish_subpass_post: transitioned to subpass 3 (post-bloom 2D)\n" );
@@ -9153,7 +9153,7 @@ void vk_finish_subpass_post( void )
 
 		// Reset descriptor set tracking for 2D rendering
 		// The composite pass bound descriptors with pipeline_layout_subpass_composite,
-		// but 2D rendering uses pipeline_layout - must clear stale bindings
+		// but 2D rendering uses pipeline_layout: must clear stale bindings
 		Com_Memset( vk.cmd->descriptor_set.current, 0, sizeof( vk.cmd->descriptor_set.current ) );
 		vk.cmd->descriptor_set.start = ~0U;
 		vk.cmd->descriptor_set.end = 0;
@@ -9202,7 +9202,7 @@ void vk_finish_subpass_post( void )
 		qvkCmdDraw( vk.cmd->command_buffer, 4, 1, 0, 0 );
 
 		// Transition to subpass 2 (post-gamma 2D)
-		// Don't end the render pass - 2D content will render in this subpass
+		// Don't end the render pass: 2D content will render in this subpass
 		qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
 
 		vk.inPostBloom2DSubpass = qtrue;  // Same flag for post-gamma case
@@ -9213,7 +9213,7 @@ void vk_finish_subpass_post( void )
 
 		// Reset descriptor set tracking for 2D rendering
 		// The gamma pass bound descriptors with pipeline_layout_subpass_gamma,
-		// but 2D rendering uses pipeline_layout - must clear stale bindings
+		// but 2D rendering uses pipeline_layout: must clear stale bindings
 		Com_Memset( vk.cmd->descriptor_set.current, 0, sizeof( vk.cmd->descriptor_set.current ) );
 		vk.cmd->descriptor_set.start = ~0U;
 		vk.cmd->descriptor_set.end = 0;
@@ -9249,7 +9249,7 @@ void vk_finish_subpass_post( void )
 		qvkCmdEndRenderPass( vk.cmd->command_buffer );
 		vk.inRenderPass = qfalse;
 		vk.renderPassIndex = RENDER_PASS_MAIN;  // Reset for subsequent rendering
-		// Note: don't set subpassPostDone - the subpass wasn't actually done
+		// Note: don't set subpassPostDone: the subpass wasn't actually done
 	}
 }
 
@@ -9520,7 +9520,7 @@ qboolean vk_create_xr_framebuffers( void )
 
 			// Use UNORM views to bypass automatic sRGB conversion (shader handles gamma)
 			if ( xr->gammaViews[i] != VK_NULL_HANDLE ) {
-				attachments[0] = xr->gammaViews[i];  // UNORM view - no auto sRGB conversion
+				attachments[0] = xr->gammaViews[i];  // UNORM view: no auto sRGB conversion
 			} else {
 				attachments[0] = xr->colorViews[i];  // Fallback to sRGB view
 			}
@@ -9768,7 +9768,7 @@ qboolean vk_create_hud_buffer( void )
 
 	// 8. Initialize HUD color and depth images
 	// Color: clear to transparent black and transition to SHADER_READ_ONLY_OPTIMAL
-	// Depth: clear to 0.0 (USE_REVERSED_DEPTH) - render pass uses UNDEFINED initialLayout with LOAD_OP_CLEAR
+	// Depth: clear to 0.0 (USE_REVERSED_DEPTH); render pass uses UNDEFINED initialLayout with LOAD_OP_CLEAR
 	{
 		VkCommandBuffer cmdBuf;
 		VkCommandBufferAllocateInfo cmdAllocInfo;
@@ -10058,7 +10058,7 @@ static qboolean vk_create_subpass_framebuffers( void )
 }
 
 
-// Legacy vk_create_xr_fbo_descriptors() removed - subpass mode uses input attachments
+// Legacy vk_create_xr_fbo_descriptors() removed: subpass mode uses input attachments
 // for scene color instead of vk.color_descriptor
 
 /*
@@ -10252,7 +10252,7 @@ static qboolean vk_reallocate_xr_fbo_descriptors( void )
 	return qtrue;
 }
 
-// Static swapchain info storage - populated from VR layer pull
+// Static swapchain info storage: populated from VR layer pull
 static VR_VK_SwapchainInfo s_colorSwapchainInfo;
 static VR_VK_SwapchainInfo s_depthSwapchainInfo;
 
@@ -10426,7 +10426,7 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 		attachmentCount = 2;
 	}
 
-	// Subpass dependencies - includes depth stages for mainResume which uses
+	// Subpass dependencies: includes depth stages for mainResume which uses
 	// LOAD_OP_LOAD on depth after HUD pass (FBO depth must be synchronized)
 	deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 	deps[0].dstSubpass = 0;
@@ -10466,7 +10466,7 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 	SET_OBJECT_NAME( vk.render_pass.main, "render pass - XR main (multiview, recreated)", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
 	ri.Printf( PRINT_ALL, "Recreated main render pass: %p (attachments: %d)\n", (void*)vk.render_pass.main, attachmentCount );
 
-	// Destroy existing pipelines - they were created with the old render pass format
+	// Destroy existing pipelines: they were created with the old render pass format
 	// and are no longer compatible. They will be recreated lazily with the new render pass.
 	vk_destroy_pipelines( qfalse );
 	ri.Printf( PRINT_ALL, "Destroyed pipelines for render pass format change\n" );
@@ -10516,7 +10516,7 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 		VkSubpassDependency gammaDep;
 		VkFormat gammaFormat = vk_get_unorm_format( colorFormat );
 
-		// gamma has only color attachment (no depth) - outputs to XR swapchain
+		// gamma has only color attachment (no depth): outputs to XR swapchain
 		// Uses UNORM format because gamma shader outputs sRGB values directly
 		attachments[0].format = gammaFormat;
 		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;

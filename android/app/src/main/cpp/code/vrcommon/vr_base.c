@@ -79,7 +79,7 @@ static void VR_BuildExtensionList(void)
 #endif
 	// XR_KHR_vulkan_swapchain_format_list lets the runtime know which view formats
 	// we'll use for the swapchain images, so it can skip unnecessary usage flags
-	// (e.g. STORAGE_BIT). Only enable if the runtime advertises it — it is chained
+	// (e.g. STORAGE_BIT). Only enable if the runtime advertises it: it is chained
 	// into swapchain creation in vr_vk.c and must not be referenced otherwise.
 	if (numRequiredExtensions < MAX_REQUIRED_EXTENSIONS &&
 		VR_HasInstanceExtension("XR_KHR_vulkan_swapchain_format_list"))
@@ -116,7 +116,7 @@ VR_Engine* VR_Init( void )
 
 #if __ANDROID__
 	// The Android OpenXR loader must be initialized before enumerating instance
-	// extensions, or the enumeration comes back empty. Idempotent — VR_CreateInstance
+	// extensions, or the enumeration comes back empty. Idempotent: VR_CreateInstance
 	// calls it again as a no-op.
 	VR_InitializeLoaderAndroid();
 #endif
@@ -208,7 +208,7 @@ void VR_Destroy( VR_Engine* engine )
 #ifdef USE_BHAPTICS
 		VR_Bhaptics_Shutdown();
 #endif
-		// Invalidate XR function pointers before destroying XrInstance - they were
+		// Invalidate XR function pointers before destroying XrInstance: they were
 		// obtained via xrGetInstanceProcAddr and become invalid after xrDestroyInstance.
 		// Note: We do NOT call VR_Graphics_Shutdown() here because the renderer still
 		// needs the VkDevice/VkInstance. The renderer will destroy them in vk_shutdown().

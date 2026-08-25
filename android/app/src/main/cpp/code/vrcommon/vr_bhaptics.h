@@ -10,7 +10,7 @@
 
 #include "../qcommon/q_shared.h"
 
-// Stub implementations - bHaptics is PCVR-only
+// Stub implementations: bHaptics is PCVR-only
 static inline void VR_Bhaptics_Init(void) {}
 static inline void VR_Bhaptics_Shutdown(void) {}
 static inline void VR_Bhaptics_UpdateEnabled(void) {}

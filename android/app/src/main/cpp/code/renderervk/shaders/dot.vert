@@ -7,7 +7,7 @@
 // same eyeProj matrices the scene was rendered with and pushes them here;
 // gl_ViewIndex picks the slot. gl_PointSize is required for point topology
 // (no maintenance5 on this driver). This ViewIndex+PointSize+POINT_LIST
-// combination hangs NVIDIA desktop GPUs (NVIDIA bug 6413598) — flip
+// combination hangs NVIDIA desktop GPUs (NVIDIA bug 6413598): flip
 // FLARE_PROBE_POINT_LIST in vk.h to the triangle variant if Adreno
 // misbehaves.
 //

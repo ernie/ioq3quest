@@ -1175,12 +1175,12 @@ static const void *RB_SetColor( const void *data ) {
 
 	// Gamma compensation for 2D colors:
 	// - Before the gamma pass: pre-darken so the pass produces correct output.
-	//   HUD buffer content belongs here too - it is gamma-passed later, when the
+	//   HUD buffer content belongs here too: it is gamma-passed later, when the
 	//   hud sprite that samples it is drawn.
 	// - Post-bloom 2D (including HUD mode 2): the fragment shader applies gamma
 	//   itself, so pre-compensating here would apply it twice.
 	if ( cmd->fullBrightness ) {
-		// gamma is applied downstream in the fragment shader - use colors as-is
+		// gamma is applied downstream in the fragment shader: use colors as-is
 		backEnd.color2D.rgba[0] = cmd->color[0] * 255;
 		backEnd.color2D.rgba[1] = cmd->color[1] * 255;
 		backEnd.color2D.rgba[2] = cmd->color[2] * 255;
@@ -1726,7 +1726,7 @@ static const void *RB_SwapBuffers( const void *data ) {
 	tr.needScreenMap = 0;
 
 #ifdef USE_VULKAN
-	// End frame - OpenXR handles display timing
+	// End frame: OpenXR handles display timing
 	// Desktop mirror blit is handled separately in VR_Renderer_EndFrame
 	vk_end_frame();
 
@@ -1798,7 +1798,7 @@ static const void* RB_HUDBuffer( const void* data ) {
 		tess.shader = NULL;
 	}
 
-	// For HUD mode 2 (overlay), don't switch to HUD render pass - just track state.
+	// For HUD mode 2 (overlay), don't switch to HUD render pass: just track state.
 	// 3D HUD icons should render to the current target (overlay or XR swapchain).
 	if ( vr_currentHudDrawStatus->integer == 2 ) {
 		if ( cmd->start && !backEnd.isDrawingHUD ) {
@@ -1853,7 +1853,7 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 	if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.inRenderPass ) {
 		// Transition through bloom extract/composite (or gamma) to post-bloom 2D subpass
 		vk_finish_subpass_post();
-		// Now in post-bloom/post-gamma 2D subpass - vk.inPostBloom2DSubpass is set
+		// Now in post-bloom/post-gamma 2D subpass: vk.inPostBloom2DSubpass is set
 
 		// 3D->2D boundary: draw the deferred main-view coronas now, after the
 		// bloom bright-pass has already sampled the scene, so they aren't
@@ -1881,7 +1881,7 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 RB_EndPostBloom2D
 
 Called after cgame's post-scene 2D rendering is finished.
-This does NOT end the render pass - the pass stays active for any additional
+This does NOT end the render pass: the pass stays active for any additional
 2D drawing that may happen later in the frame (like menus on the virtual screen).
 The render pass will be properly ended by vk_end_frame() when the frame ends.
 ====================
@@ -1895,7 +1895,7 @@ static const void* RB_EndPostBloom2D( const void* data ) {
 		tess.shader = NULL;
 	}
 
-	// Don't end the render pass here - keep it active for any menu/UI drawing
+	// Don't end the render pass here: keep it active for any menu/UI drawing
 	// that may happen later in the frame (e.g., virtual screen menu).
 	// vk_end_frame() will handle ending the render pass properly.
 

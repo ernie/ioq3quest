@@ -17,7 +17,7 @@
 #define XR_USE_PLATFORM_XLIB
 #endif
 
-// Vulkan graphics API binding - required for XrGraphicsRequirementsVulkan2KHR, etc.
+// Vulkan graphics API binding: required for XrGraphicsRequirementsVulkan2KHR, etc.
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
@@ -37,7 +37,7 @@ typedef struct VR_VK_SwapchainInfo_s {
 	uint32_t height;
 	uint32_t arraySize;          // 2 for stereo multiview
 	uint32_t imageCount;         // Number of swapchain images
-	VkImage* images;             // VkImage handles from XR (NOT owned - from OpenXR)
+	VkImage* images;             // VkImage handles from XR (NOT owned: from OpenXR)
 	XrBool32 acquired;           // Whether an image is currently acquired (for cleanup)
 } VR_VK_SwapchainInfo;
 

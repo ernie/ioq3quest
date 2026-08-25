@@ -108,7 +108,7 @@ static void VR_VK_DestroySwapchain(VR_VK_SwapchainInfo* info)
 		info->acquired = XR_FALSE;
 	}
 
-	// Free images array (we don't own the VkImages themselves - OpenXR does)
+	// Free images array (we don't own the VkImages themselves: OpenXR does)
 	if (info->images) {
 		free(info->images);
 		info->images = NULL;

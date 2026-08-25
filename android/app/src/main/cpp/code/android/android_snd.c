@@ -247,7 +247,7 @@ qboolean SNDDMA_Init( void ) {
 	// constant is exactly its rate in Hz times 1000 (SL_SAMPLINGRATE_8 = 8000000,
 	// _11_025 = 11025000, _22_05 = 22050000, _44_1 = 44100000, _48 = 48000000).
 	// Deriving it from dma.speed rather than naming a constant keeps the format
-	// and the mixer's rate in lockstep - they must agree or playback is pitched.
+	// and the mixer's rate in lockstep: they must agree or playback is pitched.
 	SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 1};
 	SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, 2, (SLuint32)dma.speed * 1000,
 			SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,

@@ -1062,7 +1062,7 @@ static void RB_IterateStagesGeneric( const shaderCommands_t *input )
 		}
 
 		// mark entity model pixels with stencil bit 0x80 so shadows skip them
-		// only for RT_MODEL — sprites and other transparent entities must not
+		// only for RT_MODEL: sprites and other transparent entities must not
 		// mark stencil or their transparent areas will block shadow visibility
 		if ( r_shadows->integer == 2 && backEnd.currentEntity != &tr.worldEntity
 			&& backEnd.currentEntity->e.reType == RT_MODEL ) {

@@ -109,7 +109,7 @@ typedef struct {
 								  const float projectionEye0[16], const float projectionEye1[16],
 								  float combinedFovX, float halfIpdMeters );
 
-	// VR framebuffer operations - called from vrcommon, implemented by each renderer
+	// VR framebuffer operations: called from vrcommon, implemented by each renderer
 	qboolean (*InitXRResources)( void );  // Initialize XR resources after swapchains created (Vulkan)
 	void	(*BeginXRFrame)( uint32_t colorIndex, uint32_t depthIndex );  // Begin XR frame with swapchain indices (Vulkan)
 	void	(*ClearVRFramebuffer)( int width, int height, qboolean isThirdPersonSpectator );

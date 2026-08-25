@@ -339,7 +339,7 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 			CL_Init();
 		}
 		CL_Disconnect( qtrue );
-		// Defer CL_FlushMemory — same SO unload safety issue as above.
+		// Defer CL_FlushMemory: same SO unload safety issue as above.
 		com_deferredFlush = qtrue;
 		com_errorEntered = qfalse;
 		longjmp (abortframe, -1);
@@ -351,7 +351,7 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 		}
 		if ( com_cl_running && com_cl_running->integer ) {
 			CL_Disconnect( qtrue );
-			// Defer CL_FlushMemory — same SO unload safety issue as above.
+			// Defer CL_FlushMemory: same SO unload safety issue as above.
 			com_deferredFlush = qtrue;
 		} else {
 			Com_Printf("Server didn't have CD\n" );
@@ -3149,7 +3149,7 @@ void Com_Frame( void ) {
 		// Com_Error (before longjmp) because it unloads the cgame SO
 		// via Sys_UnloadDll.  If the error was triggered during cgame
 		// rendering, cgame stack frames are still on the call stack
-		// when longjmp fires — unloading the SO first corrupts state.
+		// when longjmp fires: unloading the SO first corrupts state.
 		if ( com_deferredFlush ) {
 			CL_FlushMemory();
 			VM_Forced_Unload_Done();
