@@ -669,6 +669,7 @@ typedef struct {
 
 		VkShaderModule bloom_fs;
 		VkShaderModule blur_fs;
+		VkShaderModule blur_extract_fs;  // first blur pass of the foveated split, bloom extract folded in
 		VkShaderModule blend_fs;
 
 		VkShaderModule gamma_fs;
