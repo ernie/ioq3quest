@@ -139,12 +139,9 @@ add_custom_command(
     COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/blur.frag
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} blur_frag_spv
 
-    # Dot shader (flare visibility probe; point + triangle variants read
-    # gl_ViewIndex, which requires --target-env vulkan1.1)
+    # Dot shader (flare visibility probe; dot.vert reads gl_ViewIndex, hence --target-env vulkan1.1)
     COMMAND ${GLSLANG_VALIDATOR} -S vert -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/dot.vert
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} dot_vert_spv
-    COMMAND ${GLSLANG_VALIDATOR} -S vert -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/dot_tri.vert
-    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} dot_tri_vert_spv
     COMMAND ${GLSLANG_VALIDATOR} -S frag -V -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/dot.frag
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} dot_frag_spv
 

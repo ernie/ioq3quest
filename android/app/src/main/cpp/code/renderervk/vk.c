@@ -3190,7 +3190,7 @@ void vk_init_descriptors( void )
 
 	info.buffer = vk.storage.buffer;
 	info.offset = 0;
-	info.range = sizeof( uint32_t );
+	info.range = 2 * sizeof( uint32_t );  // passed and total, see dot.frag
 
 	desc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	desc.dstSet = vk.storage.descriptor;
@@ -3631,7 +3631,6 @@ static void vk_create_shader_modules( void )
 	SET_OBJECT_NAME( vk.modules.fog_fs, "fog-only fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
 
 	vk.modules.dot_vs = SHADER_MODULE( dot_vert_spv );
-	vk.modules.dot_tri_vs = SHADER_MODULE( dot_tri_vert_spv );
 	vk.modules.dot_fs = SHADER_MODULE( dot_frag_spv );
 
 	SET_OBJECT_NAME( vk.modules.dot_vs, "dot vertex module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
@@ -3817,21 +3816,17 @@ static void vk_alloc_persistent_pipelines( void )
 		vk.surface_axis_pipeline = vk_find_pipeline_ext( 0, &def, qfalse );
 	}
 
-	// flare visibility test probe (topology per FLARE_PROBE_POINT_LIST;
-	// the point variant hangs NVIDIA (bug 6413598), but Adreno is its own
-	// driver and gets the cheaper probe if it proves stable)
+	// flare visibility probe (RB_TestFlare): drawn depth tested to count uncovered fragments, then untested for the total
 	if ( vk.fragmentStores )
 	{
 		Com_Memset( &def, 0, sizeof( def ) );
-		//def.state_bits = GLS_DEFAULT;
 		def.face_culling = CT_TWO_SIDED;
 		def.shader_type = TYPE_DOT;
-#if FLARE_PROBE_POINT_LIST
-		def.primitives = POINT_LIST;
-#else
 		def.primitives = TRIANGLE_LIST;
-#endif
 		vk.dot_pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
+
+		def.state_bits = GLS_DEPTHTEST_DISABLE;
+		vk.dot_total_pipeline = vk_find_pipeline_ext( 0, &def, qtrue );
 	}
 
 	// DrawTris()
@@ -4580,8 +4575,8 @@ void vk_initialize( void )
 	vk.uniform_alignment = props.limits.minUniformBufferOffsetAlignment;
 	vk.uniform_item_size = PAD( (uint32_t)sizeof( vkUniform_t ), vk.uniform_alignment );
 
-	// for flare visibility tests
-	vk.storage_alignment = MAX( props.limits.minStorageBufferOffsetAlignment, sizeof( uint32_t ) );
+	// for flare visibility tests: two counters a flare, passed and total
+	vk.storage_alignment = MAX( props.limits.minStorageBufferOffsetAlignment, 2 * sizeof( uint32_t ) );
 
 	vk.maxAnisotropy = props.limits.maxSamplerAnisotropy;
 	ri.Printf( PRINT_ALL, "...max anisotropy: %.0f\n", vk.maxAnisotropy );
@@ -4925,7 +4920,12 @@ void vk_initialize( void )
 
 		VK_CHECK(qvkCreatePipelineLayout(vk.device, &desc, NULL, &vk.pipeline_layout));
 
-		// flare test pipeline
+		// flare test pipeline: the probe pushes its own block (dot.vert), not the mono modelview
+		VkPushConstantRange probe_range;
+		probe_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		probe_range.offset = 0;
+		probe_range.size = FLARE_PROBE_PUSH_FLOATS * sizeof( float );
+
 		set_layouts[0] = vk.set_layout_storage; // dynamic storage buffer
 
 		desc.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -4934,7 +4934,7 @@ void vk_initialize( void )
 		desc.setLayoutCount = 1;
 		desc.pSetLayouts = set_layouts;
 		desc.pushConstantRangeCount = 1;
-		desc.pPushConstantRanges = &push_range;
+		desc.pPushConstantRanges = &probe_range;
 
 		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_storage ) );
 
@@ -5443,7 +5443,6 @@ void vk_shutdown( refShutdownCode_t code )
 	qvkDestroyShaderModule(vk.device, vk.modules.fog_fs, NULL);
 
 	qvkDestroyShaderModule(vk.device, vk.modules.dot_vs, NULL);
-	qvkDestroyShaderModule(vk.device, vk.modules.dot_tri_vs, NULL);
 	qvkDestroyShaderModule(vk.device, vk.modules.dot_fs, NULL);
 
 	qvkDestroyShaderModule(vk.device, vk.modules.bloom_fs, NULL);
@@ -6567,11 +6566,7 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 			break;
 
 		case TYPE_DOT:
-#if FLARE_PROBE_POINT_LIST
 			vs_module = &vk.modules.dot_vs;
-#else
-			vs_module = &vk.modules.dot_tri_vs;
-#endif
 			fs_module = &vk.modules.dot_fs;
 			break;
 
@@ -8260,7 +8255,7 @@ void vk_draw_geometry( Vk_Depth_Range depth_range, qboolean indexed ) {
 }
 
 
-void vk_draw_dot( uint32_t storage_offset )
+void vk_draw_flare_probe( uint32_t storage_offset, const float *push, qboolean depthTested )
 {
 	// Must be inside a render pass to draw
 	if ( !vk.inRenderPass ) {
@@ -8272,6 +8267,12 @@ void vk_draw_dot( uint32_t storage_offset )
 		return;
 	}
 
+	vk_bind_pipeline( depthTested ? vk.dot_pipeline : vk.dot_total_pipeline );
+
+	// the probe's own push block: vk_update_mvp's 64-byte push does not fit this layout's range
+	qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout_storage,
+		VK_SHADER_STAGE_VERTEX_BIT, 0, FLARE_PROBE_PUSH_FLOATS * sizeof( float ), push );
+
 	qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk.pipeline_layout_storage, VK_DESC_STORAGE, 1, &vk.storage.descriptor, 1, &storage_offset );
 
 	// configure pipeline's dynamic state
@@ -8281,10 +8282,7 @@ void vk_draw_dot( uint32_t storage_offset )
 
 	// vk.storage.descriptor was just bound at set 0 via vk.pipeline_layout_storage, which is
 	// NOT compatible-for-set-0 with vk.pipeline_layout (2 UNIFORM_BUFFER_DYNAMIC bindings vs.
-	// 1 STORAGE_BUFFER_DYNAMIC binding). Every gen/color/fog/light vertex shader statically
-	// reads set 0 binding 1 (eyeProj), so re-dirty set 0 here, the same way VK_PushEyeProj's
-	// tail does, to force the next main-layout draw to rebind set 0 with both dynamic offsets.
-	// The offsets themselves are still valid from earlier pushes; nothing new needs pushing.
+	// 1 STORAGE_BUFFER_DYNAMIC binding). Re-dirty set 0 so the next main-layout draw rebinds it, as VK_PushEyeProj does.
 	vk_reset_descriptor( VK_DESC_UNIFORM );
 	vk_update_descriptor( VK_DESC_UNIFORM, vk.cmd->uniform_descriptor );
 }
@@ -10279,6 +10277,63 @@ void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2]
 	if ( centers != NULL ) {
 		Com_Memcpy( vk.xr.fdmCenter, centers, sizeof( vk.xr.fdmCenter ) );
 	}
+}
+
+/*
+==================
+vk_fdm_block_at
+
+Fragment edge in pixels the map asks for at a normalized device position. The device
+rounds density to a fragment area no larger than 1/density, so the largest power of two
+that fits. Reads the staging copy, which holds what the frame's map holds; the runtime's
+own map cannot be read here and counts as its coarsest.
+==================
+*/
+int vk_fdm_block_at( int eye, float ndcX, float ndcY )
+{
+	const byte *map;
+	float fx, fy, density;
+	uint32_t tx, ty, layer;
+	int block, area;
+
+	if ( !vk.xr.foveationActive || vk.xr.fdmLevel <= 0 ) {
+		return 1;
+	}
+	if ( !vk.xr.fdmAuthored ) {
+		return 8;
+	}
+	if ( vk.xr.colorIndex >= MAX_SWAPCHAIN_IMAGES || vk.xr.fdmStagingMapped[vk.xr.colorIndex] == NULL ||
+		vk.xr.fdmTexelWidth == 0 || vk.xr.fdmTexelHeight == 0 ||
+		vk.xr.foveationWidth == 0 || vk.xr.foveationHeight == 0 ) {
+		return 8;
+	}
+
+	// Map texel under the position; the map runs the same way as the image
+	fx = ( ndcX * 0.5f + 0.5f ) * (float)vk.renderWidth / (float)vk.xr.fdmTexelWidth;
+	fy = ( ndcY * 0.5f + 0.5f ) * (float)vk.renderHeight / (float)vk.xr.fdmTexelHeight;
+	if ( fx < 0.0f ) fx = 0.0f;
+	if ( fy < 0.0f ) fy = 0.0f;
+	tx = (uint32_t)fx;
+	ty = (uint32_t)fy;
+	if ( tx >= vk.xr.foveationWidth ) tx = vk.xr.foveationWidth - 1;
+	if ( ty >= vk.xr.foveationHeight ) ty = vk.xr.foveationHeight - 1;
+	layer = ( eye > 0 && vk.xr.fdmLayers > 1 ) ? 1 : 0;
+
+	map = (const byte*)vk.xr.fdmStagingMapped[vk.xr.colorIndex];
+	density = (float)map[ ( ( (size_t)layer * vk.xr.foveationHeight + ty ) * vk.xr.foveationWidth + tx ) * 2 ] / 255.0f;
+	if ( density >= 0.999f ) {
+		return 1;
+	}
+	if ( density < 1.0f / 16.0f ) {
+		density = 1.0f / 16.0f;
+	}
+
+	area = (int)( 1.0f / density );
+	block = 1;
+	while ( block * 2 <= area && block < 16 ) {
+		block *= 2;
+	}
+	return block;
 }
 
 /*

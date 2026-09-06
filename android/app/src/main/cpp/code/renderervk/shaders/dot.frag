@@ -1,15 +1,22 @@
 #version 450
 
+// Flare visibility probe: each fragment adds one to the counter the vertex stage picked;
+// RB_TestFlare reads both back a frame later and resets them on the CPU.
 layout(set = 0, binding = 0) buffer SSBO {
-	int sampled;
+	uint passed;
+	uint total;
 };
 
+layout(location = 0) flat in int counter;
+
 layout(location = 0) out vec4 out_color;
-layout(early_fragment_tests) in; // force Early Fragment Tests
+layout(early_fragment_tests) in; // the depth test must decide before we count
 
 void main() {
-	//atomicAdd( sampled, 1 );
-	sampled = 1;
+	if ( counter != 0 ) {
+		atomicAdd( total, 1u );
+	} else {
+		atomicAdd( passed, 1u );
+	}
 	discard;
-	//out_color = vec4( 0.0, 1.0, 0.0, 1.0 );
 }

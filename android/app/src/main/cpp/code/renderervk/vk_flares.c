@@ -68,10 +68,12 @@ typedef struct flare_s {
 	void		*surface;
 	int			fogNum;
 
-	int			fadeTime;
+	int			testTime;			// refdef time of the last test, for the intensity slew
+	qboolean	probeBinary;		// the last probe was the one-pixel test, answered yes or no
+	float		target;				// what the last test asked for: 0, 1, or the covered fraction
+	float		intensity;			// slews toward target; drawIntensity is set from it each test
 
-	qboolean	visible;			// state of last test
-	float		drawIntensity;		// may be non 0 even if !visible due to fading
+	float		drawIntensity;		// this view's draw value, may be non 0 while fading
 	float		deferredIntensity;	// drawIntensity captured at own-view test; later PV_NONE views (HUD icons) zero drawIntensity before the deferred draw
 
 	int			windowX, windowY;
@@ -88,6 +90,7 @@ typedef struct flare_s {
 	vec3_t		viewUp;				// owning view's or.axis[2]
 
 	vec3_t		origin;
+	vec3_t		normal;				// surface normal the probe patch lies in; zero when unknown
 	vec3_t		color;
 } flare_t;
 
@@ -209,8 +212,10 @@ void RB_AddFlare( void *surface, int fogNum, vec3_t point, vec3_t color, vec3_t 
 		f->surface = surface;
 		f->frameSceneNum = backEnd.viewParms.frameSceneNum;
 		f->portalView = backEnd.viewParms.portalView;
-		f->visible = qfalse;
-		f->fadeTime = backEnd.refdef.time - 2000;
+		f->target = 0.0f;
+		f->intensity = 0.0f;
+		f->probeBinary = qtrue;
+		f->testTime = backEnd.refdef.time;
 		f->testCount = 0;
 	} else {
 		++f->testCount;
@@ -221,6 +226,11 @@ void RB_AddFlare( void *surface, int fogNum, vec3_t point, vec3_t color, vec3_t 
 
 	VectorCopy( point, f->origin );
 	VectorCopy( color, f->color );
+	if ( normal ) {
+		VectorCopy( normal, f->normal );
+	} else {
+		VectorClear( f->normal );
+	}
 
 	// fade the intensity of the flare down as the
 	// light surface turns away from the viewer
@@ -304,103 +314,190 @@ FLARE BACK END
 */
 
 
+// Probe quad width in coarse blocks. Four guarantees a 2x2 grid of block samples whatever the alignment
+#define FLARE_PATCH_BLOCKS 4
+
+// Fraction of taps that reads as fully visible. A recessed lamp always has some plane behind the housing, so saturate early
+#define FLARE_PATCH_FULL_AT 0.25f
+
+// Push block for dot.vert, in floats
+#define PROBE_CENTER( e )	( ( e ) * 4 )
+#define PROBE_DU( e )		( 8 + ( e ) * 4 )
+#define PROBE_DV( e )		( 16 + ( e ) * 4 )
+#define PROBE_EXTENT		24		// s0, t0, s1, t1
+#define PROBE_PARAMS		28		// x: counter select
+
+
+/*
+==================
+RB_ProbeScreenAxes
+
+Rewrite one eye's in-plane unit deltas so the quad's corner moves exactly one pixel
+along screen x and one along y: a pixel-aligned square always covers a pixel center,
+while a plane-aligned parallelogram can straddle a corner and produce no fragment.
+Near edge-on that runs off along the plane, so the quad falls back to a flat one.
+==================
+*/
+static void RB_ProbeScreenAxes( float *push, int eye, float pixels, const float *proj )
+{
+	const float *c = push + PROBE_CENTER( eye );
+	float *du = push + PROBE_DU( eye );
+	float *dv = push + PROBE_DV( eye );
+	const float w2 = c[3] * c[3];
+	const float halfW = 0.5f * (float)vk.renderWidth;
+	const float halfH = 0.5f * (float)vk.renderHeight;
+	const float gux = ( du[0] * c[3] - c[0] * du[3] ) / w2 * halfW;
+	const float guy = ( du[1] * c[3] - c[1] * du[3] ) / w2 * halfH;
+	const float gvx = ( dv[0] * c[3] - c[0] * dv[3] ) / w2 * halfW;
+	const float gvy = ( dv[1] * c[3] - c[1] * dv[3] ) / w2 * halfH;
+	const float det = gux * gvy - guy * gvx;
+	const float scale = fabsf( proj[0] ) > 1e-6f ? fabsf( proj[0] ) : 1.0f;
+	const float cap = 8.0f * pixels * c[3] / ( (float)vk.renderWidth * scale );
+	float ax, bx, ay, by, dx[4], dy[4];
+	int k;
+
+	push[PROBE_EXTENT + eye * 2 + 0] = pixels * 0.5f;
+	push[PROBE_EXTENT + eye * 2 + 1] = pixels * 0.5f;
+
+	if ( fabsf( det ) > 1e-12f ) {
+		// a = ax u + bx v projects to one pixel along x; b likewise along y
+		ax = gvy / det;
+		bx = -guy / det;
+		ay = -gvx / det;
+		by = gux / det;
+		// u and v are unit and orthogonal, so these are world lengths per pixel
+		if ( sqrtf( ax * ax + bx * bx ) * pixels * 0.5f <= cap &&
+			sqrtf( ay * ay + by * by ) * pixels * 0.5f <= cap ) {
+			for ( k = 0; k < 4; k++ ) {
+				dx[k] = ax * du[k] + bx * dv[k];
+				dy[k] = ay * du[k] + by * dv[k];
+			}
+			Com_Memcpy( du, dx, sizeof( dx ) );
+			Com_Memcpy( dv, dy, sizeof( dy ) );
+			return;
+		}
+	}
+
+	// edge-on fallback: flat quad at the flare's depth; one pixel is 2/W in ndc, 2w/W in clip
+	Com_Memset( du, 0, 4 * sizeof( float ) );
+	Com_Memset( dv, 0, 4 * sizeof( float ) );
+	du[0] = c[3] / halfW;
+	dv[1] = c[3] / halfH;
+}
+
+
 /*
 ==================
 RB_TestFlare
+
+Visibility comes from a probe quad in the flare's surface plane, depth tested with
+writes off: uncovered fragments count themselves in a storage buffer, an untested
+second draw counts them all, both read back a frame later. Under a density map a one
+pixel probe flickers with head motion, so the quad spans a few blocks and visibility
+is the fraction of taps passed. Per eye; dot.vert picks by gl_ViewIndex.
 ==================
 */
 static void RB_TestFlare( flare_t *f ) {
-	qboolean		visible;
-	float			fade;
-	float			clipPos[16];
-	vec4_t			eye, clip;
-	uint32_t		offset;
-	int				i;
+	float		push[FLARE_PROBE_PUSH_FLOATS];
+	vec3_t		normal, u, v, p;
+	vec4_t		eye, clip, clipU, clipV;
+	uint32_t	*slot;
+	uint32_t	passed, total, offset;
+	float		patch, dt, step;
+	int			block, i, k;
 
 	backEnd.pc.c_flareTests++;
 
-/*
-	We don't have equivalent of glReadPixels() in vulkan
-	and explicit depth buffer reading may be very slow and require surface conversion.
-
-	So we will use storage buffer and exploit early depth tests by
-	rendering a test dot at the flare's projected position, biased slightly
-	toward the viewer: if the dot is not covered by any world geometry it
-	invokes the fragment shader, which fills the storage buffer at the
-	desired location, then discards the fragment.
-	In next frame we read storage buffer: if there is a non-zero value
-	then our flare WAS visible (as we're working with 1-frame delay),
-	multisampled image will cause multiple fragment shader invocations.
-
-	VR: the probe position must be computed PER EYE with the same eyeProj
-	matrices the scene rendered with: each view's depth buffer is shifted
-	by asymmetric-FOV offset + IPD parallax relative to the mono projection,
-	so a mono-positioned dot samples pixels several degrees away from where
-	the flare actually is in either eye. The two clip-space positions go in
-	the vertex push range; dot.vert selects by gl_ViewIndex.
-*/
-
-	// we neeed only single uint32_t but take care of alignment
+	// two counters a flare; the stride keeps the dynamic offset aligned
 	offset = (f - r_flareStructs) * vk.storage_alignment;
+	slot = (uint32_t*)( vk.storage.buffer_ptr + offset );
+
+	// last frame's counts, reset here: multiview gives no ordering between the two views' invocations
+	passed = slot[0];
+	total = slot[1];
+	slot[0] = 0;
+	slot[1] = 0;
 
 	if ( f->testCount ) {
-		uint32_t *cnt = (uint32_t*)(vk.storage.buffer_ptr + offset);
-		if ( *cnt )
-			visible = qtrue;
-		else
-			visible = qfalse;
-
+		if ( f->probeBinary ) {
+			f->target = passed ? 1.0f : 0.0f;
+		} else if ( total ) {
+			f->target = (float)passed / ( (float)total * FLARE_PATCH_FULL_AT );
+			if ( f->target > 1.0f ) {
+				f->target = 1.0f;
+			}
+		}
 		f->testCount = 1;
-	} else {
-		visible = qfalse;
 	}
 
-	// reset the test result; this frame's probe fragment sets it again if it
-	// survives the depth test in either view. The reset must live here on the
-	// CPU rather than in dot.vert: multiview gives no cross-view ordering
-	// between vertex and fragment invocations, so a vertex-stage reset in one
-	// view could clobber the other view's fragment pass.
-	*((uint32_t*)(vk.storage.buffer_ptr + offset)) = 0x00;
+	// patch plane: the surface normal, or the sight line when the flare has none
+	if ( f->normal[0] || f->normal[1] || f->normal[2] ) {
+		VectorCopy( f->normal, normal );
+	} else {
+		VectorSubtract( f->viewOrigin, f->origin, normal );
+	}
+	if ( DotProduct( normal, normal ) < 0.0001f ) {
+		VectorCopy( f->viewLeft, normal );
+	}
+	VectorNormalizeFast( normal );
+	CrossProduct( normal, f->viewUp, u );
+	if ( DotProduct( u, u ) < 0.0001f ) {
+		// normal along the view up vector: view left is in the plane
+		VectorCopy( f->viewLeft, u );
+	} else {
+		VectorNormalizeFast( u );
+	}
+	CrossProduct( normal, u, v );
 
-	// per-eye probe positions: clip = eyeProj[e] * (worldModelView * origin),
-	// biased toward the viewer: exactly the transform the scene drew with
-	Com_Memset( clipPos, 0, sizeof( clipPos ) );
+	// per-eye center and unit-axis deltas through the scene's transform; clip space is linear in world space
+	Com_Memset( push, 0, sizeof( push ) );
+	block = 1;
 	for ( i = 0; i < 2; i++ ) {
 		R_TransformModelToClip( f->origin, backEnd.viewParms.world.modelMatrix,
 			vk_view_eyeproj[i], eye, clip );
+		VectorAdd( f->origin, u, p );
+		R_TransformModelToClip( p, backEnd.viewParms.world.modelMatrix,
+			vk_view_eyeproj[i], eye, clipU );
+		VectorAdd( f->origin, v, p );
+		R_TransformModelToClip( p, backEnd.viewParms.world.modelMatrix,
+			vk_view_eyeproj[i], eye, clipV );
+		for ( k = 0; k < 4; k++ ) {
+			push[PROBE_DU( i ) + k] = clipU[k] - clip[k];
+			push[PROBE_DV( i ) + k] = clipV[k] - clip[k];
+		}
+
+		if ( clip[3] > 0.0f ) {
+			const int b = vk_fdm_block_at( i, clip[0] / clip[3], clip[1] / clip[3] );
+			if ( b > block ) {
+				block = b;
+			}
+		}
+
+		// biased toward the viewer
 #ifdef USE_REVERSED_DEPTH
 		clip[2] += 0.20f;
 #else
 		clip[2] -= 0.20f;
 #endif
-		Com_Memcpy( clipPos + i * 4, clip, sizeof( vec4_t ) );
+		Com_Memcpy( push + PROBE_CENTER( i ), clip, sizeof( vec4_t ) );
 	}
-	// params slot: clip-space extent of ~2 pixels (per unit w) so the
-	// triangle probe variant can expand around the pixel center
-	clipPos[8] = 4.0f / (float)vk.renderWidth;
-	clipPos[9] = 4.0f / (float)vk.renderHeight;
-	// point probe size in pixels. Under a fragment density map a coarse
-	// fragment exists only where the point covers the fragment's sample
-	// position, and a one-pixel point at the periphery misses it as the view
-	// moves, so the flare flickers. Cover the largest fragment the density
-	// map can ask for instead; the probe stays well under a flare's size.
-	clipPos[10] = vk.xr.foveationActive ? 8.0f : 1.0f;
-	// dot.vert reads the first 48 bytes of the 64-byte vertex push range as
-	// vec4 clipPos[2] + vec4 params; reuse the matrix push plumbing
-	vk_update_mvp( clipPos );
 
-#if FLARE_PROBE_POINT_LIST
-	// one dummy vertex: the pipeline's vertex input still binds location 0,
-	// but the probe position comes from the push constants
-	Com_Memset( tess.xyz, 0, sizeof( tess.xyz[0] ) );
-	tess.numVertexes = 1;
-#else
-	// three dummy vertices for the probe triangle: the pipeline's vertex
-	// input still binds location 0, but the probe position comes from the
-	// push constants (expanded per-vertex via gl_VertexIndex)
-	Com_Memset( tess.xyz, 0, 3 * sizeof( tess.xyz[0] ) );
-	tess.numVertexes = 3;
-#endif
+	// with a density map even the sharp island gets a patch, so the answer keeps its kind as the island moves
+	if ( block <= 1 && !( vk.xr.foveationActive && vk.xr.fdmLevel > 0 ) ) {
+		patch = 1.0f;
+	} else {
+		patch = (float)( FLARE_PATCH_BLOCKS * block );
+	}
+	for ( i = 0; i < 2; i++ ) {
+		if ( push[PROBE_CENTER( i ) + 3] > 0.0f ) {
+			RB_ProbeScreenAxes( push, i, patch, vk_view_eyeproj[i] );
+		}
+		// behind this eye: extents stay zero, the quad collapses and counts nothing
+	}
+
+	// six dummy vertices: the pipeline still binds location 0, but the corners come from the push block
+	Com_Memset( tess.xyz, 0, 6 * sizeof( tess.xyz[0] ) );
+	tess.numVertexes = 6;
 
 #ifdef USE_VBO
 	tess.vboIndex = 0;
@@ -409,35 +506,39 @@ static void RB_TestFlare( flare_t *f ) {
 	for ( i = 0; i < VK_DESC_COUNT; i++ ) {
 		vk_reset_descriptor( i );
 	}
-	// render test dot
-	vk_bind_pipeline( vk.dot_pipeline );
 	vk_bind_geometry( TESS_XYZ );
-	vk_draw_dot( offset );
 
-	//Com_Memcpy( vk_world.modelview_transform, modelMatrix_original, sizeof( modelMatrix_original ) );
-	//vk_update_mvp( NULL );
+	push[PROBE_PARAMS] = 0.0f;
+	vk_draw_flare_probe( offset, push, qtrue );
+	if ( patch > 1.0f ) {
+		// the fraction needs the total too
+		push[PROBE_PARAMS] = 1.0f;
+		vk_draw_flare_probe( offset, push, qfalse );
+	}
+	f->probeBinary = ( patch <= 1.0f );
 
-	if ( visible ) {
-		if ( !f->visible ) {
-			f->visible = qtrue;
-			f->fadeTime = backEnd.refdef.time - 1;
+	// slew at r_flareFade per second, so a jump between block-grid alignments becomes a few percent a frame
+	dt = ( backEnd.refdef.time - f->testTime ) * 0.001f;
+	f->testTime = backEnd.refdef.time;
+	if ( dt < 0.0f ) {
+		dt = 0.0f;
+	} else if ( dt > 0.25f ) {
+		dt = 0.25f;
+	}
+	step = r_flareFade->value * dt;
+	if ( f->intensity < f->target ) {
+		f->intensity += step;
+		if ( f->intensity > f->target ) {
+			f->intensity = f->target;
 		}
-		fade = ( ( backEnd.refdef.time - f->fadeTime ) /1000.0f ) * r_flareFade->value;
 	} else {
-		if ( f->visible ) {
-			f->visible = qfalse;
-			f->fadeTime = backEnd.refdef.time - 1;
+		f->intensity -= step;
+		if ( f->intensity < f->target ) {
+			f->intensity = f->target;
 		}
-		fade = 1.0f - ( ( backEnd.refdef.time - f->fadeTime ) / 1000.0f ) * r_flareFade->value;
 	}
 
-	if ( fade < 0 ) {
-		fade = 0;
-	} else if ( fade > 1 ) {
-		fade = 1;
-	}
-
-	f->drawIntensity = fade;
+	f->drawIntensity = f->intensity;
 }
 
 

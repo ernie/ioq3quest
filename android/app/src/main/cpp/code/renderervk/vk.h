@@ -56,12 +56,8 @@
 #define VK_DESC_FOG_ONLY     VK_DESC_TEXTURE1
 #define VK_DESC_FOG_DLIGHT   VK_DESC_TEXTURE1
 
-// Flare visibility probe topology. 1 = one-vertex POINT_LIST probe;
-// 0 = sub-pixel triangle. The point variant's VS reads gl_ViewIndex and
-// writes gl_PointSize under multiview: that exact combination hangs NVIDIA
-// desktop GPUs (NVIDIA bug 6413598), so trinity-vr ships the triangle;
-// Adreno is its own driver and gets the cheaper probe if it proves stable.
-#define FLARE_PROBE_POINT_LIST 1
+// dot.vert push block; fills the 128-byte vertex push range of vk.pipeline_layout_storage
+#define FLARE_PROBE_PUSH_FLOATS 32
 
 typedef enum {
 	TYPE_COLOR_BLACK,
@@ -314,7 +310,8 @@ void vk_bind_index_ext( const int numIndexes, const uint32_t*indexes );
 void vk_bind_geometry( uint32_t flags );
 void vk_bind_lighting( int stage, int bundle );
 void vk_draw_geometry( Vk_Depth_Range depth_range, qboolean indexed );
-void vk_draw_dot( uint32_t storage_offset );
+// Flare probe quad from a FLARE_PROBE_PUSH_FLOATS push block; an untested draw counts every fragment
+void vk_draw_flare_probe( uint32_t storage_offset, const float *push, qboolean depthTested );
 
 void vk_read_pixels( byte* buffer, uint32_t width, uint32_t height ); // screenshots
 
@@ -324,6 +321,8 @@ qboolean vk_init_xr_resources( void );  // Initialize XR swapchain resources
 void vk_destroy_authored_fdm( void );
 void vk_update_authored_fdm( uint32_t index );
 void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] );
+// Fragment edge in pixels (1..16) the frame's density map asks for at an ndc position in one eye; 1 when not foveating
+int vk_fdm_block_at( int eye, float ndcX, float ndcY );
 
 qboolean vk_alloc_vbo( const byte *vbo_data, int vbo_size );
 void vk_update_mvp( const float *m );
@@ -678,9 +677,8 @@ typedef struct {
 		VkShaderModule fog_fs;  // multiview
 		VkShaderModule fog_vs;  // multiview
 
-		VkShaderModule dot_fs;
-		VkShaderModule dot_vs;      // POINT_LIST probe (dot.vert)
-		VkShaderModule dot_tri_vs;  // sub-pixel triangle probe (dot_tri.vert)
+		VkShaderModule dot_fs;      // flare probe counters (dot.frag)
+		VkShaderModule dot_vs;      // flare probe patch (dot.vert)
 
 		// Subpass optimization shaders (input attachments)
 		VkShaderModule bloom_extract_subpass_fs;
@@ -744,7 +742,8 @@ typedef struct {
 	uint32_t images_debug_pipeline2;
 	uint32_t surface_beam_pipeline;
 	uint32_t surface_axis_pipeline;
-	uint32_t dot_pipeline;
+	uint32_t dot_pipeline;        // flare probe, depth tested: counts uncovered fragments
+	uint32_t dot_total_pipeline;  // flare probe, no depth test: counts all fragments
 
 	// Post-processing pipelines (multiview)
 	VkPipeline gamma_pipeline;           // Legacy (unused)
