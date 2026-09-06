@@ -73,7 +73,7 @@ jobs:
           APKSIGNER=$ANDROID_SDK_ROOT/build-tools/32.0.0/apksigner
           UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
           VERSION=$(git show -s --pretty=format:%h)
-          SIGNED=android/app/build/outputs/apk/release/trinity-quest-${VERSION}.apk
+          SIGNED=android/app/build/outputs/apk/release/trinity-standalone-${VERSION}.apk
           $APKSIGNER sign \
             --ks /tmp/keystore.jks \
             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -85,7 +85,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: trinity-quest-apk
-          path: android/app/build/outputs/apk/release/trinity-quest-*.apk
+          name: trinity-standalone-apk
+          path: android/app/build/outputs/apk/release/trinity-standalone-*.apk
           retention-days: 5
           if-no-files-found: error

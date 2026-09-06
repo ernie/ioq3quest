@@ -49,7 +49,7 @@ cvar_t *vr_frameTimingLog = NULL;
 void VR_InitCvars( void )
 {
 	Cvar_Get ("skip_ioq3_credits", "0.0", CVAR_ARCHIVE);
-	Cvar_Get ("vr_platform", "quest", CVAR_ROM);	// advertise the VR platform to UI modules
+	Cvar_Get ("vr_platform", "standalone", CVAR_ROM);	// advertise the VR platform to UI modules
 	vr_worldscale = Cvar_Get ("vr_worldscale", "32.0", CVAR_ARCHIVE);
 	vr_worldscaleScaler = Cvar_Get ("vr_worldscaleScaler", "1.0", CVAR_ARCHIVE);
 	vr_hudDepth = Cvar_Get ("vr_hudDepth", "3", CVAR_ARCHIVE);

@@ -1,4 +1,4 @@
-package com.drbeef.ioq3quest;
+package io.ernie.trinity;
 
 import android.Manifest;
 import android.content.Intent;
@@ -31,6 +31,8 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
+import java.util.Locale;
 import java.util.Vector;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -44,7 +46,11 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 	private static final int READ_EXTERNAL_STORAGE_PERMISSION_ID = 1;
 	private static final int WRITE_EXTERNAL_STORAGE_PERMISSION_ID = 2;
 	private static final int RECORD_AUDIO_PERMISSION_ID = 3;
-	private static final String TAG = "ioquake3Quest";
+	private static final String TAG = "Trinity";
+
+	// Quake3Quest may still be using LEGACY_HOME_DIR: the first launch reads from it and never writes there
+	private static final String HOME_DIR = "/sdcard/Trinity";
+	private static final String LEGACY_HOME_DIR = "/sdcard/ioquake3Quest";
 
 	private boolean hapticsEnabled = false;
 
@@ -130,8 +136,7 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		nativeFocusChanged(hasFocus);
 	}
 
-	// SDLActivity starts the native thread from surfaceChanged(), but an OpenXR
-	// activity never uses its Surface and PICO never delivers one. Start on resume.
+	// SDLActivity starts the native thread from surfaceChanged(), but PICO never delivers a Surface to a VR activity
 	@Override
 	protected void onResume() {
 		super.onResume();
@@ -144,40 +149,36 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 
 	public void create() throws IOException {
 		// Prepare base game directory
-		new File("/sdcard/ioquake3Quest/baseq3").mkdirs();
+		new File(HOME_DIR + "/baseq3").mkdirs();
+
+		migrateLegacyHome();
 
 		// Copy CA certificate bundle for HTTPS
-		copy_asset("/sdcard/ioquake3Quest", "cacert.pem", true);
+		copy_asset(HOME_DIR, "cacert.pem", true);
 
 		// Copy the command line params file and autoexec
-		copy_asset("/sdcard/ioquake3Quest", "commandline.txt", false);
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "autoexec.cfg", false);
+		copy_asset(HOME_DIR, "commandline.txt", false);
+		copy_asset(HOME_DIR + "/baseq3", "autoexec.cfg", false);
 		// Copy our special pak files and demo
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak0.pk3", false);
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "pak8t.pk3", true);
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "zzz-trinity-announcer.pk3", true);
+		copy_asset(HOME_DIR + "/baseq3", "pak0.pk3", false);
+		copy_asset(HOME_DIR + "/baseq3", "pak8t.pk3", true);
+		copy_asset(HOME_DIR + "/baseq3", "zzz-trinity-announcer.pk3", true);
 		//Copy Omarlego's excellent replacement background
-		copy_asset("/sdcard/ioquake3Quest/baseq3", "z_custom_background66.pk3", false);
-		// Cleanup incompatible shaders
-		delete_asset("/sdcard/ioquake3Quest/baseq3/glsl");
-		// Cleanup the retired pak, superseded by pak8t.pk3/pak3t.pk3
-		delete_asset("/sdcard/ioquake3Quest/baseq3/pakQ3Q.pk3");
+		copy_asset(HOME_DIR + "/baseq3", "z_custom_background66.pk3", false);
 
 		// If Team Arena is installed then copy necessary stuff
-		if (new File("/sdcard/ioquake3Quest/missionpack").exists()) {
-			copy_asset("/sdcard/ioquake3Quest/missionpack", "pak3t.pk3", true);
-			delete_asset("/sdcard/ioquake3Quest/missionpack/glsl");
-			delete_asset("/sdcard/ioquake3Quest/missionpack/pakQ3Q.pk3");
+		if (new File(HOME_DIR + "/missionpack").exists()) {
+			copy_asset(HOME_DIR + "/missionpack", "pak3t.pk3", true);
 		}
 
 		//Read these from a file and pass through
 		commandLineParams = new String();
 
 		//See if user is trying to use command line params
-		if (new File("/sdcard/ioquake3Quest/commandline.txt").exists()) {
+		if (new File(HOME_DIR + "/commandline.txt").exists()) {
 			BufferedReader br;
 			try {
-				br = new BufferedReader(new FileReader("/sdcard/ioquake3Quest/commandline.txt"));
+				br = new BufferedReader(new FileReader(HOME_DIR + "/commandline.txt"));
 				String s;
 				StringBuilder sb = new StringBuilder(0);
 				while ((s = br.readLine()) != null)
@@ -245,6 +246,57 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 		intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 		startActivity(intent);
+	}
+
+	private void migrateLegacyHome() {
+		if (new File(HOME_DIR, "baseq3/pak0.pk3").exists() || !new File(LEGACY_HOME_DIR, "baseq3/pak0.pk3").exists()) {
+			return;
+		}
+		Log.i(TAG, "Copying game files from " + LEGACY_HOME_DIR + " to " + HOME_DIR);
+		copyLegacyGameDir("baseq3");
+		copyLegacyGameDir("missionpack");
+	}
+
+	// Every pak plus the configs. pakQ3Q.pk3 is retired and sorts after pak8t/pak3t, so it would override them.
+	private void copyLegacyGameDir(String game) {
+		File src = new File(LEGACY_HOME_DIR, game);
+		File dst = new File(HOME_DIR, game);
+		if (!src.isDirectory()) {
+			return;
+		}
+		dst.mkdirs();
+		File[] files = src.listFiles();
+		if (files != null) {
+			for (File f : files) {
+				String name = f.getName();
+				if (name.toLowerCase(Locale.ROOT).endsWith(".pk3") && !name.equalsIgnoreCase("pakQ3Q.pk3")) {
+					copyLegacyFile(f, new File(dst, name));
+				}
+			}
+		}
+		copyLegacyFile(new File(src, "autoexec.cfg"), new File(dst, "autoexec.cfg"));
+		copyLegacyFile(new File(src, "q3config.cfg"), new File(dst, "q3config.cfg"));
+	}
+
+	// Kernel-side copy: the paks run to gigabytes, too much for copy_stream's 1 KB buffer
+	private void copyLegacyFile(File src, File dst) {
+		if (!src.isFile() || dst.exists()) {
+			return;
+		}
+		try (FileChannel in = new FileInputStream(src).getChannel();
+			 FileChannel out = new FileOutputStream(dst).getChannel()) {
+			long size = in.size();
+			for (long pos = 0; pos < size; ) {
+				long n = in.transferTo(pos, size - pos, out);
+				if (n <= 0) {
+					throw new IOException("short copy at " + pos + " of " + size);
+				}
+				pos += n;
+			}
+		} catch (IOException e) {
+			Log.w(TAG, "Failed to copy " + src + ": " + e.getMessage());
+			dst.delete();
+		}
 	}
 
 	public void copy_asset(String path, String name, boolean force) {

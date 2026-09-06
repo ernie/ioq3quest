@@ -1,7 +1,7 @@
 # Project identity - sets project name and version
 include_guard(GLOBAL)
 
-set(PROJECT_NAME "ioq3quest")
+set(PROJECT_NAME "trinity-standalone")
 set(PROJECT_VERSION "1.2.0")
 set(CLIENT_NAME "ioquake3")
 

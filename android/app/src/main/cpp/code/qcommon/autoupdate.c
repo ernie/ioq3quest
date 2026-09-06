@@ -55,21 +55,18 @@ extern CURLMsg *(*qcurl_multi_info_read)(CURLM *multi_handle, int *msgs_in_queue
 #endif
 
 #ifndef UPDATE_GITHUB_REPO
-#define UPDATE_GITHUB_REPO "trinity-quest"
+#define UPDATE_GITHUB_REPO "trinity-standalone"
 #endif
 
 #ifndef UPDATE_ASSET_PREFIX
-#define UPDATE_ASSET_PREFIX "trinity-quest"
+#define UPDATE_ASSET_PREFIX "trinity-standalone"
 #endif
 
 #define UPDATE_API_BUFSIZE		(256 * 1024)
 
 // APK download path
-#define UPDATE_DIR				"/sdcard/ioquake3Quest/.updates"
-#define UPDATE_APK_PATH			UPDATE_DIR "/trinity-quest-update.apk"
-
-// the name staged downloads used before this one; only ever removed
-#define UPDATE_LEGACY_APK_PATH	UPDATE_DIR "/ioq3quest-update.apk"
+#define UPDATE_DIR				"/sdcard/Trinity/.updates"
+#define UPDATE_APK_PATH			UPDATE_DIR "/trinity-standalone-update.apk"
 
 // from sys_android.c
 extern void Sys_InstallApk( const char *apkPath );
@@ -171,7 +168,7 @@ static int Update_ParseVersion( const char *str, int *major, int *minor, int *pa
 ==================
 Update_GetCurrentVersion
 
-Extract version string from com_engine cvar ("trinity-quest/vX.Y.Z")
+Extract version string from com_engine cvar ("trinity-standalone/vX.Y.Z")
 ==================
 */
 static const char *Update_GetCurrentVersion( void )
@@ -212,9 +209,6 @@ static void Update_SetError( const char *msg )
 Update_CleanupDownload
 
 Remove leftover APK from a previous download.
-
-Also removes a download staged under the older file name, which an install
-that last updated before the rename still has sitting in UPDATE_DIR.
 ==================
 */
 static void Update_CleanupDownload( void )
@@ -223,10 +217,6 @@ static void Update_CleanupDownload( void )
 	if ( stat( UPDATE_APK_PATH, &st ) == 0 ) {
 		remove( UPDATE_APK_PATH );
 		Com_DPrintf( "Update: cleaned up previous download\n" );
-	}
-	if ( stat( UPDATE_LEGACY_APK_PATH, &st ) == 0 ) {
-		remove( UPDATE_LEGACY_APK_PATH );
-		Com_DPrintf( "Update: cleaned up previous download under the old name\n" );
 	}
 }
 
@@ -431,7 +421,7 @@ static void Update_BeginCheck( void )
 	qcurl_easy_setopt( updateCURL, CURLOPT_FOLLOWLOCATION, 1 );
 	qcurl_easy_setopt( updateCURL, CURLOPT_MAXREDIRS, 5 );
 	qcurl_easy_setopt( updateCURL, CURLOPT_TIMEOUT, 30 );
-	qcurl_easy_setopt( updateCURL, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem" );
+	qcurl_easy_setopt( updateCURL, CURLOPT_CAINFO, "/sdcard/Trinity/cacert.pem" );
 #if CURL_AT_LEAST_VERSION(7, 85, 0)
 	qcurl_easy_setopt( updateCURL, CURLOPT_PROTOCOLS_STR, "https" );
 #else
@@ -605,7 +595,7 @@ static void Update_BeginDownload( void )
 	qcurl_easy_setopt( updateCURL, CURLOPT_FAILONERROR, 1 );
 	qcurl_easy_setopt( updateCURL, CURLOPT_FOLLOWLOCATION, 1 );
 	qcurl_easy_setopt( updateCURL, CURLOPT_MAXREDIRS, 10 );
-	qcurl_easy_setopt( updateCURL, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem" );
+	qcurl_easy_setopt( updateCURL, CURLOPT_CAINFO, "/sdcard/Trinity/cacert.pem" );
 #if CURL_AT_LEAST_VERSION(7, 85, 0)
 	qcurl_easy_setopt( updateCURL, CURLOPT_PROTOCOLS_STR, "https" );
 #else

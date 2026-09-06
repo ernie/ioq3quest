@@ -6,10 +6,10 @@ android {
 	compileSdk 32
 	buildToolsVersion "32.0.0"
 	ndkVersion "27.3.13750724"
-	namespace 'com.drbeef.ioq3quest'
+	namespace 'io.ernie.trinity'
 
 	defaultConfig {
-		applicationId 'com.drbeef.ioq3quest'
+		applicationId 'io.ernie.trinity'
 		minSdk 25
 		targetSdk 26
 		versionCode 59
@@ -45,7 +45,7 @@ android {
 		targetCompatibility JavaVersion.VERSION_11
 	}
 	lint {
-		// Quest apps target Meta Quest Store, not Google Play
+		// Headset apps are sideloaded or store-distributed, not on Google Play
 		disable 'ExpiredTargetSdkVersion'
 	}
 }

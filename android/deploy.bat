@@ -9,9 +9,9 @@ set adb="%ANDROID_SDK_ROOT%\platform-tools\adb.exe"
 
 pushd android
 
-set PACKAGE_NAME=com.drbeef.ioq3quest
-set ANDROID_STORAGE_LOCATION=/sdcard/ioquake3quest/
-set APK_LOCATION=.\app\build\outputs\apk\%BUILD_TYPE%\ioq3quest-%BUILD_TYPE%-%VERSION%.apk
+set PACKAGE_NAME=io.ernie.trinity
+set ANDROID_STORAGE_LOCATION=/sdcard/Trinity/
+set APK_LOCATION=.\app\build\outputs\apk\%BUILD_TYPE%\trinity-standalone-%BUILD_TYPE%-%VERSION%.apk
 
 %adb% install -r %APK_LOCATION%
 if %ERRORLEVEL% NEQ 0 (

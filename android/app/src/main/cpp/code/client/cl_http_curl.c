@@ -416,7 +416,7 @@ void CL_HTTP_BeginDownload( const char *remoteURL )
 	qcurl_easy_setopt_warn(downloadCURL, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
 	qcurl_easy_setopt_warn(downloadCURL, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
-	qcurl_easy_setopt_warn(downloadCURL, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem");
+	qcurl_easy_setopt_warn(downloadCURL, CURLOPT_CAINFO, "/sdcard/Trinity/cacert.pem");
 	downloadCURLM = qcurl_multi_init();
 	if(!downloadCURLM) {
 		qcurl_easy_cleanup(downloadCURL);
@@ -496,7 +496,7 @@ void CL_HTTP_BeginInMemoryDownload( const char *remoteURL, CL_HTTP_InMemoryDownl
 	qcurl_easy_setopt_warn(inMemoryDownloadCURL, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
 	qcurl_easy_setopt_warn(inMemoryDownloadCURL, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE);
-	qcurl_easy_setopt_warn(inMemoryDownloadCURL, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem");
+	qcurl_easy_setopt_warn(inMemoryDownloadCURL, CURLOPT_CAINFO, "/sdcard/Trinity/cacert.pem");
 
 	inMemoryDownloadCURLM = qcurl_multi_init();
 	if(!inMemoryDownloadCURLM) {
@@ -672,7 +672,7 @@ qboolean CL_HTTP_TV_BeginDownload( const char *localName, const char *remoteURL 
 	qcurl_easy_setopt_warn( tvDownloadCURL, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS );
 #endif
 	qcurl_easy_setopt_warn( tvDownloadCURL, CURLOPT_BUFFERSIZE, CURL_MAX_READ_SIZE );
-	qcurl_easy_setopt_warn( tvDownloadCURL, CURLOPT_CAINFO, "/sdcard/ioquake3Quest/cacert.pem" );
+	qcurl_easy_setopt_warn( tvDownloadCURL, CURLOPT_CAINFO, "/sdcard/Trinity/cacert.pem" );
 
 	tvDownloadCURLM = qcurl_multi_init();
 	if ( !tvDownloadCURLM ) {

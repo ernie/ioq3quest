@@ -2830,7 +2830,7 @@ void Com_Init( char *commandLine ) {
 #ifndef IOQ3QUEST_VERSION
 #define IOQ3QUEST_VERSION "unknown"
 #endif
-	Cvar_Get( "com_engine", va( "trinity-quest/%s", IOQ3QUEST_VERSION ), CVAR_ROM );
+	Cvar_Get( "com_engine", va( "trinity-standalone/%s", IOQ3QUEST_VERSION ), CVAR_ROM );
 
 	// single entry point of the extension system: VMs read this to learn the
 	// trap_GetValue syscall number, then discover extensions by name

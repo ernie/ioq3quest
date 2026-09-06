@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ioq3quest"
+rootProject.name = "trinity-standalone"
 include ':app'

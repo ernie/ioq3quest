@@ -28,7 +28,7 @@
 		<meta-data android:name="com.oculus.environmentVersion" android:value="1"/>
 		<!-- PICO launches the app in immersive mode only when this is declared -->
 		<meta-data android:name="pvr.app.type" android:value="vr"/>
-		<activity android:name="com.drbeef.ioq3quest.MainActivity"
+		<activity android:name="io.ernie.trinity.MainActivity"
 			android:label="@string/app_name"
 			android:screenOrientation="landscape"
 			android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
@@ -43,7 +43,7 @@
 		</activity>
 		<provider
 			android:name="androidx.core.content.FileProvider"
-			android:authorities="com.drbeef.ioq3quest.fileprovider"
+			android:authorities="io.ernie.trinity.fileprovider"
 			android:exported="false"
 			android:grantUriPermissions="true">
 			<meta-data

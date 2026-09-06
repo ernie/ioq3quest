@@ -29,17 +29,17 @@ static JavaVM* g_JavaVM = NULL;
 static jobject g_ActivityObject = NULL;
 static qboolean g_HasFocus = qtrue;
 
-JNIEXPORT void JNICALL Java_com_drbeef_ioq3quest_MainActivity_nativeCreate(JNIEnv* env, jclass cls, jobject thisObject)
+JNIEXPORT void JNICALL Java_io_ernie_trinity_MainActivity_nativeCreate(JNIEnv* env, jclass cls, jobject thisObject)
 {
     g_ActivityObject = (*env)->NewGlobalRef(env, thisObject);
 }
 
-JNIEXPORT void JNICALL Java_com_drbeef_ioq3quest_MainActivity_nativeFocusChanged(JNIEnv *env, jclass clazz, jboolean focus)
+JNIEXPORT void JNICALL Java_io_ernie_trinity_MainActivity_nativeFocusChanged(JNIEnv *env, jclass clazz, jboolean focus)
 {
     g_HasFocus = focus;
 }
 
-JNIEXPORT void JNICALL Java_com_drbeef_ioq3quest_MainActivity_nativeKey(JNIEnv *env, jclass clazz, jint keycode, jint action)
+JNIEXPORT void JNICALL Java_io_ernie_trinity_MainActivity_nativeKey(JNIEnv *env, jclass clazz, jint keycode, jint action)
 {
 	if (action == 0)
 	{

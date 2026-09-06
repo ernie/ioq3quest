@@ -1,10 +1,10 @@
-# Trinity Quest
+# Trinity Standalone
 
-Trinity Quest is the Meta Quest standalone VR client for the Trinity Quake III Arena
+Trinity Standalone is the standalone-headset VR client for the Trinity Quake III Arena
 ecosystem — a fork of [ioq3quest](https://github.com/Team-Beef-Studios/ioq3quest)
 (Team Beef's port of [ioquake3](https://github.com/ioquake/ioq3) to Quest) with the
 [Trinity](https://github.com/ernie/trinity) mod and Trinity engine features compiled in.
-It runs natively on Meta Quest headsets and plays crossplay with the flatscreen
+It runs natively on Meta Quest and PICO headsets and plays crossplay with the flatscreen
 [Trinity Engine](https://github.com/ernie/trinity-engine) and
 [Trinity VR](https://github.com/ernie/trinity-vr) (PCVR) clients on Trinity servers,
 where the [Trinity Tracker](https://github.com/ernie/trinity-tracker) platform tracks
@@ -60,8 +60,8 @@ Plays back TrinityVision (`.tvd`) demos recorded by Trinity servers.
   (dedicated servers, demo playback), forked from Quake3e.
 - **[Trinity VR](https://github.com/ernie/trinity-vr)** — PCVR client (Windows,
   OpenXR/SteamVR).
-- **[Trinity Quest](https://github.com/ernie/trinity-quest)** — this project. Meta Quest
-  standalone VR client.
+- **[Trinity Standalone](https://github.com/ernie/trinity-standalone)** — this project.
+  Standalone-headset VR client (Meta Quest, PICO).
 - **[Trinity Tracker](https://github.com/ernie/trinity-tracker)** — statistics and server
   administration platform.
 

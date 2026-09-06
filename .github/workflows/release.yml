@@ -83,7 +83,7 @@ jobs:
             VERSION=$(git show -s --pretty=format:%h)
           fi
           OUTDIR=android/app/build/outputs/apk/release
-          SIGNED=$OUTDIR/trinity-quest-${VERSION}.apk
+          SIGNED=$OUTDIR/trinity-standalone-${VERSION}.apk
           $APKSIGNER sign \
             --ks /tmp/keystore.jks \
             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -92,20 +92,20 @@ jobs:
             "$UNSIGNED"
           rm /tmp/keystore.jks
           rm "$UNSIGNED"
-          # Transition bridge: also publish under the pre-rename name so clients
-          # built before the trinity-quest rename (UPDATE_ASSET_PREFIX "ioq3quest")
-          # can still find an asset and auto-update onto the new prefix.
-          # The v2 signature covers contents, not filename, so the copy stays valid.
-          # TODO: remove this legacy copy once old "ioq3quest" clients have aged out.
-          cp "$SIGNED" "$OUTDIR/ioq3quest-${VERSION}.apk"
+          # Clients built with UPDATE_ASSET_PREFIX "trinity-quest" look for this name.
+          # They carry a different package, so this installs beside them and their
+          # home directory is copied on first launch. The v2 signature covers
+          # contents, not filename, so the copy stays valid.
+          # TODO: remove once "trinity-quest" clients have aged out.
+          cp "$SIGNED" "$OUTDIR/trinity-quest-${VERSION}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: trinity-quest-apk
+          name: trinity-standalone-apk
           path: |
+            android/app/build/outputs/apk/release/trinity-standalone-*.apk
             android/app/build/outputs/apk/release/trinity-quest-*.apk
-            android/app/build/outputs/apk/release/ioq3quest-*.apk
           if-no-files-found: error
           retention-days: 5
 
@@ -117,14 +117,14 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
-          name: trinity-quest-apk
+          name: trinity-standalone-apk
           path: dist
 
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: |
+            dist/trinity-standalone-*.apk
             dist/trinity-quest-*.apk
-            dist/ioq3quest-*.apk
           generate_release_notes: true
           draft: ${{ github.event_name == 'workflow_dispatch' }}
