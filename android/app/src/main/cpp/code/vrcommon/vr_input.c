@@ -13,6 +13,10 @@
 #include "vr_macros.h"
 #include "vr_math.h"
 
+#if __ANDROID__
+#include <android/log.h>
+#endif
+
 #ifdef USE_INTERNAL_SDL
 #	include "SDL.h"
 #else
@@ -664,9 +668,14 @@ void VR_InitInstanceInput( VR_Engine* engine )
 	XrPath interactionProfilePathValveIndex = XR_NULL_PATH;
 	XrPath interactionProfilePathOculusTouch = XR_NULL_PATH;
 	XrPath interactionProfilePathKHRSimple = XR_NULL_PATH;
+	// PICO's native profiles (XR_BD_controller_interaction); same input paths as Touch.
+	XrPath interactionProfilePathPico4s = XR_NULL_PATH;
+	XrPath interactionProfilePathPico4 = XR_NULL_PATH;
 	OXR(xrStringToPath(engine->appState.Instance, "/interaction_profiles/valve/index_controller", &interactionProfilePathValveIndex));
 	OXR(xrStringToPath(engine->appState.Instance, "/interaction_profiles/oculus/touch_controller", &interactionProfilePathOculusTouch));
 	OXR(xrStringToPath(engine->appState.Instance, "/interaction_profiles/khr/simple_controller", &interactionProfilePathKHRSimple));
+	OXR(xrStringToPath(engine->appState.Instance, "/interaction_profiles/bytedance/pico4s_controller", &interactionProfilePathPico4s));
+	OXR(xrStringToPath(engine->appState.Instance, "/interaction_profiles/bytedance/pico4_controller", &interactionProfilePathPico4));
 
 	// Toggle this to force simple as a first choice, otherwise use it as a last resort
 	if (useSimpleProfile)
@@ -697,23 +706,38 @@ void VR_InitInstanceInput( VR_Engine* engine )
 		// Index HMD with Index controllers, etc.)
 		const char* systemName = engine->systemProperties.SystemProperties.systemName;
 
-		XrPath interactionProfiles[3];
-		const char* interactionProfileNames[3];
+		// The runtime name identifies the vendor when the system name does not.
+		XrInstanceProperties instanceProps;
+		memset(&instanceProps, 0, sizeof(instanceProps));
+		instanceProps.type = XR_TYPE_INSTANCE_PROPERTIES;
+		OXR(xrGetInstanceProperties(engine->appState.Instance, &instanceProps));
+		const char* runtimeName = instanceProps.runtimeName;
+
+		XrPath interactionProfiles[5];
+		const char* interactionProfileNames[5];
 
 		// Check for Valve Index HMD
 		if (strstr(systemName, "Index") != NULL)
 		{
 			printf("[OpenXR] Detected Valve Index HMD (%s), prioritizing Index controllers\n", systemName);
-			const XrPath profiles[] = { interactionProfilePathValveIndex, interactionProfilePathOculusTouch, interactionProfilePathKHRSimple };
-			const char* names[] = { "Valve Index", "Oculus Quest", "Simple" };
+			const XrPath profiles[] = { interactionProfilePathValveIndex, interactionProfilePathOculusTouch, interactionProfilePathPico4s, interactionProfilePathPico4, interactionProfilePathKHRSimple };
+			const char* names[] = { "Valve Index", "Oculus Quest", "PICO 4 Ultra", "PICO 4", "Simple" };
+			memcpy(interactionProfiles, profiles, sizeof(interactionProfiles));
+			memcpy(interactionProfileNames, names, sizeof(interactionProfileNames));
+		}
+		else if (Q_stristr(systemName, "pico") != NULL || Q_stristr(runtimeName, "pico") != NULL)
+		{
+			printf("[OpenXR] Detected PICO HMD (%s / %s), prioritizing PICO controllers\n", systemName, runtimeName);
+			const XrPath profiles[] = { interactionProfilePathPico4s, interactionProfilePathPico4, interactionProfilePathOculusTouch, interactionProfilePathValveIndex, interactionProfilePathKHRSimple };
+			const char* names[] = { "PICO 4 Ultra", "PICO 4", "Oculus Quest", "Valve Index", "Simple" };
 			memcpy(interactionProfiles, profiles, sizeof(interactionProfiles));
 			memcpy(interactionProfileNames, names, sizeof(interactionProfileNames));
 		}
 		else
 		{
 			// Default to Oculus Touch controllers for all other HMDs
-			const XrPath profiles[] = { interactionProfilePathOculusTouch, interactionProfilePathValveIndex, interactionProfilePathKHRSimple };
-			const char* names[] = { "Oculus Quest", "Valve Index", "Simple" };
+			const XrPath profiles[] = { interactionProfilePathOculusTouch, interactionProfilePathValveIndex, interactionProfilePathPico4s, interactionProfilePathPico4, interactionProfilePathKHRSimple };
+			const char* names[] = { "Oculus Quest", "Valve Index", "PICO 4 Ultra", "PICO 4", "Simple" };
 			memcpy(interactionProfiles, profiles, sizeof(interactionProfiles));
 			memcpy(interactionProfileNames, names, sizeof(interactionProfileNames));
 		}
@@ -728,6 +752,9 @@ void VR_InitInstanceInput( VR_Engine* engine )
 			if (XR_SUCCESS == suggestTouchResult)
 			{
 				printf("[OpenXR] Found supported bindings for %s controller\n", interactionProfileNames[profileIdx]);
+#if __ANDROID__
+				__android_log_print(ANDROID_LOG_INFO, "OpenXR", "System \"%s\" on runtime \"%s\": using %s controller bindings", systemName, runtimeName, interactionProfileNames[profileIdx]);
+#endif
 				interactionProfilePath = interactionProfiles[profileIdx];
 				break;
 			}
@@ -768,8 +795,11 @@ void VR_InitInstanceInput( VR_Engine* engine )
 				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/aim/pose");
 				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/aim/pose");
 			}
-			else if (interactionProfilePath == interactionProfilePathOculusTouch)
+			else if (interactionProfilePath == interactionProfilePathOculusTouch ||
+					 interactionProfilePath == interactionProfilePathPico4s ||
+					 interactionProfilePath == interactionProfilePathPico4)
 			{
+				// PICO's profiles expose the same paths as Touch
 				bindings[currBinding++] = ActionSuggestedBinding(indexLeftAction, "/user/hand/left/input/trigger");
 				bindings[currBinding++] = ActionSuggestedBinding(indexRightAction, "/user/hand/right/input/trigger");
 				bindings[currBinding++] = ActionSuggestedBinding(menuAction, "/user/hand/left/input/menu/click");
