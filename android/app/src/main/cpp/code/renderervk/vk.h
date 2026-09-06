@@ -296,7 +296,7 @@ void vk_finish_frame( void );  // Force-end an interrupted frame (for shutdown)
 void vk_discard_frame( void ); // End an interrupted frame without submitting it (shutdown)
 
 void vk_end_render_pass( void );
-void vk_begin_main_render_pass( qboolean clear );
+void vk_begin_main_render_pass( void );
 void vk_begin_hud_render_pass( qboolean clear );
 void vk_end_hud_render_pass( void );
 void vk_finish_subpass_post( void );
@@ -350,6 +350,8 @@ void VBO_ClearQueue( void );
 
 typedef struct vk_tess_s {
 	VkCommandBuffer command_buffer;
+	VkCommandBuffer hud_command_buffer;  // the HUD buffer's own, submitted ahead of command_buffer
+	qboolean		hud_begun;
 
 	VkSemaphore image_acquired;
 	uint32_t	swapchain_image_index;
@@ -498,13 +500,13 @@ typedef struct {
 
 	struct {
 		VkRenderPass main;        // Multiview main rendering (clears framebuffer)
-		VkRenderPass mainResume;  // Multiview resume (preserves framebuffer)
 		VkRenderPass screenmap;
 		VkRenderPass gamma;       // Multiview gamma correction (if r_fbo)
 		VkRenderPass bloom_extract; // Multiview bloom extraction
 		VkRenderPass blur[VK_NUM_BLOOM_PASSES*2]; // Multiview blur passes
 		VkRenderPass post_bloom;  // Multiview post-bloom blend
-		VkRenderPass hudBuffer;   // HUD buffer (1280x960, single layer, color+depth)
+		VkRenderPass hudBuffer;       // HUD buffer (1280x960, single layer, color+depth), color loaded
+		VkRenderPass hudBufferClear;  // same, color cleared on load: the first HUD pass of a frame
 		// Subpass optimization render passes (tile-local post-processing)
 		VkRenderPass main_with_bloom;  // 3 subpasses: scene, bloom extract, composite+gamma
 		VkRenderPass main_with_gamma;  // 2 subpasses: scene, gamma only
@@ -797,6 +799,17 @@ typedef struct {
 
 	renderPass_t renderPassIndex;
 	qboolean inRenderPass;		// true when actually inside a render pass
+
+	// HUD brackets record into vk.cmd->hud_command_buffer, submitted ahead of the frame's, so an open scene pass is never resumed
+	qboolean inHudCommandBuffer;
+	struct {
+		VkCommandBuffer commandBuffer;
+		qboolean inRenderPass;
+		renderPass_t renderPassIndex;
+		qboolean inPostBloom2DSubpass;
+		uint32_t renderWidth, renderHeight;
+		float renderScaleX, renderScaleY;
+	} hudSaved;
 	qboolean recordingCommands;	// true when command buffer is recording (between Begin/End)
 	qboolean descriptorsReady;	// qfalse between vk_release_resources() and vk_init_descriptors(): pool contents are dead
 
@@ -804,7 +817,6 @@ typedef struct {
 	// When using combined subpass render pass, if HUD rendering is requested,
 	// we first complete the subpass pass (bloom extract + gamma), then proceed with HUD.
 	// These flags indicate that vk_finish_subpass_post() was already called.
-	qboolean deferredHudPending;		// true when combined pass completed before HUD rendering
 	qboolean subpassPostDone;			// true when vk_finish_subpass_post() already ran this frame
 	qboolean inPostBloom2DSubpass;		// true when in post-bloom/post-gamma 2D subpass
 	// Foveated split: under a density map Adreno returns input-attachment reads

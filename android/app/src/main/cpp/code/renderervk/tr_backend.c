@@ -1452,7 +1452,7 @@ static const void *RB_DrawSurfs( const void *data ) {
 #ifdef USE_VULKAN
 	if ( cmd->refdef.switchRenderPass ) {
 		vk_end_render_pass();
-		vk_begin_main_render_pass( qtrue );  // Clear after screenmap pass
+		vk_begin_main_render_pass();  // Clear after screenmap pass
 		backEnd.screenMapDone = qtrue;
 	}
 #endif
@@ -1823,6 +1823,8 @@ static const void* RB_HUDBuffer( const void* data ) {
 	else if ( !cmd->start && backEnd.isDrawingHUD ) {
 		backEnd.isDrawingHUD = qfalse;
 		vk_end_hud_render_pass();
+		// the 2D matrices pushed inside the bracket went to the HUD command buffer, not the frame's
+		backEnd.projection2D = qfalse;
 	}
 
 	return (const void*)(cmd + 1);
