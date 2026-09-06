@@ -355,6 +355,8 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	float combinedAngleLeft = views[0].fov.angleLeft / vr.weapon_zoomLevel;
 	float combinedAngleRight = views[1].fov.angleRight / vr.weapon_zoomLevel;
 	float combinedFovX = (fabsf(combinedAngleLeft) + fabsf(combinedAngleRight)) * 180.0f / M_PI;
+	// Canted displays: each eye's FOV is centered on its own yawed axis
+	combinedFovX += (fabsf(vr.eyeCantYaw[0]) + fabsf(vr.eyeCantYaw[1])) * 180.0f / M_PI;
 
 	// Calculate half-IPD in meters for frustum plane offset
 	float halfIpdMeters = 0.0f;

@@ -417,6 +417,52 @@ void R_RotateForEntity( const trRefEntity_t *ent, const viewParms_t *viewParms,
 
 /*
 =================
+R_QuatRotate
+
+v' = q v q^-1 for a unit quaternion (x, y, z, w).
+=================
+*/
+static void R_QuatRotate( const vrQuaternionf_t *q, const vec3_t v, vec3_t out )
+{
+	vec3_t qv, t, c;
+
+	VectorSet( qv, q->x, q->y, q->z );
+	CrossProduct( qv, v, t );
+	VectorScale( t, 2.0f, t );
+	CrossProduct( qv, t, c );
+	out[0] = v[0] + q->w * t[0] + c[0];
+	out[1] = v[1] + q->w * t[1] + c[1];
+	out[2] = v[2] + q->w * t[2] + c[2];
+}
+
+/*
+=================
+R_RotateAxesForEye
+
+Rotate the view axes by an eye's rotation q, given in OpenXR head-local axes
+(x=right, y=up, z=back): right=-axis[1], up=axis[2], back=-axis[0].
+=================
+*/
+static void R_RotateAxesForEye( vec3_t const in[3], const vrQuaternionf_t *q, vec3_t out[3] )
+{
+	static const vec3_t localForward = { 0.0f, 0.0f, -1.0f };
+	static const vec3_t localLeft = { -1.0f, 0.0f, 0.0f };
+	static const vec3_t localUp = { 0.0f, 1.0f, 0.0f };
+	const float *locals[3] = { localForward, localLeft, localUp };
+	int k;
+
+	for ( k = 0; k < 3; k++ ) {
+		vec3_t r;
+		R_QuatRotate( q, locals[k], r );
+		// world = x*right + y*up + z*back
+		out[k][0] = -r[0] * in[1][0] + r[1] * in[2][0] - r[2] * in[0][0];
+		out[k][1] = -r[0] * in[1][1] + r[1] * in[2][1] - r[2] * in[0][1];
+		out[k][2] = -r[0] * in[1][2] + r[1] * in[2][2] - r[2] * in[0][2];
+	}
+}
+
+/*
+=================
 R_RotateForViewer
 
 Sets up the modelview matrix for a given viewParm.
@@ -448,47 +494,19 @@ static void R_RotateForViewer( void )
 
 		if ((eye < 2) && !VR_ShouldDisableStereo())
 		{
-			// Apply stereo eye offset for IPD
-			// The eye offset must be in HEAD-LOCAL space, not world space.
-			// OpenXR eyePose positions are in world/stage space, so when the head rotates,
-			// the world-space difference between eye and HMD center rotates too.
-			// We need to un-rotate this to get head-local offset, then apply along view axes.
-
-			// World-space difference (in meters)
-			float worldDiffX = vr.eyePose[eye].position.x - vr.hmdposition[0];
-			float worldDiffY = vr.eyePose[eye].position.y - vr.hmdposition[1];
-			float worldDiffZ = vr.eyePose[eye].position.z - vr.hmdposition[2];
-
-			// Un-rotate by HMD orientation to get head-local offset
-			// Using quaternion inverse rotation: q* v q^-1
-			// For unit quaternion, q^-1 = conjugate = (-x, -y, -z, w)
-			float qx = -vr.eyePose[eye].orientation.x;
-			float qy = -vr.eyePose[eye].orientation.y;
-			float qz = -vr.eyePose[eye].orientation.z;
-			float qw = vr.eyePose[eye].orientation.w;
-
-			// Rotate world diff by inverse quaternion to get head-local offset
-			// v' = q * v * q^-1, using the formula for quaternion-vector rotation
-			float tx = 2.0f * (qy * worldDiffZ - qz * worldDiffY);
-			float ty = 2.0f * (qz * worldDiffX - qx * worldDiffZ);
-			float tz = 2.0f * (qx * worldDiffY - qy * worldDiffX);
-
-			float localX = worldDiffX + qw * tx + (qy * tz - qz * ty);
-			float localY = worldDiffY + qw * ty + (qz * tx - qx * tz);
-			float localZ = worldDiffZ + qw * tz + (qx * ty - qy * tx);
-
-			// Scale to Quake units
+			// Stereo eye offset (IPD), in head-local meters (OpenXR axes: x=right, y=up, z=back)
 			float worldscale = vr_worldscale->value * vr_worldscaleScaler->value;
-			localX *= worldscale;
-			localY *= worldscale;
-			localZ *= worldscale;
+			float localX = vr.eyeLocalOffset[eye].x * worldscale;
+			float localY = vr.eyeLocalOffset[eye].y * worldscale;
+			float localZ = vr.eyeLocalOffset[eye].z * worldscale;
 
-			// Apply head-local offset along view axes
-			// OpenXR head-local: X=right, Y=up, Z=back
 			// Quake view axes: axis[0]=forward, axis[1]=left, axis[2]=up
 			VectorMA(origin, -localX, tr.viewParms.or.axis[1], origin);  // local right = -Quake left
 			VectorMA(origin, localY, tr.viewParms.or.axis[2], origin);   // local up = Quake up
 			VectorMA(origin, -localZ, tr.viewParms.or.axis[0], origin);  // local back = -Quake forward
+
+			// Per-eye orientation: identity on Quest, +/- the cant angle on canted displays
+			R_RotateAxesForEye(tr.viewParms.or.axis, &vr.eyeLocalRotation[eye], axis);
 		}
 
 		viewerMatrix[0] = axis[0][0];
