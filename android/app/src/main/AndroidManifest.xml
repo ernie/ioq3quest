@@ -26,6 +26,8 @@
 		<meta-data android:name="com.oculus.supportedRefreshRates" android:value="60,72,80,90,120"/>
 		<meta-data android:name="com.oculus.ossplash" android:value="true"/>
 		<meta-data android:name="com.oculus.environmentVersion" android:value="1"/>
+		<!-- PICO launches the app in immersive mode only when this is declared -->
+		<meta-data android:name="pvr.app.type" android:value="vr"/>
 		<activity android:name="com.drbeef.ioq3quest.MainActivity"
 			android:label="@string/app_name"
 			android:screenOrientation="landscape"

@@ -130,6 +130,18 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		nativeFocusChanged(hasFocus);
 	}
 
+	// SDLActivity starts the native thread from surfaceChanged(), but an OpenXR
+	// activity never uses its Surface and PICO never delivers one. Start on resume.
+	@Override
+	protected void onResume() {
+		super.onResume();
+		if (!SDLActivity.mIsSurfaceReady) {
+			Log.i(TAG, "Starting native thread without waiting for an Android surface");
+			SDLActivity.mIsSurfaceReady = true;
+			SDLActivity.handleNativeState();
+		}
+	}
+
 	public void create() throws IOException {
 		// Prepare base game directory
 		new File("/sdcard/ioquake3Quest/baseq3").mkdirs();
