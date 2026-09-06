@@ -33,6 +33,7 @@
 extern vr_clientinfo_t vr;
 extern cvar_t *vr_heightAdjust;
 extern cvar_t *vr_refreshrate;
+extern cvar_t *vr_refreshrates;
 extern cvar_t *vr_desktopMode;
 extern cvar_t *vr_virtualScreenMode;
 
@@ -92,15 +93,142 @@ void VR_GetResolution(VR_Engine* engine, int *pWidth, int *pHeight)
 }
 
 
+// Rate asked of the runtime but not yet confirmed by its change event
+static float s_requestedRefreshRate = 0.0f;
+
+/*
+==================
+VR_EnumerateRefreshRates
+
+Publishes the runtime's rates in vr_refreshrates so the UI offers only those.
+==================
+*/
+static void VR_EnumerateRefreshRates(VR_Engine* engine)
+{
+	PFN_xrEnumerateDisplayRefreshRatesFB xrEnumerateDisplayRefreshRatesFB = NULL;
+	VR_Renderer* renderer = &engine->appState.Renderer;
+	char list[256];
+	uint32_t count = 0;
+	uint32_t i;
+
+	renderer->NumSupportedRefreshRates = 0;
+	list[0] = '\0';
+
+	xrGetInstanceProcAddr(engine->appState.Instance, "xrEnumerateDisplayRefreshRatesFB", (PFN_xrVoidFunction*)(&xrEnumerateDisplayRefreshRatesFB));
+	if (xrEnumerateDisplayRefreshRatesFB &&
+		XR_SUCCEEDED(xrEnumerateDisplayRefreshRatesFB(engine->appState.Session, 0, &count, NULL)) && count > 0)
+	{
+		if (count > VR_MAX_REFRESH_RATES)
+		{
+			count = VR_MAX_REFRESH_RATES;
+		}
+		if (XR_SUCCEEDED(xrEnumerateDisplayRefreshRatesFB(engine->appState.Session, count, &count, renderer->SupportedRefreshRates)))
+		{
+			renderer->NumSupportedRefreshRates = count;
+		}
+	}
+
+	for (i = 0; i < renderer->NumSupportedRefreshRates; i++)
+	{
+		Q_strcat(list, sizeof(list), va("%s%g", i ? " " : "", renderer->SupportedRefreshRates[i]));
+	}
+	Cvar_Set2("vr_refreshrates", list, qtrue);
+	Com_Printf("Supported display refresh rates: %s\n", list[0] ? list : "(not reported)");
+}
+
+// Nearest supported rate, or the rate itself when the runtime reported none
+static float VR_SnapRefreshRate(const VR_Engine* engine, float rate)
+{
+	const VR_Renderer* renderer = &engine->appState.Renderer;
+	float best = rate;
+	float bestDiff = -1.0f;
+	uint32_t i;
+
+	for (i = 0; i < renderer->NumSupportedRefreshRates; i++)
+	{
+		const float diff = fabsf(renderer->SupportedRefreshRates[i] - rate);
+		if (bestDiff < 0.0f || diff < bestDiff)
+		{
+			bestDiff = diff;
+			best = renderer->SupportedRefreshRates[i];
+		}
+	}
+	return best;
+}
+
+static void VR_RequestRefreshRate(VR_Engine* engine, float rate)
+{
+	PFN_xrRequestDisplayRefreshRateFB xrRequestDisplayRefreshRateFB;
+	XrResult result;
+
+	XR_CHECK(
+		xrGetInstanceProcAddr(engine->appState.Instance, "xrRequestDisplayRefreshRateFB", (PFN_xrVoidFunction*)(&xrRequestDisplayRefreshRateFB)),
+		"failed to get xrRequestDisplayRefreshRateFB func proc");
+
+	Com_Printf("Requesting display refresh rate: %g\n", rate);
+	result = xrRequestDisplayRefreshRateFB(engine->appState.Session, rate);
+	if (result == XR_SUCCESS)
+	{
+		// Confirmed later by XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB
+		s_requestedRefreshRate = rate;
+	}
+	else
+	{
+		Com_Printf("Refresh rate %g refused by the runtime (%d), staying at %g\n", rate, (int)result, engine->appState.Renderer.RefreshRate);
+		Cvar_SetValue("vr_refreshrate", engine->appState.Renderer.RefreshRate);
+		vr_refreshrate->modified = qfalse;
+		s_requestedRefreshRate = 0.0f;
+	}
+}
+
+/*
+==================
+VR_ApplyRefreshRate
+
+Runs at init and on every cvar change, so the setting applies live without a video restart.
+==================
+*/
+static void VR_ApplyRefreshRate(VR_Engine* engine)
+{
+	const float current = engine->appState.Renderer.RefreshRate;
+	float desired, snapped;
+
+	vr_refreshrate->modified = qfalse;
+
+	desired = vr_refreshrate->value;
+	if (desired <= 0.0f)
+	{
+		Cvar_SetValue("vr_refreshrate", current);
+		vr_refreshrate->modified = qfalse;
+		return;
+	}
+
+	snapped = VR_SnapRefreshRate(engine, desired);
+	if (snapped != desired)
+	{
+		Com_Printf("Refresh rate %g is not supported, using %g\n", desired, snapped);
+		Cvar_SetValue("vr_refreshrate", snapped);
+		vr_refreshrate->modified = qfalse;
+	}
+
+	if (snapped == current)
+	{
+		s_requestedRefreshRate = 0.0f;
+		return;
+	}
+	if (snapped == s_requestedRefreshRate)
+	{
+		return; // already asked; waiting for the runtime to confirm
+	}
+	VR_RequestRefreshRate(engine, snapped);
+}
+
 void VR_InitRenderer(VR_Engine* engine)
 {
 	VR_VK_RegisterDebugCallbackIfEnabled();
 
 	// Get and set the display refresh rate
 	{
-		// Save user's desired refresh rate from cvar before we query/overwrite
-		const float desiredRefreshRate = vr_refreshrate ? vr_refreshrate->value : 0.0f;
-
 		PFN_xrGetDisplayRefreshRateFB xrGetDisplayRefreshRateFB;
 		XR_CHECK(
 			xrGetInstanceProcAddr(engine->appState.Instance, "xrGetDisplayRefreshRateFB", (PFN_xrVoidFunction*)(&xrGetDisplayRefreshRateFB)),
@@ -112,37 +240,9 @@ void VR_InitRenderer(VR_Engine* engine)
 			"failed to get current display refresh rate");
 		Com_Printf("Current System Display Refresh Rate: %f\n", engine->appState.Renderer.RefreshRate);
 
-		// Request user's desired refresh rate if different from current
-		if (desiredRefreshRate > 0.0f && desiredRefreshRate != engine->appState.Renderer.RefreshRate)
-		{
-			PFN_xrRequestDisplayRefreshRateFB xrRequestDisplayRefreshRateFB;
-			XR_CHECK(
-				xrGetInstanceProcAddr(engine->appState.Instance, "xrRequestDisplayRefreshRateFB", (PFN_xrVoidFunction*)(&xrRequestDisplayRefreshRateFB)),
-				"failed to get xrRequestDisplayRefreshRateFB func proc");
-
-			Com_Printf("Requesting display refresh rate: %f\n", desiredRefreshRate);
-			XrResult result = xrRequestDisplayRefreshRateFB(engine->appState.Session, desiredRefreshRate);
-			if (result == XR_SUCCESS)
-			{
-				// Update will come via XR_TYPE_EVENT_DATA_DISPLAY_REFRESH_RATE_CHANGED_FB event
-				Com_Printf("Refresh rate request accepted, waiting for confirmation...\n");
-			}
-			else if (result == XR_ERROR_DISPLAY_REFRESH_RATE_UNSUPPORTED_FB)
-			{
-				Com_Printf("Requested refresh rate %f is not supported, using system default\n", desiredRefreshRate);
-				Cvar_SetValue("vr_refreshrate", engine->appState.Renderer.RefreshRate);
-			}
-			else
-			{
-				Com_Printf("Failed to request refresh rate: %d\n", result);
-				Cvar_SetValue("vr_refreshrate", engine->appState.Renderer.RefreshRate);
-			}
-		}
-		else
-		{
-			// No user preference or already at desired rate: just sync cvar
-			Cvar_SetValue("vr_refreshrate", engine->appState.Renderer.RefreshRate);
-		}
+		VR_EnumerateRefreshRates(engine);
+		s_requestedRefreshRate = 0.0f;
+		VR_ApplyRefreshRate(engine);
 	}
 
 	stageSupported = VR_IsStageSpaceSupported(engine->appState.Session);
@@ -211,6 +311,12 @@ void VR_ProcessFrame(VR_Engine* engine)
 		// (specifically SDL events) so that app won't appear as stuck/deadlocked
 		IN_Frame();
 		return;
+	}
+
+	// A menu pick applies live, no video restart
+	if (vr_refreshrate->modified)
+	{
+		VR_ApplyRefreshRate(engine);
 	}
 
 	VR_Renderer_BeginFrame(engine, needsRecenter);
