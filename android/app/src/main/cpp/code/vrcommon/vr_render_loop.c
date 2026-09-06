@@ -317,9 +317,8 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 
 		cylinder_layer.radius = radius;
 		cylinder_layer.centralAngle = centralAngle;
-		// The cropped region is 4:3 in pixels, corrected by the buffer's own
-		// aspect because its pixels are not angularly square.
-		cylinder_layer.aspectRatio = width / (float)height / 0.75f;
+		// The crop is 4:3 in both pixels and angle; the eye-buffer aspect would stretch the screen
+		cylinder_layer.aspectRatio = (float)srcWidth / (float)srcHeight;
 	}
 
 	// Submit layers
