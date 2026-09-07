@@ -84,6 +84,21 @@ qboolean VR_ShouldDisableStereo( void )
 
 /*
 ==================
+VR_ScopeFrustum
+
+Half-tangents of the cyclopean scope view at zoom 1. The quad is the same width on
+every headset, so the scope circle and the minimal HUD keep their angles and wider
+displays get black beside it. The height follows the buffer aspect for square pixels.
+==================
+*/
+void VR_ScopeFrustum( float *halfTanH, float *halfTanV, int width, int height )
+{
+	*halfTanH = VR_SCOPE_HALF_TAN_H;
+	*halfTanV = VR_SCOPE_HALF_TAN_H * (float)height / (float)width;
+}
+
+/*
+==================
 VR_Gameplay_VirtualScreenContextChanged
 
 Detects client connection-state transitions. Callers use it while the

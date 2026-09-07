@@ -7728,9 +7728,8 @@ void vk_set_view_eyeproj( void )
 				float cropFactor = (float)glConfig.vidHeight / cropHeight;
 				proj[0] = ( 1.0f / tan( DEG2RAD( backEnd.viewParms.fovX ) * 0.5f ) ) / cropFactor;
 				proj[5] = ( -1.0f / tan( DEG2RAD( backEnd.viewParms.fovY ) * 0.5f ) ) / cropFactor;
-			} else if ( vr.weapon_zoomed ) {
-				proj[5] *= (float)glConfig.vidWidth / (float)glConfig.vidHeight;
-			} else {
+			} else if ( !vr.weapon_zoomed ) {
+				// Virtual screen: 4:3 crop. The scope projection already matches the buffer.
 				proj[5] *= (float)glConfig.vidHeight / (float)glConfig.vidWidth;
 			}
 			proj[8] = 0.0f;
