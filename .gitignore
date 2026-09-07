@@ -67,3 +67,8 @@ CLAUDE.md
 .claude/
 ioq3quest.keystore
 lastrun.log
+
+# Claude Code
+.claude/
+CLAUDE.md
+docs/superpowers/
