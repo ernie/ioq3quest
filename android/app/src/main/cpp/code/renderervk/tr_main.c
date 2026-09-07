@@ -463,6 +463,39 @@ static void R_RotateAxesForEye( vec3_t const in[3], const vrQuaternionf_t *q, ve
 
 /*
 =================
+R_EyeOrientation
+
+The view's origin and axes with the eye's offset and, on canted displays, its
+rotation applied. Shared by the eye view matrices and the portal plane, which must agree.
+=================
+*/
+static void R_EyeOrientation( const viewParms_t *parms, int eye, vec3_t origin, vec3_t axis[3] )
+{
+	VectorCopy( parms->or.origin, origin );
+	VectorCopy( parms->or.axis[0], axis[0] );
+	VectorCopy( parms->or.axis[1], axis[1] );
+	VectorCopy( parms->or.axis[2], axis[2] );
+
+	if ( eye < 2 && !VR_ShouldDisableStereo() ) {
+		// eye offset in head-local meters (OpenXR axes: x=right, y=up, z=back)
+		const float worldscale = vr_worldscale->value * vr_worldscaleScaler->value;
+		const float localX = vr.eyeLocalOffset[eye].x * worldscale;
+		const float localY = vr.eyeLocalOffset[eye].y * worldscale;
+		const float localZ = vr.eyeLocalOffset[eye].z * worldscale;
+
+		// Quake view axes: axis[0]=forward, axis[1]=left, axis[2]=up
+		VectorMA( origin, -localX, parms->or.axis[1], origin );  // local right = -Quake left
+		VectorMA( origin, localY, parms->or.axis[2], origin );   // local up = Quake up
+		VectorMA( origin, -localZ, parms->or.axis[0], origin );  // local back = -Quake forward
+
+		// identity on Quest, +/- the cant on canted displays
+		R_RotateAxesForEye( parms->or.axis, &vr.eyeLocalRotation[eye], axis );
+	}
+}
+
+
+/*
+=================
 R_RotateForViewer
 
 Sets up the modelview matrix for a given viewParm.
@@ -487,27 +520,7 @@ static void R_RotateForViewer( void )
 		vec3_t	origin;
 		vec3_t	axis[3];
 
-		VectorCopy(tr.viewParms.or.origin, origin);
-		VectorCopy(tr.viewParms.or.axis[0], axis[0]);
-		VectorCopy(tr.viewParms.or.axis[1], axis[1]);
-		VectorCopy(tr.viewParms.or.axis[2], axis[2]);
-
-		if ((eye < 2) && !VR_ShouldDisableStereo())
-		{
-			// Stereo eye offset (IPD), in head-local meters (OpenXR axes: x=right, y=up, z=back)
-			float worldscale = vr_worldscale->value * vr_worldscaleScaler->value;
-			float localX = vr.eyeLocalOffset[eye].x * worldscale;
-			float localY = vr.eyeLocalOffset[eye].y * worldscale;
-			float localZ = vr.eyeLocalOffset[eye].z * worldscale;
-
-			// Quake view axes: axis[0]=forward, axis[1]=left, axis[2]=up
-			VectorMA(origin, -localX, tr.viewParms.or.axis[1], origin);  // local right = -Quake left
-			VectorMA(origin, localY, tr.viewParms.or.axis[2], origin);   // local up = Quake up
-			VectorMA(origin, -localZ, tr.viewParms.or.axis[0], origin);  // local back = -Quake forward
-
-			// Per-eye orientation: identity on Quest, +/- the cant angle on canted displays
-			R_RotateAxesForEye(tr.viewParms.or.axis, &vr.eyeLocalRotation[eye], axis);
-		}
+		R_EyeOrientation( &tr.viewParms, eye, origin, axis );
 
 		viewerMatrix[0] = axis[0][0];
 		viewerMatrix[4] = axis[0][1];
@@ -776,16 +789,26 @@ static void R_SetupProjectionZ( viewParms_t *dest )
 				float stdM14 = tr.vrParms.projectionEye[eye][14];
 #endif
 
+				// The plane in this eye's own view space: an offset, canted eye sits a few degrees off the mono plane
+				vec3_t eyeOrigin, eyeAxis[3];
+				float eyePlane[4];
+
+				R_EyeOrientation( dest, eye, eyeOrigin, eyeAxis );
+				eyePlane[0] = -DotProduct( eyeAxis[1], plane );
+				eyePlane[1] =  DotProduct( eyeAxis[2], plane );
+				eyePlane[2] = -DotProduct( eyeAxis[0], plane );
+				eyePlane[3] =  DotProduct( plane, eyeOrigin ) - plane[3];
+
 				// Compute per-eye oblique clipping using standard depth values
-				q[0] = (SGN(plane2[0]) + tr.vrParms.projectionEye[eye][8]) / tr.vrParms.projectionEye[eye][0];
-				q[1] = (SGN(plane2[1]) + tr.vrParms.projectionEye[eye][9]) / tr.vrParms.projectionEye[eye][5];
+				q[0] = (SGN(eyePlane[0]) + tr.vrParms.projectionEye[eye][8]) / tr.vrParms.projectionEye[eye][0];
+				q[1] = (SGN(eyePlane[1]) + tr.vrParms.projectionEye[eye][9]) / tr.vrParms.projectionEye[eye][5];
 				q[2] = -1.0f;
 #ifdef USE_VULKAN
 				q[3] = - stdM10 / stdM14;
 #else
 				q[3] = (1.0f + stdM10) / stdM14;
 #endif
-				VectorScale4( plane2, 2.0f / DotProduct4(plane2, q), c );
+				VectorScale4( eyePlane, 2.0f / DotProduct4(eyePlane, q), c );
 
 				tr.vrParms.mirrorProjectionEye[eye][2]  = c[0];
 				tr.vrParms.mirrorProjectionEye[eye][6]  = c[1];
@@ -1093,6 +1116,9 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, qboolean *isMirror 
 	vec4_t clip, eye;
 	int i;
 	unsigned int pointAnd = (unsigned int)~0;
+	// the eyes see past the mono frustum, by the cant on canted displays: reject only when both miss
+	unsigned int pointAndEye[2] = { (unsigned int)~0, (unsigned int)~0 };
+	const qboolean stereo = tr.vrParms.valid && !VR_ShouldDisableStereo();
 
 	*isMirror = qfalse;
 
@@ -1127,10 +1153,34 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, qboolean *isMirror 
 			}
 		}
 		pointAnd &= pointFlags;
+
+		if ( stereo )
+		{
+			int e;
+
+			for ( e = 0; e < 2; e++ )
+			{
+				unsigned int eyeFlags = 0;
+
+				R_TransformModelToClip( tess.xyz[i], tr.or.eyeViewMatrix[e], tr.vrParms.projectionEye[e], eye, clip );
+				for ( j = 0; j < 3; j++ )
+				{
+					if ( clip[j] >= clip[3] )
+					{
+						eyeFlags |= (1 << (j*2));
+					}
+					else if ( clip[j] <= -clip[3] )
+					{
+						eyeFlags |= ( 1 << (j*2+1));
+					}
+				}
+				pointAndEye[e] &= eyeFlags;
+			}
+		}
 	}
 
 	// trivially reject
-	if ( pointAnd )
+	if ( stereo ? ( pointAndEye[0] && pointAndEye[1] ) : pointAnd )
 	{
 		tess.numIndexes = 0;
 		return qtrue;
