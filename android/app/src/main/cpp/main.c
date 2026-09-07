@@ -19,10 +19,10 @@ extern void CON_LogcatFn( void (*LogcatFn)( const char* message ) );
 extern void Sys_Android_SetJNIEnv( JavaVM *vm, jobject activity );
 
 
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "Quake3", __VA_ARGS__))
-#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "Quake3", __VA_ARGS__))
-#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "Quake3", __VA_ARGS__))
-#define LOGF(...) ((void)__android_log_print(ANDROID_LOG_FATAL, "Quake3", __VA_ARGS__))
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "Trinity", __VA_ARGS__))
+#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "Trinity", __VA_ARGS__))
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "Trinity", __VA_ARGS__))
+#define LOGF(...) ((void)__android_log_print(ANDROID_LOG_FATAL, "Trinity", __VA_ARGS__))
 
 static JNIEnv* g_Env = NULL;
 static JavaVM* g_JavaVM = NULL;

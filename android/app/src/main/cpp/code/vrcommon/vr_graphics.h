@@ -42,4 +42,7 @@ void VR_Graphics_InvalidateFunctionPointers(void);
 // Returns XR_SUCCESS on success
 XrResult VR_Graphics_CreateSession(XrInstance instance, XrSystemId systemId, XrSession* session);
 
+// True when the device can read the runtime's density maps. Valid after VR_Graphics_Init.
+XrBool32 VR_Graphics_SupportsFoveation(void);
+
 #endif // __VR_GRAPHICS_H

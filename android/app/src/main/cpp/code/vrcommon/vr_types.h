@@ -47,13 +47,44 @@ typedef struct VR_SwapchainInfos_s VR_SwapchainInfos;
 
 #define VR_MAX_REFRESH_RATES 16
 
+// vr_foveation: what the pattern follows; strength is separate, either pattern can be gentle or aggressive
+#define VR_FOVEATION_OFF          0
+#define VR_FOVEATION_FIXED        1
+#define VR_FOVEATION_EYE_TRACKED  2
+
+// vr_foveationStrength: how far detail drops off toward the edges
+#define VR_FOVEATION_STRENGTH_LOW     1
+#define VR_FOVEATION_STRENGTH_MEDIUM  2
+#define VR_FOVEATION_STRENGTH_HIGH    3
+
 typedef struct
 {
 	VR_SwapchainInfos* Swapchains;  // Pointer to graphics-specific swapchain info
 	float RefreshRate;
 	float SupportedRefreshRates[VR_MAX_REFRESH_RATES]; // as enumerated from the runtime
 	uint32_t NumSupportedRefreshRates;
+	int FoveationMode;              // VR_FOVEATION_OFF, _FIXED or _EYE_TRACKED
+	int FoveationStrength;          // VR_FOVEATION_STRENGTH_*, meaningless when off
+	VR_Bool FoveationEyeTracked;    // the applied profile follows gaze
 } VR_Renderer;
+
+// What the runtime can do for foveated rendering, decided once at instance creation
+typedef enum
+{
+	VR_FOVEATION_CAPS_NONE,        // no usable foveation extensions
+	VR_FOVEATION_CAPS_FIXED,       // XR_FB_foveation family with the Vulkan density map
+	VR_FOVEATION_CAPS_EYE_TRACKED  // fixed plus XR_META_foveation_eye_tracked and eye tracking hardware
+} VR_FoveationCaps;
+
+typedef struct
+{
+	VR_Bool ExtFoveation;          // XR_FB_foveation and XR_FB_swapchain_update_state enabled
+	VR_Bool ExtConfiguration;      // XR_FB_foveation_configuration enabled
+	VR_Bool ExtVulkan;             // XR_FB_foveation_vulkan enabled
+	VR_Bool ExtEyeTracked;         // XR_META_foveation_eye_tracked enabled
+	VR_Bool SystemEyeTracked;      // XrSystemFoveationEyeTrackedPropertiesMETA says the system can do it
+	VR_FoveationCaps Caps;
+} VR_Foveation;
 
 typedef struct
 {
@@ -86,6 +117,8 @@ typedef struct
 typedef struct
 {
 	XrSystemProperties SystemProperties;
+	// Chained into SystemProperties only when XR_META_foveation_eye_tracked is enabled
+	XrSystemFoveationEyeTrackedPropertiesMETA FoveationEyeTracked;
 	// Graphics requirements are stored in graphics-specific code
 } VR_SystemProperties;
 
@@ -99,6 +132,7 @@ typedef struct
 {
 	VR_Window window;
 	VR_SystemProperties systemProperties;
+	VR_Foveation foveation;
 	VR_App appState;
 } VR_Engine;
 

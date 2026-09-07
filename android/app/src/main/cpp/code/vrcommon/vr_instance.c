@@ -116,10 +116,19 @@ XrResult VR_GetHMDSystem(XrInstance instance, XrSystemId* systemId)
 
 // Graphics requirements are fetched via VR_Graphics_GetRequirements() in vrvk/vr_vk.c
 
-XrResult VR_GetSystemProperties(XrInstance instance, XrSystemId systemId, VR_SystemProperties* systemProperties)
+XrResult VR_GetSystemProperties(XrInstance instance, XrSystemId systemId, VR_SystemProperties* systemProperties, VR_Bool queryEyeTrackedFoveation)
 {
 	systemProperties->SystemProperties.type = XR_TYPE_SYSTEM_PROPERTIES;
 	systemProperties->SystemProperties.next = NULL;
+
+	// Chain the eye tracked struct only when its extension is enabled; the runtime rejects unknown structs
+	memset(&systemProperties->FoveationEyeTracked, 0, sizeof(systemProperties->FoveationEyeTracked));
+	systemProperties->FoveationEyeTracked.type = XR_TYPE_SYSTEM_FOVEATION_EYE_TRACKED_PROPERTIES_META;
+	systemProperties->FoveationEyeTracked.next = NULL;
+	if (queryEyeTrackedFoveation)
+	{
+		systemProperties->SystemProperties.next = &systemProperties->FoveationEyeTracked;
+	}
 
 	XR_CHECK(
 		xrGetSystemProperties(instance, systemId, &systemProperties->SystemProperties),

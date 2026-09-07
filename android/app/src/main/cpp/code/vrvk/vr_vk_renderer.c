@@ -28,6 +28,7 @@
 // Vulkan-specific headers
 #include "vr_vk.h"
 #include "vr_vk_debug.h"
+#include "vr_vk_foveation.h"
 #include "vr_vk_swapchains.h"
 
 extern vr_clientinfo_t vr;
@@ -318,6 +319,8 @@ void VR_ProcessFrame(VR_Engine* engine)
 	{
 		VR_ApplyRefreshRate(engine);
 	}
+
+	VR_VK_Foveation_Frame(engine);
 
 	VR_Renderer_BeginFrame(engine, needsRecenter);
 	Com_Frame();

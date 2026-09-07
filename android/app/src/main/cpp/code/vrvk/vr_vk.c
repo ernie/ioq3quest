@@ -22,11 +22,24 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#if __ANDROID__
+#include <android/log.h>
+#endif
 
 // Global VR Vulkan state
 VR_VulkanState vr_vk;
 
 static VR_Bool vr_vk_initialized = VR_FALSE;
+
+// stdout/stderr never reach logcat on Android
+static void VR_VK_LogLine(const char* line)
+{
+#if __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "VRVK", "%s", line);
+#else
+    fprintf(stderr, "[VRVK] %s\n", line);
+#endif
+}
 
 // Function pointers for XR_KHR_vulkan_enable2
 // Note: enable2 does NOT provide xrGetVulkanInstanceExtensionsKHR or xrGetVulkanDeviceExtensionsKHR
@@ -43,6 +56,7 @@ static PFN_vkGetPhysicalDeviceProperties2 pfn_vkGetPhysicalDeviceProperties2 = N
 
 // Forward declarations
 static VR_Bool LoadXrVulkanFunctions(XrInstance xrInstance);
+static void VR_Vulkan_QueryFragmentDensityMap(void);
 
 // Get the Vulkan graphics extension name for OpenXR instance creation
 const char* VR_VK_GetGraphicsExtensionName(void)
@@ -135,6 +149,9 @@ const VR_VulkanDeviceInfo* VR_Vulkan_GetDeviceInfo(void)
     info.device = vr_vk.device;
     info.queue = vr_vk.queue;
     info.queueFamilyIndex = vr_vk.queueFamilyIndex;
+    info.fragmentDensityMap = vr_vk.fragmentDensityMapSupported && vr_vk.fragmentDensityMapNonSubsampled;
+    info.minDensityTexelWidth = vr_vk.minFragmentDensityTexelSize.width;
+    info.minDensityTexelHeight = vr_vk.minFragmentDensityTexelSize.height;
     return &info;
 }
 
@@ -157,6 +174,7 @@ const VR_VulkanSwapchainInfo* VR_Vulkan_GetSwapchainInfo(void)
     info.colorArraySize = swapchains->color.arraySize;
     info.colorImageCount = swapchains->color.imageCount;
     info.colorImages = swapchains->color.images;
+    info.colorUsage = swapchains->color.usage;
 
     // Depth swapchain
     info.depthFormat = swapchains->depth.format;
@@ -165,6 +183,10 @@ const VR_VulkanSwapchainInfo* VR_Vulkan_GetSwapchainInfo(void)
     info.depthArraySize = swapchains->depth.arraySize;
     info.depthImageCount = swapchains->depth.imageCount;
     info.depthImages = swapchains->depth.images;
+
+    info.foveationImages = swapchains->color.foveationImages;
+    info.foveationWidth = swapchains->color.foveationWidth;
+    info.foveationHeight = swapchains->color.foveationHeight;
 
     return &info;
 }
@@ -417,16 +439,109 @@ XrResult VR_Vulkan_GetPhysicalDevice(XrInstance xrInstance, XrSystemId systemId)
     vr_vk.maxMultiviewViewCount = multiviewProps.maxMultiviewViewCount;
     fprintf(stdout, "  Multiview: supported (max views: %d)\n", vr_vk.maxMultiviewViewCount);
 
+    VR_Vulkan_QueryFragmentDensityMap();
+
     return XR_SUCCESS;
+}
+
+static VR_Bool VR_Vulkan_HasDeviceExtension(const char* name)
+{
+    uint32_t count = 0;
+    VkExtensionProperties* props;
+    VR_Bool found = VR_FALSE;
+    uint32_t i;
+
+    if (vkEnumerateDeviceExtensionProperties(vr_vk.physicalDevice, NULL, &count, NULL) != VK_SUCCESS || count == 0) {
+        return VR_FALSE;
+    }
+    props = (VkExtensionProperties*)malloc(sizeof(VkExtensionProperties) * count);
+    if (!props) {
+        return VR_FALSE;
+    }
+    if (vkEnumerateDeviceExtensionProperties(vr_vk.physicalDevice, NULL, &count, props) == VK_SUCCESS) {
+        for (i = 0; i < count; i++) {
+            if (strcmp(props[i].extensionName, name) == 0) {
+                found = VR_TRUE;
+                break;
+            }
+        }
+    }
+    free(props);
+    return found;
+}
+
+/*
+==================
+VR_Vulkan_QueryFragmentDensityMap
+
+Skipped when the runtime has no foveation, leaving such a device untouched.
+==================
+*/
+static void VR_Vulkan_QueryFragmentDensityMap(void)
+{
+    const VR_Engine* engine = VR_GetEngine();
+    VkPhysicalDeviceFragmentDensityMapFeaturesEXT fdmFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT,
+        .pNext = NULL,
+    };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &fdmFeatures,
+    };
+    VkPhysicalDeviceFragmentDensityMapPropertiesEXT fdmProps = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_PROPERTIES_EXT,
+        .pNext = NULL,
+    };
+    VkPhysicalDeviceProperties2 props2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &fdmProps,
+    };
+
+    vr_vk.fragmentDensityMapSupported = VR_FALSE;
+    vr_vk.fragmentDensityMapNonSubsampled = VR_FALSE;
+
+    if (!engine || !engine->foveation.ExtFoveation || !engine->foveation.ExtVulkan) {
+        fprintf(stdout, "  Fragment density map: not needed (runtime has no foveation)\n");
+        return;
+    }
+    if (!VR_Vulkan_HasDeviceExtension(VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME)) {
+        fprintf(stdout, "  Fragment density map: device lacks %s\n", VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME);
+        return;
+    }
+
+    pfn_vkGetPhysicalDeviceFeatures2(vr_vk.physicalDevice, &features2);
+    pfn_vkGetPhysicalDeviceProperties2(vr_vk.physicalDevice, &props2);
+
+    vr_vk.fragmentDensityMapSupported = fdmFeatures.fragmentDensityMap ? VR_TRUE : VR_FALSE;
+    vr_vk.fragmentDensityMapNonSubsampled = fdmFeatures.fragmentDensityMapNonSubsampledImages ? VR_TRUE : VR_FALSE;
+    vr_vk.fragmentDensityMap2Supported = VR_Vulkan_HasDeviceExtension(VK_EXT_FRAGMENT_DENSITY_MAP_2_EXTENSION_NAME);
+    vr_vk.minFragmentDensityTexelSize = fdmProps.minFragmentDensityTexelSize;
+    vr_vk.maxFragmentDensityTexelSize = fdmProps.maxFragmentDensityTexelSize;
+
+    VR_VK_LogLine(va("Fragment density map: %s (dynamic %s, non-subsampled images %s, density map 2 %s, texel size %ux%u..%ux%u)",
+        vr_vk.fragmentDensityMapSupported ? "supported" : "unsupported",
+        fdmFeatures.fragmentDensityMapDynamic ? "yes" : "no",
+        vr_vk.fragmentDensityMapNonSubsampled ? "yes" : "no",
+        vr_vk.fragmentDensityMap2Supported ? "yes" : "no",
+        fdmProps.minFragmentDensityTexelSize.width, fdmProps.minFragmentDensityTexelSize.height,
+        fdmProps.maxFragmentDensityTexelSize.width, fdmProps.maxFragmentDensityTexelSize.height));
 }
 
 XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
 {
     // Our required extensions: runtime will add any additional ones via xrCreateVulkanDeviceKHR
-    const char* extensions[] = {
-        VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering 
+    const char* extensions[3] = {
+        VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering
     };
-    uint32_t extensionCount = sizeof(extensions) / sizeof(extensions[0]);
+    uint32_t extensionCount = 1;
+
+    // Meta recommends density map 2 alongside: the map is read with less latency on Adreno
+    if (vr_vk.fragmentDensityMapSupported) {
+        extensions[extensionCount++] = VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME;
+        if (vr_vk.fragmentDensityMap2Supported) {
+            extensions[extensionCount++] = VK_EXT_FRAGMENT_DENSITY_MAP_2_EXTENSION_NAME;
+        }
+    }
 
     // Find graphics queue family
     uint32_t queueFamilyCount = 0;
@@ -471,6 +586,15 @@ XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
     multiviewFeatures.pNext = &maintenance4Features;  // Chain maintenance4 on Windows
 #endif
 
+    VkPhysicalDeviceFragmentDensityMapFeaturesEXT fdmFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT,
+        .pNext = NULL,
+    };
+    if (vr_vk.fragmentDensityMapSupported) {
+        fdmFeatures.pNext = multiviewFeatures.pNext;
+        multiviewFeatures.pNext = &fdmFeatures;
+    }
+
     VkPhysicalDeviceFeatures2 features2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &multiviewFeatures,
@@ -482,6 +606,12 @@ XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
 #ifdef _WIN32
     maintenance4Features.maintenance4 = VK_TRUE;
 #endif
+    if (vr_vk.fragmentDensityMapSupported) {
+        // Dynamic (read at submit) is not needed: the map is final before the render pass begins
+        fdmFeatures.fragmentDensityMap = VK_TRUE;
+        fdmFeatures.fragmentDensityMapDynamic = VK_FALSE;
+        fdmFeatures.fragmentDensityMapNonSubsampledImages = vr_vk.fragmentDensityMapNonSubsampled ? VK_TRUE : VK_FALSE;
+    }
 
     // Queue create info
     float queuePriority = 1.0f;
@@ -634,17 +764,19 @@ VkFormat VR_Vulkan_SelectDepthFormat(const int64_t* formats, uint32_t count)
 XrResult VR_Vulkan_CreateSwapchain(XrSession session, VkFormat format,
                                     uint32_t width, uint32_t height,
                                     uint32_t arraySize, XrSwapchainUsageFlags usage,
+                                    XrBool32 foveated,
                                     XrSwapchain* swapchain)
 {
     // Simple version without format list
     return VR_Vulkan_CreateSwapchainWithFormatList(session, format, width, height,
-                                                    arraySize, usage, NULL, 0, swapchain);
+                                                    arraySize, usage, NULL, 0, foveated, swapchain);
 }
 
 XrResult VR_Vulkan_CreateSwapchainWithFormatList(XrSession session, VkFormat format,
                                                   uint32_t width, uint32_t height,
                                                   uint32_t arraySize, XrSwapchainUsageFlags usage,
                                                   const VkFormat* viewFormats, uint32_t viewFormatCount,
+                                                  XrBool32 foveated,
                                                   XrSwapchain* swapchain)
 {
     // Build the next chain: we'll chain structs together
@@ -662,6 +794,16 @@ XrResult VR_Vulkan_CreateSwapchainWithFormatList(XrSession session, VkFormat for
     if (viewFormats && viewFormatCount > 0) {
         formatListInfo.next = nextChain;
         nextChain = &formatListInfo;
+    }
+
+    XrSwapchainCreateInfoFoveationFB foveationInfo = {
+        .type = XR_TYPE_SWAPCHAIN_CREATE_INFO_FOVEATION_FB,
+        .next = NULL,
+        .flags = XR_SWAPCHAIN_CREATE_FOVEATION_FRAGMENT_DENSITY_MAP_BIT_FB,
+    };
+    if (foveated) {
+        foveationInfo.next = nextChain;
+        nextChain = &foveationInfo;
     }
 
     XrSwapchainCreateInfo createInfo = {
@@ -682,8 +824,22 @@ XrResult VR_Vulkan_CreateSwapchainWithFormatList(XrSession session, VkFormat for
 }
 
 XrResult VR_Vulkan_GetSwapchainImages(XrSwapchain swapchain,
-                                       VkImage** images, uint32_t* imageCount)
+                                       VkImage** images, uint32_t* imageCount,
+                                       VkImage** foveationImages,
+                                       uint32_t* foveationWidth, uint32_t* foveationHeight)
 {
+    XrSwapchainImageFoveationVulkanFB* xrFoveation = NULL;
+
+    if (foveationImages) {
+        *foveationImages = NULL;
+    }
+    if (foveationWidth) {
+        *foveationWidth = 0;
+    }
+    if (foveationHeight) {
+        *foveationHeight = 0;
+    }
+
     // Get count
     XrResult result = xrEnumerateSwapchainImages(swapchain, 0, imageCount, NULL);
     if (XR_FAILED(result)) {
@@ -697,9 +853,23 @@ XrResult VR_Vulkan_GetSwapchainImages(XrSwapchain swapchain,
         return XR_ERROR_OUT_OF_MEMORY;
     }
 
+    if (foveationImages) {
+        xrFoveation = (XrSwapchainImageFoveationVulkanFB*)calloc(*imageCount, sizeof(XrSwapchainImageFoveationVulkanFB));
+        if (!xrFoveation) {
+            free(xrImages);
+            return XR_ERROR_OUT_OF_MEMORY;
+        }
+    }
+
     for (uint32_t i = 0; i < *imageCount; i++) {
         xrImages[i].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
         xrImages[i].next = NULL;
+        if (xrFoveation) {
+            xrFoveation[i].type = XR_TYPE_SWAPCHAIN_IMAGE_FOVEATION_VULKAN_FB;
+            xrFoveation[i].next = NULL;
+            xrFoveation[i].image = VK_NULL_HANDLE;
+            xrImages[i].next = &xrFoveation[i];
+        }
     }
 
     result = xrEnumerateSwapchainImages(swapchain, *imageCount, imageCount,
@@ -717,6 +887,39 @@ XrResult VR_Vulkan_GetSwapchainImages(XrSwapchain swapchain,
         }
     }
 
+    if (XR_SUCCEEDED(result) && xrFoveation) {
+        uint32_t filled = 0;
+        for (uint32_t i = 0; i < *imageCount; i++) {
+            if (xrFoveation[i].image != VK_NULL_HANDLE && xrFoveation[i].width > 0 && xrFoveation[i].height > 0) {
+                filled++;
+            }
+        }
+        if (filled == *imageCount) {
+            *foveationImages = (VkImage*)malloc(sizeof(VkImage) * (*imageCount));
+            if (*foveationImages) {
+                for (uint32_t i = 0; i < *imageCount; i++) {
+                    (*foveationImages)[i] = xrFoveation[i].image;
+                }
+                if (foveationWidth) {
+                    *foveationWidth = xrFoveation[0].width;
+                }
+                if (foveationHeight) {
+                    *foveationHeight = xrFoveation[0].height;
+                }
+            }
+        } else {
+            // Per-image dump tells a late or partial answer apart from none at all
+            uint32_t i;
+            VR_VK_LogLine(va("Runtime returned density maps for %u of %u swapchain images; ignoring them",
+                filled, *imageCount));
+            for (i = 0; i < *imageCount && i < 4; i++) {
+                VR_VK_LogLine(va("  image %u: density map %p, %ux%u", i,
+                    (void*)xrFoveation[i].image, xrFoveation[i].width, xrFoveation[i].height));
+            }
+        }
+    }
+
+    free(xrFoveation);
     free(xrImages);
     return result;
 }
@@ -800,6 +1003,11 @@ void VR_Graphics_Shutdown(void)
 {
 	VR_Vulkan_Shutdown();
 	s_requirementsFetched = VR_FALSE;
+}
+
+XrBool32 VR_Graphics_SupportsFoveation(void)
+{
+	return vr_vk_initialized && vr_vk.fragmentDensityMapSupported && vr_vk.fragmentDensityMapNonSubsampled;
 }
 
 void VR_Graphics_InvalidateFunctionPointers(void)

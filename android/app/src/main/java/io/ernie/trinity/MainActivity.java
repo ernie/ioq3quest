@@ -46,6 +46,7 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 	private static final int READ_EXTERNAL_STORAGE_PERMISSION_ID = 1;
 	private static final int WRITE_EXTERNAL_STORAGE_PERMISSION_ID = 2;
 	private static final int RECORD_AUDIO_PERMISSION_ID = 3;
+	private static final int EYE_TRACKING_PERMISSION_ID = 4;
 	private static final String TAG = "Trinity";
 
 	// Quake3Quest may still be using LEGACY_HOME_DIR: the first launch reads from it and never writes there
@@ -127,6 +128,11 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 				Log.d(TAG, "Microphone permission granted; VOIP available");
 			} else {
 				Log.w(TAG, "Microphone permission denied; VOIP unavailable");
+			}
+		} else if (requestCode == EYE_TRACKING_PERMISSION_ID) {
+			for (int i = 0; i < permissions.length && i < results.length; i++) {
+				Log.i(TAG, "Eye tracking permission " + permissions[i] + ": "
+					+ (results[i] == PackageManager.PERMISSION_GRANTED ? "granted" : "denied"));
 			}
 		}
 	}
@@ -217,6 +223,33 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 
 		// Request microphone permission for VOIP (non-blocking)
 		requestMicrophonePermission();
+
+		// Eye tracked foveated rendering needs the platform's eye tracking permission (non-blocking)
+		requestEyeTrackingPermission();
+	}
+
+	// Only ask for the names this device defines, so headsets without eye tracking never see a dialog
+	private static final String[] EYE_TRACKING_PERMISSIONS = {
+		"horizonos.permission.EYE_TRACKING",
+		"com.picovr.permission.EYE_TRACKING",
+	};
+
+	public void requestEyeTrackingPermission() {
+		Vector<String> missing = new Vector<>();
+		for (String permission : EYE_TRACKING_PERMISSIONS) {
+			try {
+				getPackageManager().getPermissionInfo(permission, 0);
+			} catch (PackageManager.NameNotFoundException e) {
+				continue; // not a permission on this platform
+			}
+			if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+				missing.add(permission);
+			}
+		}
+		if (!missing.isEmpty()) {
+			Log.i(TAG, "Requesting eye tracking permission: " + missing);
+			ActivityCompat.requestPermissions(this, missing.toArray(new String[0]), EYE_TRACKING_PERMISSION_ID);
+		}
 	}
 
 	public boolean hasMicrophonePermission() {

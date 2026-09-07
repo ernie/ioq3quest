@@ -482,9 +482,347 @@ static void vk_set_object_name( uint64_t obj, const char *objName, VkDebugReport
 }
 
 
-// Forward declaration: defined later in file
+// Forward declarations: defined later in file
 static VkFormat vk_get_unorm_format( VkFormat format );
+static VkSampler vk_find_sampler( const Vk_Sampler_Def *def );
 
+
+// VK_EXT_fragment_density_map: the map is the last attachment of every scene pass,
+// referenced by VkRenderPassFragmentDensityMapCreateInfoEXT rather than by a subpass.
+#define VK_FDM_FORMAT VK_FORMAT_R8G8_UNORM
+
+static void vk_describe_fdm_attachment( VkAttachmentDescription *att )
+{
+	Com_Memset( att, 0, sizeof( *att ) );
+	att->format = VK_FDM_FORMAT;
+	att->samples = VK_SAMPLE_COUNT_1_BIT;
+	att->loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	att->storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	att->stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	att->stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	att->initialLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+	att->finalLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+}
+
+// The caller's attachment array must have room for one more entry
+static void vk_chain_fdm_attachment( VkRenderPassCreateInfo *desc, VkRenderPassFragmentDensityMapCreateInfoEXT *fdmInfo,
+	VkAttachmentDescription *attachments, uint32_t attachmentCount )
+{
+	vk_describe_fdm_attachment( &attachments[attachmentCount] );
+
+	Com_Memset( fdmInfo, 0, sizeof( *fdmInfo ) );
+	fdmInfo->sType = VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT;
+	fdmInfo->pNext = desc->pNext;
+	fdmInfo->fragmentDensityMapAttachment.attachment = attachmentCount;
+	fdmInfo->fragmentDensityMapAttachment.layout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+
+	desc->pNext = fdmInfo;
+	desc->attachmentCount = attachmentCount + 1;
+}
+
+
+/*
+ * Create subpass-optimized render passes.
+ * These keep scene color in tile memory on Quest 3's Adreno GPU.
+ *
+ * main_with_bloom (4 subpasses, r_bloom=1):
+ *   Subpass 0: Render 3D scene -> transient color (tile-local)
+ *   Subpass 1: Bloom extract (input attachment) -> bloom texture
+ *   Subpass 2: Composite+gamma (input attachment) -> swapchain
+ *   Subpass 3: Post-bloom 2D -> swapchain (alpha blend)
+ *
+ * main_with_gamma (3 subpasses, r_bloom=0):
+ *   Subpass 0: Render 3D scene -> transient color (tile-local)
+ *   Subpass 1: Gamma (input attachment) -> swapchain
+ *   Subpass 2: Post-gamma 2D -> swapchain (alpha blend)
+ *
+ * Scene color uses TRANSIENT_ATTACHMENT with LAZILY_ALLOCATED memory,
+ * so it never leaves tile memory. Depth also uses TRANSIENT.
+ */
+/*
+ * Foveated split render passes (vk.fovSplit)
+ *
+ * fov_scene: the 3D scene alone, foveated by the density map, into the scene
+ * image (stored) and a transient depth; with MSAA the scene image is the
+ * resolve target. main_with_bloom / main_with_gamma then start at the post
+ * subpasses: bloom extract and the composite or gamma quad sample the stored
+ * scene (an input attachment read under a density map comes back displaced on
+ * Adreno, loaded or not) and write their targets, and 2D goes last, exactly
+ * as in the merged passes but one subpass earlier. The post pass carries no
+ * density map: a full-screen quad with no depth runs as a single bin on
+ * Adreno, where per-tile foveation does not apply, and measured the same
+ * with and without one.
+ */
+static void vk_create_fov_split_render_passes( void )
+{
+	VkDevice device = vk.device;
+	const qboolean useBloom = ( r_bloom && r_bloom->integer );
+	const VkFormat swapchainFormat = vk_get_unorm_format( vk.color_format );
+	VkRenderPassMultiviewCreateInfo multiviewInfo;
+	VkRenderPassFragmentDensityMapCreateInfoEXT fdmInfo;
+	uint32_t viewMasks[3] = { 0b11, 0b11, 0b11 };
+	uint32_t correlationMask = 0b11;
+	VkAttachmentDescription attachments[4];
+	VkSubpassDescription subpasses[3];
+	VkSubpassDependency dependencies[4];
+	VkRenderPassCreateInfo desc;
+	VkAttachmentReference colorRef, depthRef, resolveRef, postColorRef, finalColorRef;
+	uint32_t attachmentCount;
+
+	ri.Printf( PRINT_ALL, "Creating foveated split render passes (bloom: %s, %s)...\n",
+		useBloom ? "yes" : "no", vk.msaaActive ? "MSAA" : "non-MSAA" );
+
+	Com_Memset( &multiviewInfo, 0, sizeof( multiviewInfo ) );
+	multiviewInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+	multiviewInfo.pViewMasks = viewMasks;
+	multiviewInfo.correlationMaskCount = 1;
+	multiviewInfo.pCorrelationMasks = &correlationMask;
+
+	// --- Scene pass: foveated, one subpass ---
+	Com_Memset( attachments, 0, sizeof( attachments ) );
+	Com_Memset( subpasses, 0, sizeof( subpasses ) );
+	Com_Memset( dependencies, 0, sizeof( dependencies ) );
+
+	if ( vk.msaaActive ) {
+		// [0] MSAA scene (transient), [1] scene image (resolve target, stored), [2] MSAA depth (transient)
+		attachments[0].format = vk.color_format;
+		attachments[0].samples = vkSamples;
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		attachments[1].format = vk.color_format;
+		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[1].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		attachments[2].format = vk.depth_format;
+		attachments[2].samples = vkSamples;
+		attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[2].stencilLoadOp = glConfig.stencilBits ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		colorRef.attachment = 0;
+		colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		resolveRef.attachment = 1;
+		resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		depthRef.attachment = 2;
+		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		subpasses[0].pResolveAttachments = &resolveRef;
+		attachmentCount = 3;
+	} else {
+		// [0] scene image (stored), [1] depth (transient)
+		attachments[0].format = vk.color_format;
+		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		attachments[1].format = vk.depth_format;
+		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].stencilLoadOp = glConfig.stencilBits ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		colorRef.attachment = 0;
+		colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		depthRef.attachment = 1;
+		depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachmentCount = 2;
+	}
+	subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpasses[0].colorAttachmentCount = 1;
+	subpasses[0].pColorAttachments = &colorRef;
+	subpasses[0].pDepthStencilAttachment = &depthRef;
+
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	// The post pass samples the stored scene
+	dependencies[1].srcSubpass = 0;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	multiviewInfo.subpassCount = 1;
+
+	Com_Memset( &desc, 0, sizeof( desc ) );
+	desc.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	desc.pNext = &multiviewInfo;
+	desc.attachmentCount = attachmentCount;
+	desc.pAttachments = attachments;
+	desc.subpassCount = 1;
+	desc.pSubpasses = subpasses;
+	desc.dependencyCount = 2;
+	desc.pDependencies = dependencies;
+
+	vk_chain_fdm_attachment( &desc, &fdmInfo, attachments, attachmentCount );
+
+	VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.fov_scene ) );
+	SET_OBJECT_NAME( vk.render_pass.fov_scene, "render pass - foveated scene", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
+
+	// --- Post pass: samples the stored scene ---
+	Com_Memset( attachments, 0, sizeof( attachments ) );
+	Com_Memset( subpasses, 0, sizeof( subpasses ) );
+	Com_Memset( dependencies, 0, sizeof( dependencies ) );
+	attachmentCount = 0;
+
+	if ( useBloom ) {
+		// [0] bloom extract, stored for the blur passes
+		attachments[0].format = vk.bloom_format;
+		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		attachmentCount = 1;
+	}
+
+	// [last] swapchain (UNORM view, the shaders output gamma-corrected values)
+	attachments[attachmentCount].format = swapchainFormat;
+	attachments[attachmentCount].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[attachmentCount].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[attachmentCount].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[attachmentCount].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[attachmentCount].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[attachmentCount].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[attachmentCount].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	finalColorRef.attachment = attachmentCount;
+	finalColorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	attachmentCount++;
+
+	if ( useBloom ) {
+		// Subpass 0: bloom extract (sampled scene -> bloom)
+		postColorRef.attachment = 0;
+		postColorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpasses[0].colorAttachmentCount = 1;
+		subpasses[0].pColorAttachments = &postColorRef;
+
+		// Subpass 1: composite + gamma (sampled scene -> swapchain)
+		subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpasses[1].colorAttachmentCount = 1;
+		subpasses[1].pColorAttachments = &finalColorRef;
+
+		// Subpass 2: post-bloom 2D (alpha blend onto swapchain)
+		subpasses[2].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpasses[2].colorAttachmentCount = 1;
+		subpasses[2].pColorAttachments = &finalColorRef;
+	} else {
+		// Subpass 0: gamma (sampled scene -> swapchain)
+		subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpasses[0].colorAttachmentCount = 1;
+		subpasses[0].pColorAttachments = &finalColorRef;
+
+		// Subpass 1: post-gamma 2D
+		subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpasses[1].colorAttachmentCount = 1;
+		subpasses[1].pColorAttachments = &finalColorRef;
+	}
+
+	// External -> 0: the scene pass finished storing before the first sample of it
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	if ( useBloom ) {
+		// 0 -> 1 and 1 -> 2 keep the swapchain writes ordered behind the extract
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = 1;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[2].srcSubpass = 1;
+		dependencies[2].dstSubpass = 2;
+		dependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[2].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[2].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[3].srcSubpass = 2;
+		dependencies[3].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[3].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[3].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		dependencies[3].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[3].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dependencies[3].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		multiviewInfo.subpassCount = 3;
+		desc.subpassCount = 3;
+		desc.dependencyCount = 4;
+	} else {
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = 1;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[2].srcSubpass = 1;
+		dependencies[2].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		dependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dependencies[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		multiviewInfo.subpassCount = 2;
+		desc.subpassCount = 2;
+		desc.dependencyCount = 3;
+	}
+
+	desc.pNext = &multiviewInfo;
+	desc.attachmentCount = attachmentCount;
+	desc.pAttachments = attachments;
+	desc.pSubpasses = subpasses;
+	desc.pDependencies = dependencies;
+
+	if ( useBloom ) {
+		VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.main_with_bloom ) );
+		SET_OBJECT_NAME( vk.render_pass.main_with_bloom, "render pass - foveated post with bloom", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
+	} else {
+		VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.main_with_gamma ) );
+		SET_OBJECT_NAME( vk.render_pass.main_with_gamma, "render pass - foveated post with gamma", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
+	}
+
+	ri.Printf( PRINT_ALL, "...foveated split render passes created (scene: %u attachments plus density map, post: %u attachments, %u subpasses)\n",
+		vk.msaaActive ? 3u : 2u, attachmentCount, desc.subpassCount );
+}
 
 /*
  * Create subpass-optimized render passes.
@@ -510,9 +848,15 @@ static void vk_create_subpass_render_passes( void )
 	VkFormat depth_format = vk.depth_format;
 	qboolean useBloom = (r_bloom && r_bloom->integer);
 	VkFormat swapchainFormat;  // UNORM format for swapchain output
+	VkRenderPassFragmentDensityMapCreateInfoEXT fdmInfo;
 
 	if ( !vk.multiviewSupported ) {
 		ri.Printf( PRINT_WARNING, "Subpass optimization requires multiview support (skipping)\n" );
+		return;
+	}
+
+	if ( vk.fovSplit ) {
+		vk_create_fov_split_render_passes();
 		return;
 	}
 
@@ -521,8 +865,8 @@ static void vk_create_subpass_render_passes( void )
 	// Vulkan's linear-to-sRGB conversion by using UNORM format
 	swapchainFormat = vk_get_unorm_format( vk.color_format );
 
-	ri.Printf( PRINT_ALL, "Creating subpass-optimized render passes (bloom: %s, swapchain format: 0x%x)...\n",
-		useBloom ? "yes" : "no", (unsigned int)swapchainFormat );
+	ri.Printf( PRINT_ALL, "Creating subpass-optimized render passes (bloom: %s, swapchain format: 0x%x, foveated: %s)...\n",
+		useBloom ? "yes" : "no", (unsigned int)swapchainFormat, vk.xr.foveationActive ? "yes" : "no" );
 
 	// Multiview setup for stereo VR (same as main pass)
 	VkRenderPassMultiviewCreateInfo multiviewInfo;
@@ -551,8 +895,9 @@ static void vk_create_subpass_render_passes( void )
 		 *   [2] MSAA depth: TRANSIENT
 		 *   [3] Bloom extract: STORE
 		 *   [4] Swapchain: STORE
+		 * Plus the fragment density map last when foveated.
 		 */
-		VkAttachmentDescription attachments[5];
+		VkAttachmentDescription attachments[6];
 		VkSubpassDescription subpasses[4];
 		VkSubpassDependency dependencies[6];
 		VkRenderPassCreateInfo desc;
@@ -791,6 +1136,11 @@ static void vk_create_subpass_render_passes( void )
 		desc.dependencyCount = 5;
 		desc.pDependencies = dependencies;
 
+		if ( vk.xr.foveationActive ) {
+			vk_chain_fdm_attachment( &desc, &fdmInfo, attachments, attachmentCount );
+			attachmentCount++;
+		}
+
 		VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.main_with_bloom ) );
 		SET_OBJECT_NAME( vk.render_pass.main_with_bloom, "render pass - subpass main_with_bloom", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
 
@@ -811,8 +1161,9 @@ static void vk_create_subpass_render_passes( void )
 		 *   [1] Resolve target: TRANSIENT
 		 *   [2] MSAA depth: TRANSIENT
 		 *   [3] Swapchain: STORE
+		 * Plus the fragment density map last when foveated.
 		 */
-		VkAttachmentDescription attachments[4];
+		VkAttachmentDescription attachments[5];
 		VkSubpassDescription subpasses[3];
 		VkSubpassDependency dependencies[4];
 		VkRenderPassCreateInfo desc;
@@ -1004,6 +1355,11 @@ static void vk_create_subpass_render_passes( void )
 		desc.dependencyCount = 4;
 		desc.pDependencies = dependencies;
 
+		if ( vk.xr.foveationActive ) {
+			vk_chain_fdm_attachment( &desc, &fdmInfo, attachments, attachmentCount );
+			attachmentCount++;
+		}
+
 		VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.main_with_gamma ) );
 		SET_OBJECT_NAME( vk.render_pass.main_with_gamma, "render pass - subpass main_with_gamma", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
 
@@ -1066,8 +1422,9 @@ static void vk_destroy_subpass_transient_images( void )
 		vk.transient.resolve_memory = VK_NULL_HANDLE;
 	}
 
-	// Input descriptor is freed when pool is reset, just clear pointer
+	// Descriptors are freed when the pool is reset, just clear the handles
 	vk.transient.input_descriptor = VK_NULL_HANDLE;
+	vk.transient.scene_descriptor = VK_NULL_HANDLE;
 }
 
 
@@ -1089,8 +1446,9 @@ static void vk_create_subpass_transient_images( void )
 	if ( !vk.multiviewSupported )
 		return;
 
-	ri.Printf( PRINT_ALL, "Creating subpass transient images (%dx%d, %s)...\n",
-		glConfig.vidWidth, glConfig.vidHeight, vk.msaaActive ? "MSAA" : "non-MSAA" );
+	ri.Printf( PRINT_ALL, "Creating subpass transient images (%dx%d, %s%s)...\n",
+		glConfig.vidWidth, glConfig.vidHeight, vk.msaaActive ? "MSAA" : "non-MSAA",
+		vk.fovSplit ? ", stored scene for the foveated split" : "" );
 
 	// Common image creation settings
 	Com_Memset( &imageInfo, 0, sizeof( imageInfo ) );
@@ -1148,13 +1506,21 @@ static void vk_create_subpass_transient_images( void )
 		SET_OBJECT_NAME( vk.transient.msaa_image, "transient MSAA scene color", VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT );
 
 		// [2] Resolve target - TRANSIENT + INPUT_ATTACHMENT (read by subpasses 1,2)
+		// Foveated split: stored instead and sampled by the post pass
 		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+		if ( vk.fovSplit ) {
+			imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		} else {
+			imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+		}
 		VK_CHECK( qvkCreateImage( vk.device, &imageInfo, NULL, &vk.transient.resolve_image ) );
 
 		qvkGetImageMemoryRequirements( vk.device, vk.transient.resolve_image, &memReqs );
-		memoryType = find_memory_type2( memReqs.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, NULL );
+		memoryType = ~0U;
+		if ( !vk.fovSplit ) {
+			memoryType = find_memory_type2( memReqs.memoryTypeBits,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, NULL );
+		}
 		if ( memoryType == ~0U )
 			memoryType = find_memory_type( memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 		allocInfo.allocationSize = memReqs.size;
@@ -1197,14 +1563,22 @@ static void vk_create_subpass_transient_images( void )
 		// Non-MSAA path: create scene color and depth
 
 		// [1] Scene color - TRANSIENT + INPUT_ATTACHMENT (read by subpasses 1,2)
+		// Foveated split: stored instead and sampled by the post pass
 		imageInfo.format = vk.color_format;
 		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+		if ( vk.fovSplit ) {
+			imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		} else {
+			imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+		}
 		VK_CHECK( qvkCreateImage( vk.device, &imageInfo, NULL, &vk.transient.scene_image ) );
 
 		qvkGetImageMemoryRequirements( vk.device, vk.transient.scene_image, &memReqs );
-		memoryType = find_memory_type2( memReqs.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, NULL );
+		memoryType = ~0U;
+		if ( !vk.fovSplit ) {
+			memoryType = find_memory_type2( memReqs.memoryTypeBits,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, NULL );
+		}
 		if ( memoryType == ~0U )
 			memoryType = find_memory_type( memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 		allocInfo.allocationSize = memReqs.size;
@@ -1282,6 +1656,32 @@ static void vk_create_subpass_transient_images( void )
 		SET_OBJECT_NAME( (uint64_t)vk.transient.input_descriptor, "input attachment descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT );
 
 		ri.Printf( PRINT_ALL, "...input attachment descriptor allocated\n" );
+
+		// Foveated split: the post pass samples the stored scene instead
+		if ( vk.fovSplit ) {
+			Vk_Sampler_Def samplerDef;
+
+			Com_Memset( &samplerDef, 0, sizeof( samplerDef ) );
+			samplerDef.gl_mag_filter = GL_LINEAR;
+			samplerDef.gl_min_filter = GL_LINEAR;
+			samplerDef.address_mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerDef.max_lod_1_0 = qtrue;
+			samplerDef.noAnisotropy = qtrue;
+
+			descAlloc.pSetLayouts = &vk.set_layout_sampler;
+			VK_CHECK( qvkAllocateDescriptorSets( vk.device, &descAlloc, &vk.transient.scene_descriptor ) );
+
+			imageInfoDesc.sampler = vk_find_sampler( &samplerDef );
+			imageInfoDesc.imageView = inputView;
+			imageInfoDesc.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			writeDesc.dstSet = vk.transient.scene_descriptor;
+			writeDesc.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			qvkUpdateDescriptorSets( vk.device, 1, &writeDesc, 0, NULL );
+
+			SET_OBJECT_NAME( (uint64_t)vk.transient.scene_descriptor, "foveated scene sampler descriptor", VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT );
+			ri.Printf( PRINT_ALL, "...foveated scene sampler descriptor allocated\n" );
+		}
 	}
 }
 
@@ -2143,8 +2543,14 @@ static void init_vulkan_library( void )
 	vk.device = xrDevice->device;
 	vk.queue_family_index = xrDevice->queueFamilyIndex;
 	vk_instance = xrDevice->instance;
+	// VK_EXT_fragment_density_map is enabled by the VR layer when the runtime can foveate
+	vk.xr.fdmSupported = xrDevice->fragmentDensityMap ? qtrue : qfalse;
+	// The density map is written at the finest granularity the hardware reads
+	vk.xr.fdmTexelWidth = xrDevice->minDensityTexelWidth;
+	vk.xr.fdmTexelHeight = xrDevice->minDensityTexelHeight;
 
-	ri.Printf( PRINT_ALL, "[VK] Using VR-provided Vulkan device\n" );
+	ri.Printf( PRINT_ALL, "[VK] Using VR-provided Vulkan device (fragment density map: %s)\n",
+		vk.xr.fdmSupported ? "yes" : "no" );
 
 	// Load instance-level function pointers from the XR-provided instance
 	INIT_INSTANCE_FUNCTION( vkCreateDevice )
@@ -3249,6 +3655,16 @@ static void vk_create_shader_modules( void )
 	vk.modules.bloom_extract_subpass_fs = SHADER_MODULE( bloom_extract_subpass_frag_spv );
 	vk.modules.final_composite_subpass_fs = SHADER_MODULE( final_composite_subpass_frag_spv );
 	vk.modules.gamma_subpass_fs = SHADER_MODULE( gamma_subpass_frag_spv );
+	// These read the fragment density (r_foveationDebug tint), a SPIR-V
+	// capability only a device with the density map feature accepts
+	if ( vk.xr.fdmSupported ) {
+		vk.modules.bloom_extract_fov_fs = SHADER_MODULE( bloom_extract_fov_frag_spv );
+		vk.modules.final_composite_fov_fs = SHADER_MODULE( final_composite_fov_frag_spv );
+		vk.modules.gamma_fov_fs = SHADER_MODULE( gamma_fov_frag_spv );
+		SET_OBJECT_NAME( vk.modules.bloom_extract_fov_fs, "bloom extract foveated fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
+		SET_OBJECT_NAME( vk.modules.final_composite_fov_fs, "final composite foveated fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
+		SET_OBJECT_NAME( vk.modules.gamma_fov_fs, "gamma foveated fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
+	}
 
 	SET_OBJECT_NAME( vk.modules.bloom_extract_subpass_fs, "bloom extract subpass fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
 	SET_OBJECT_NAME( vk.modules.final_composite_subpass_fs, "final composite subpass fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
@@ -4087,6 +4503,9 @@ static void vk_destroy_render_passes( void );
 static void vk_destroy_pipelines( qboolean resetCount );
 static qboolean vk_reallocate_xr_fbo_descriptors( void );
 static void vk_destroy_hud_buffer( void );
+static void vk_destroy_subpass_render_passes( void );
+static void vk_destroy_subpass_framebuffers( void );
+static void vk_destroy_post_process_pipelines( void );
 
 
 static void vk_set_render_scale( void )
@@ -4575,6 +4994,19 @@ void vk_initialize( void )
 
 		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_subpass_composite ) );
 
+		// Foveated split: same layouts, the stored scene as a sampler in set 0 instead of an input attachment
+		set_layouts[0] = vk.set_layout_sampler;
+		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_fov_composite ) );
+
+		desc.setLayoutCount = 1;
+		desc.pushConstantRangeCount = 0;
+		desc.pPushConstantRanges = NULL;
+		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_fov_extract ) );
+		VK_CHECK( qvkCreatePipelineLayout( vk.device, &desc, NULL, &vk.pipeline_layout_fov_gamma ) );
+		SET_OBJECT_NAME( vk.pipeline_layout_fov_extract, "pipeline layout - foveated extract", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT );
+		SET_OBJECT_NAME( vk.pipeline_layout_fov_gamma, "pipeline layout - foveated gamma", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT );
+		SET_OBJECT_NAME( vk.pipeline_layout_fov_composite, "pipeline layout - foveated composite", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT );
+
 		// Reset push constants for subsequent layouts
 		desc.pushConstantRangeCount = 0;
 		desc.pPushConstantRanges = NULL;
@@ -4785,6 +5217,17 @@ static void vk_destroy_render_passes( void )
 	}
 
 	// Subpass optimization render passes
+	vk_destroy_subpass_render_passes();
+}
+
+
+static void vk_destroy_subpass_render_passes( void )
+{
+	if ( vk.render_pass.fov_scene != VK_NULL_HANDLE ) {
+		qvkDestroyRenderPass( vk.device, vk.render_pass.fov_scene, NULL );
+		vk.render_pass.fov_scene = VK_NULL_HANDLE;
+	}
+
 	if ( vk.render_pass.main_with_bloom != VK_NULL_HANDLE ) {
 		qvkDestroyRenderPass( vk.device, vk.render_pass.main_with_bloom, NULL );
 		vk.render_pass.main_with_bloom = VK_NULL_HANDLE;
@@ -4890,6 +5333,18 @@ void vk_shutdown( refShutdownCode_t code )
 	if ( vk.pipeline_layout_subpass_extract != VK_NULL_HANDLE ) {
 		qvkDestroyPipelineLayout( vk.device, vk.pipeline_layout_subpass_extract, NULL );
 		vk.pipeline_layout_subpass_extract = VK_NULL_HANDLE;
+	}
+	if ( vk.pipeline_layout_fov_extract != VK_NULL_HANDLE ) {
+		qvkDestroyPipelineLayout( vk.device, vk.pipeline_layout_fov_extract, NULL );
+		vk.pipeline_layout_fov_extract = VK_NULL_HANDLE;
+	}
+	if ( vk.pipeline_layout_fov_composite != VK_NULL_HANDLE ) {
+		qvkDestroyPipelineLayout( vk.device, vk.pipeline_layout_fov_composite, NULL );
+		vk.pipeline_layout_fov_composite = VK_NULL_HANDLE;
+	}
+	if ( vk.pipeline_layout_fov_gamma != VK_NULL_HANDLE ) {
+		qvkDestroyPipelineLayout( vk.device, vk.pipeline_layout_fov_gamma, NULL );
+		vk.pipeline_layout_fov_gamma = VK_NULL_HANDLE;
 	}
 	if ( vk.pipeline_layout_subpass_composite != VK_NULL_HANDLE ) {
 		qvkDestroyPipelineLayout( vk.device, vk.pipeline_layout_subpass_composite, NULL );
@@ -5488,7 +5943,7 @@ void vk_create_post_process_pipelines( void )
 	VkGraphicsPipelineCreateInfo create_info;
 	VkViewport viewport;
 	VkRect2D scissor;
-	VkSpecializationMapEntry spec_entries[11];
+	VkSpecializationMapEntry spec_entries[12];
 	VkSpecializationInfo frag_spec_info;
 	uint32_t i, width, height;
 
@@ -5504,6 +5959,7 @@ void vk_create_post_process_pipelines( void )
 		int depth_r;
 		int depth_g;
 		int depth_b;
+		int foveation_debug;
 	} frag_spec_data;
 
 	// Note: This is called during vk_init_xr_resources() before vk.xr.initialized is set
@@ -5582,6 +6038,7 @@ void vk_create_post_process_pipelines( void )
 	frag_spec_data.bloom_threshold_mode = r_bloom_threshold_mode->integer;
 	frag_spec_data.bloom_modulate = r_bloom_modulate->integer;
 	frag_spec_data.dither = r_dither->integer;
+	frag_spec_data.foveation_debug = r_foveationDebug->integer;
 
 	// Get color depth from XR swapchain format
 	if ( vk.xr.colorInfo && !vk_surface_format_color_depth( vk.xr.colorInfo->format,
@@ -5633,7 +6090,12 @@ void vk_create_post_process_pipelines( void )
 	spec_entries[10].offset = offsetof( struct FragSpecData, depth_b );
 	spec_entries[10].size = sizeof( frag_spec_data.depth_b );
 
-	frag_spec_info.mapEntryCount = 11;
+	// Only the foveated post shaders declare this one; the others ignore the entry
+	spec_entries[11].constantID = 11;
+	spec_entries[11].offset = offsetof( struct FragSpecData, foveation_debug );
+	spec_entries[11].size = sizeof( frag_spec_data.foveation_debug );
+
+	frag_spec_info.mapEntryCount = 12;
 	frag_spec_info.pMapEntries = spec_entries;
 	frag_spec_info.dataSize = sizeof( frag_spec_data );
 	frag_spec_info.pData = &frag_spec_data;
@@ -5781,12 +6243,13 @@ void vk_create_post_process_pipelines( void )
 			}
 
 			set_shader_stage_desc( shader_stages+0, VK_SHADER_STAGE_VERTEX_BIT, vk.modules.gamma_vs, "main" );
-			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT, vk.modules.bloom_extract_subpass_fs, "main" );
+			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT,
+				vk.fovSplit ? vk.modules.bloom_extract_fov_fs : vk.modules.bloom_extract_subpass_fs, "main" );
 			shader_stages[1].pSpecializationInfo = &frag_spec_info;
 
-			create_info.layout = vk.pipeline_layout_subpass_extract;
+			create_info.layout = vk.fovSplit ? vk.pipeline_layout_fov_extract : vk.pipeline_layout_subpass_extract;
 			create_info.renderPass = subpassRenderPass;
-			create_info.subpass = 1;  // Bloom extract is subpass 1
+			create_info.subpass = vk.fovSplit ? 0 : 1;  // Bloom extract is subpass 1 (0 in the foveated split)
 
 			VK_CHECK( qvkCreateGraphicsPipelines( vk.device, VK_NULL_HANDLE, 1, &create_info, NULL, &vk.bloom_extract_subpass_pipeline ) );
 			SET_OBJECT_NAME( vk.bloom_extract_subpass_pipeline, "subpass bloom extract pipeline", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT );
@@ -5798,11 +6261,12 @@ void vk_create_post_process_pipelines( void )
 				vk.final_composite_subpass_pipeline = VK_NULL_HANDLE;
 			}
 
-			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT, vk.modules.final_composite_subpass_fs, "main" );
+			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT,
+				vk.fovSplit ? vk.modules.final_composite_fov_fs : vk.modules.final_composite_subpass_fs, "main" );
 			shader_stages[1].pSpecializationInfo = &frag_spec_info;
 
-			create_info.layout = vk.pipeline_layout_subpass_composite;
-			create_info.subpass = 2;  // Final composite is subpass 2
+			create_info.layout = vk.fovSplit ? vk.pipeline_layout_fov_composite : vk.pipeline_layout_subpass_composite;
+			create_info.subpass = vk.fovSplit ? 1 : 2;  // Final composite is subpass 2 (1 in the foveated split)
 
 			VK_CHECK( qvkCreateGraphicsPipelines( vk.device, VK_NULL_HANDLE, 1, &create_info, NULL, &vk.final_composite_subpass_pipeline ) );
 			SET_OBJECT_NAME( vk.final_composite_subpass_pipeline, "subpass final composite pipeline", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT );
@@ -5819,12 +6283,13 @@ void vk_create_post_process_pipelines( void )
 			}
 
 			set_shader_stage_desc( shader_stages+0, VK_SHADER_STAGE_VERTEX_BIT, vk.modules.gamma_vs, "main" );
-			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT, vk.modules.gamma_subpass_fs, "main" );
+			set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT,
+				vk.fovSplit ? vk.modules.gamma_fov_fs : vk.modules.gamma_subpass_fs, "main" );
 			shader_stages[1].pSpecializationInfo = &frag_spec_info;
 
-			create_info.layout = vk.pipeline_layout_subpass_gamma;
+			create_info.layout = vk.fovSplit ? vk.pipeline_layout_fov_gamma : vk.pipeline_layout_subpass_gamma;
 			create_info.renderPass = subpassRenderPass;
-			create_info.subpass = 1;  // Gamma is subpass 1
+			create_info.subpass = vk.fovSplit ? 0 : 1;  // the split's post pass has no scene subpass
 
 			VK_CHECK( qvkCreateGraphicsPipelines( vk.device, VK_NULL_HANDLE, 1, &create_info, NULL, &vk.gamma_subpass_pipeline ) );
 			SET_OBJECT_NAME( vk.gamma_subpass_pipeline, "subpass gamma pipeline", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT );
@@ -6958,7 +7423,9 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	} else if ( renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
 		// Subpass optimization: scene renders in subpass 0 of combined pass
 		// Use bloom or gamma-only pass depending on r_bloom setting
-		if ( r_bloom && r_bloom->integer && vk.render_pass.main_with_bloom != VK_NULL_HANDLE ) {
+		if ( vk.fovSplit && vk.render_pass.fov_scene != VK_NULL_HANDLE ) {
+			create_info.renderPass = vk.render_pass.fov_scene;
+		} else if ( r_bloom && r_bloom->integer && vk.render_pass.main_with_bloom != VK_NULL_HANDLE ) {
 			create_info.renderPass = vk.render_pass.main_with_bloom;
 		} else if ( vk.render_pass.main_with_gamma != VK_NULL_HANDLE ) {
 			create_info.renderPass = vk.render_pass.main_with_gamma;
@@ -6970,12 +7437,13 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	} else if ( renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
 		// Post-bloom 2D subpass: renders to swapchain after bloom/gamma
 		// Uses same render pass as RENDER_PASS_MAIN_WITH_POST but different subpass index
+		// (one earlier in the foveated split, where the scene subpass is gone)
 		if ( r_bloom && r_bloom->integer && vk.render_pass.main_with_bloom != VK_NULL_HANDLE ) {
 			create_info.renderPass = vk.render_pass.main_with_bloom;
-			create_info.subpass = 3;  // Post-bloom 2D is subpass 3 in bloom path
+			create_info.subpass = vk.fovSplit ? 2 : 3;  // Post-bloom 2D is subpass 3 in bloom path
 		} else if ( vk.render_pass.main_with_gamma != VK_NULL_HANDLE ) {
 			create_info.renderPass = vk.render_pass.main_with_gamma;
-			create_info.subpass = 2;  // Post-gamma 2D is subpass 2 in gamma-only path
+			create_info.subpass = vk.fovSplit ? 1 : 2;  // Post-gamma 2D is subpass 2 in gamma-only path
 		} else {
 			// Fallback to main if subpass render passes not available
 			create_info.renderPass = vk.render_pass.main;
@@ -7912,7 +8380,11 @@ void vk_begin_main_render_pass( qboolean clear )
 		VkFramebuffer subpassFb;
 		VkRenderPass subpassRp;
 
-		if ( useBloom ) {
+		if ( vk.fovSplit ) {
+			// Foveated split: scene pass first; vk_finish_subpass_post opens the post pass
+			subpassFb = vk.framebuffers.fov_scene[vk.xr.colorIndex];
+			subpassRp = vk.render_pass.fov_scene;
+		} else if ( useBloom ) {
 			subpassFb = vk.framebuffers.main_with_bloom[vk.xr.colorIndex];
 			subpassRp = vk.render_pass.main_with_bloom;
 		} else {
@@ -7961,6 +8433,9 @@ void vk_begin_main_render_pass( qboolean clear )
 		vk.renderPassIndex = RENDER_PASS_MAIN;
 	}
 
+	// Rewrite this image's density map, if anything moved, while no render pass is open
+	vk_update_authored_fdm( vk.xr.colorIndex );
+
 	// Use XR dimensions
 	// Note: glConfig.vidWidth/Height = vk.xr.width/height in VR
 	vk.renderWidth = glConfig.vidWidth;
@@ -7985,7 +8460,10 @@ void vk_begin_main_render_pass( qboolean clear )
 #ifndef USE_REVERSED_DEPTH
 		clear_values[1].depthStencil.depth = 1.0f;
 #endif
-		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
+		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.fovSplit ) {
+			// Foveated split scene pass: [scene, depth] or [msaa, scene, depth]
+			render_pass_begin_info.clearValueCount = vk.msaaActive ? 3 : 2;
+		} else if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
 			// Subpass render pass: variable attachment count based on MSAA and bloom
 			qboolean useBloom = ( r_bloom && r_bloom->integer );
 			if ( vk.msaaActive ) {
@@ -8666,7 +9144,11 @@ static qboolean vk_end_interrupted_pass( void )
 	if ( vk.inRenderPass && vk.recordingCommands ) {
 		// For subpass render passes, we need to advance through remaining subpasses before ending.
 		// Bloom path uses 4 subpasses (0-1-2-3), gamma-only path uses 3 subpasses (0-1-2).
-		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
+		// Foveated split: the scene pass is one subpass, so it ends right away; the
+		// post pass has the remaining steps of the merged layout minus the scene subpass.
+		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.fovSplit && !vk.subpassPostDone ) {
+			// still in the scene pass: nothing to advance
+		} else if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
 			qboolean useBloom = ( r_bloom && r_bloom->integer );
 			if ( useBloom ) {
 				// 4-subpass bloom path: scene(0) → extract(1) → composite(2) → post-bloom 2D(3)
@@ -8823,10 +9305,14 @@ void vk_read_pixels( byte *buffer, uint32_t width, uint32_t height )
 		// Legacy FBO color image (direct mode or non-subpass FBO mode)
 		srcImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		srcImage = vk.color_image;
+	} else if ( vk.xr.initialized && vk.xr.colorInfo && vk.xr.colorIndex < vk.xr.colorInfo->imageCount &&
+		( vk.xr.colorInfo->usage & XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT ) ) {
+		// Subpass FBO mode: this frame's image is not submitted yet, so this reads the previous
+		// complete frame -- fine for a screenshot. Left eye only; foveated swapchains are not transferable.
+		srcImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		srcImage = vk.xr.colorInfo->images[vk.xr.colorIndex];
 	} else {
-		// Subpass FBO mode: screenshots not supported without dedicated capture buffer
-		// (scene color is transient and written directly to XR swapchain)
-		ri.Printf( PRINT_WARNING, "vk_read_pixels: screenshots not available in subpass FBO mode\n" );
+		ri.Printf( PRINT_WARNING, "vk_read_pixels: no image to capture\n" );
 		Com_Memset( buffer, 0, width * height * 4 );
 		return;
 	}
@@ -9040,6 +9526,32 @@ void vk_read_pixels( byte *buffer, uint32_t width, uint32_t height )
 
 
 /*
+ * vk_begin_fov_post_pass - Foveated split: end the scene pass, begin the post pass
+ *
+ * No clear values: every attachment of the post pass is LOAD or DONT_CARE.
+ */
+static void vk_begin_fov_post_pass( void )
+{
+	VkRenderPassBeginInfo beginInfo;
+	const qboolean useBloom = ( r_bloom && r_bloom->integer );
+
+	qvkCmdEndRenderPass( vk.cmd->command_buffer );
+
+	Com_Memset( &beginInfo, 0, sizeof( beginInfo ) );
+	beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	beginInfo.renderPass = useBloom ? vk.render_pass.main_with_bloom : vk.render_pass.main_with_gamma;
+	beginInfo.framebuffer = useBloom ? vk.framebuffers.main_with_bloom[vk.xr.colorIndex] : vk.framebuffers.main_with_gamma[vk.xr.colorIndex];
+	beginInfo.renderArea.offset.x = 0;
+	beginInfo.renderArea.offset.y = 0;
+	beginInfo.renderArea.extent.width = vk.renderWidth;
+	beginInfo.renderArea.extent.height = vk.renderHeight;
+	beginInfo.clearValueCount = 0;
+	beginInfo.pClearValues = NULL;
+
+	qvkCmdBeginRenderPass( vk.cmd->command_buffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE );
+}
+
+/*
  * vk_finish_subpass_post - Finish bloom/gamma subpasses, transition to post-bloom 2D
  *
  * Called at end of scene rendering. Transitions through subpasses for bloom
@@ -9078,16 +9590,27 @@ void vk_finish_subpass_post( void )
 
 	useBloom = ( r_bloom && r_bloom->integer );
 
+	// Foveated split samples the stored scene; merged passes read it as an input attachment
+	const VkPipelineLayout layoutExtract = vk.fovSplit ? vk.pipeline_layout_fov_extract : vk.pipeline_layout_subpass_extract;
+	const VkPipelineLayout layoutComposite = vk.fovSplit ? vk.pipeline_layout_fov_composite : vk.pipeline_layout_subpass_composite;
+	const VkPipelineLayout layoutGamma = vk.fovSplit ? vk.pipeline_layout_fov_gamma : vk.pipeline_layout_subpass_gamma;
+	const VkDescriptorSet sceneSet = vk.fovSplit ? vk.transient.scene_descriptor : vk.transient.input_descriptor;
+
 	if ( useBloom && vk.bloom_extract_subpass_pipeline != VK_NULL_HANDLE ) {
 		// === 4-subpass path (with bloom) ===
 
-		// Transition to subpass 1 (bloom extract)
-		qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
+		// Transition to subpass 1 (bloom extract); in the foveated split that
+		// is subpass 0 of the post pass, so close the scene pass and open it
+		if ( vk.fovSplit ) {
+			vk_begin_fov_post_pass();
+		} else {
+			qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
+		}
 
 		qvkCmdBindPipeline( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			vk.bloom_extract_subpass_pipeline );
 		qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			vk.pipeline_layout_subpass_extract, 0, 1, &vk.transient.input_descriptor, 0, NULL );
+			layoutExtract, 0, 1, &sceneSet, 0, NULL );
 		qvkCmdDraw( vk.cmd->command_buffer, 4, 1, 0, 0 );
 
 		// Transition to subpass 2 (composite + gamma)
@@ -9100,11 +9623,11 @@ void vk_finish_subpass_post( void )
 		// Note: We use previous frame's blur results (one-frame latency, acceptable at 72+ Hz)
 		{
 			VkDescriptorSet descriptorSets[2];
-			descriptorSets[0] = vk.transient.input_descriptor;
+			descriptorSets[0] = sceneSet;
 			descriptorSets[1] = vk.bloom_blur_combined_descriptor;
 
 			qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-				vk.pipeline_layout_subpass_composite, 0, 2, descriptorSets, 0, NULL );
+				layoutComposite, 0, 2, descriptorSets, 0, NULL );
 		}
 
 		// Push bloom UV reprojection offset to compensate for head rotation
@@ -9145,7 +9668,7 @@ void vk_finish_subpass_post( void )
 				if ( uvOffset[1] > 0.25f ) uvOffset[1] = 0.25f;
 			}
 
-			qvkCmdPushConstants( vk.cmd->command_buffer, vk.pipeline_layout_subpass_composite,
+			qvkCmdPushConstants( vk.cmd->command_buffer, layoutComposite,
 				VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uvOffset), uvOffset );
 		}
 
@@ -9205,13 +9728,17 @@ void vk_finish_subpass_post( void )
 	else if ( vk.gamma_subpass_pipeline != VK_NULL_HANDLE ) {
 		// === 3-subpass path (gamma only, no bloom) ===
 
-		// Transition to subpass 1 (gamma)
-		qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
+		// Transition to subpass 1 (gamma); subpass 0 of the post pass in the foveated split
+		if ( vk.fovSplit ) {
+			vk_begin_fov_post_pass();
+		} else {
+			qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
+		}
 
 		qvkCmdBindPipeline( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			vk.gamma_subpass_pipeline );
 		qvkCmdBindDescriptorSets( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			vk.pipeline_layout_subpass_gamma, 0, 1, &vk.transient.input_descriptor, 0, NULL );
+			layoutGamma, 0, 1, &sceneSet, 0, NULL );
 		qvkCmdDraw( vk.cmd->command_buffer, 4, 1, 0, 0 );
 
 		// Transition to subpass 2 (post-gamma 2D)
@@ -9360,6 +9887,401 @@ void vk_end_post_bloom_subpass( void )
 #include "../vrvk/vr_vk_types.h"
 
 /*
+================================================================================
+Authored fragment density map
+
+The runtime's map stops at its High level and sits on the lens rather than following
+the eyes, so we write our own. R8G8_UNORM texels are the fraction of a fragment to
+shade per pixel, which drivers quantize to whole fragment sizes: a smooth falloff
+bands. One map per swapchain image, rewritten in the frame that renders into it.
+================================================================================
+*/
+
+// Granularity fallback; both runtimes hand out their own maps at this size
+#define VK_FDM_TEXEL_SIZE 32
+
+void vk_destroy_authored_fdm( void )
+{
+	uint32_t i;
+
+	for ( i = 0; i < MAX_SWAPCHAIN_IMAGES; i++ ) {
+		if ( vk.xr.fdmStagingMapped[i] != NULL ) {
+			qvkUnmapMemory( vk.device, vk.xr.fdmStagingMemory[i] );
+			vk.xr.fdmStagingMapped[i] = NULL;
+		}
+		if ( vk.xr.fdmStaging[i] != VK_NULL_HANDLE ) {
+			qvkDestroyBuffer( vk.device, vk.xr.fdmStaging[i], NULL );
+			vk.xr.fdmStaging[i] = VK_NULL_HANDLE;
+		}
+		if ( vk.xr.fdmStagingMemory[i] != VK_NULL_HANDLE ) {
+			qvkFreeMemory( vk.device, vk.xr.fdmStagingMemory[i], NULL );
+			vk.xr.fdmStagingMemory[i] = VK_NULL_HANDLE;
+		}
+		if ( vk.xr.fdmImage[i] != VK_NULL_HANDLE ) {
+			qvkDestroyImage( vk.device, vk.xr.fdmImage[i], NULL );
+			vk.xr.fdmImage[i] = VK_NULL_HANDLE;
+		}
+		if ( vk.xr.fdmMemory[i] != VK_NULL_HANDLE ) {
+			qvkFreeMemory( vk.device, vk.xr.fdmMemory[i], NULL );
+			vk.xr.fdmMemory[i] = VK_NULL_HANDLE;
+		}
+		vk.xr.fdmUploaded[i] = qfalse;
+		vk.xr.fdmAppliedLevel[i] = -1;
+	}
+	if ( vk.xr.fdmTemplate != NULL ) {
+		ri.Free( vk.xr.fdmTemplate );
+		vk.xr.fdmTemplate = NULL;
+	}
+	vk.xr.fdmTemplateLevel = -1;
+	vk.xr.fdmAuthored = qfalse;
+}
+
+/*
+==================
+vk_create_authored_fdm
+
+Fails clean so the caller can fall back to the runtime's map.
+==================
+*/
+static qboolean vk_create_authored_fdm( uint32_t imageCount, uint32_t layers, uint32_t fbWidth, uint32_t fbHeight )
+{
+	VkImageCreateInfo imageInfo;
+	VkBufferCreateInfo bufferInfo;
+	VkMemoryRequirements memReqs;
+	VkMemoryAllocateInfo allocInfo;
+	// Finest granularity the device reads: a coarser grid measured no faster, and this gives smoother density steps
+	const uint32_t texelW = vk.xr.fdmTexelWidth ? vk.xr.fdmTexelWidth : VK_FDM_TEXEL_SIZE;
+	const uint32_t texelH = vk.xr.fdmTexelHeight ? vk.xr.fdmTexelHeight : VK_FDM_TEXEL_SIZE;
+	uint32_t mapWidth, mapHeight, memoryType, i;
+	VkDeviceSize bufferSize;
+
+	if ( imageCount == 0 || imageCount > MAX_SWAPCHAIN_IMAGES || layers == 0 || fbWidth == 0 || fbHeight == 0 ) {
+		return qfalse;
+	}
+
+	mapWidth = ( fbWidth + texelW - 1 ) / texelW;
+	mapHeight = ( fbHeight + texelH - 1 ) / texelH;
+	bufferSize = (VkDeviceSize)mapWidth * mapHeight * layers * 2;  // two bytes a texel
+
+	Com_Memset( &imageInfo, 0, sizeof( imageInfo ) );
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.format = VK_FDM_FORMAT;
+	imageInfo.extent.width = mapWidth;
+	imageInfo.extent.height = mapHeight;
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = layers;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage = VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	Com_Memset( &bufferInfo, 0, sizeof( bufferInfo ) );
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = bufferSize;
+	bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	Com_Memset( &allocInfo, 0, sizeof( allocInfo ) );
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+
+	for ( i = 0; i < imageCount; i++ ) {
+		void *mapped = NULL;
+
+		if ( qvkCreateImage( vk.device, &imageInfo, NULL, &vk.xr.fdmImage[i] ) != VK_SUCCESS ) {
+			vk_destroy_authored_fdm();
+			return qfalse;
+		}
+		qvkGetImageMemoryRequirements( vk.device, vk.xr.fdmImage[i], &memReqs );
+		memoryType = find_memory_type( memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+		allocInfo.allocationSize = memReqs.size;
+		allocInfo.memoryTypeIndex = memoryType;
+		if ( qvkAllocateMemory( vk.device, &allocInfo, NULL, &vk.xr.fdmMemory[i] ) != VK_SUCCESS ||
+			qvkBindImageMemory( vk.device, vk.xr.fdmImage[i], vk.xr.fdmMemory[i], 0 ) != VK_SUCCESS ) {
+			vk_destroy_authored_fdm();
+			return qfalse;
+		}
+		SET_OBJECT_NAME( vk.xr.fdmImage[i], va( "authored fragment density map %u", i ),
+			VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT );
+
+		if ( qvkCreateBuffer( vk.device, &bufferInfo, NULL, &vk.xr.fdmStaging[i] ) != VK_SUCCESS ) {
+			vk_destroy_authored_fdm();
+			return qfalse;
+		}
+		qvkGetBufferMemoryRequirements( vk.device, vk.xr.fdmStaging[i], &memReqs );
+		memoryType = find_memory_type( memReqs.memoryTypeBits,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+		allocInfo.allocationSize = memReqs.size;
+		allocInfo.memoryTypeIndex = memoryType;
+		if ( qvkAllocateMemory( vk.device, &allocInfo, NULL, &vk.xr.fdmStagingMemory[i] ) != VK_SUCCESS ||
+			qvkBindBufferMemory( vk.device, vk.xr.fdmStaging[i], vk.xr.fdmStagingMemory[i], 0 ) != VK_SUCCESS ||
+			qvkMapMemory( vk.device, vk.xr.fdmStagingMemory[i], 0, VK_WHOLE_SIZE, 0, &mapped ) != VK_SUCCESS ) {
+			vk_destroy_authored_fdm();
+			return qfalse;
+		}
+		vk.xr.fdmStagingMapped[i] = mapped;
+		vk.xr.fdmUploaded[i] = qfalse;
+		vk.xr.fdmAppliedLevel[i] = -1;
+	}
+
+	// Twice the map in each direction, so the island can be slid anywhere
+	vk.xr.fdmTemplate = (byte*)ri.Malloc( (int)( mapWidth * 2 * mapHeight * 2 * 2 ) );
+	vk.xr.fdmTemplateLevel = -1;
+	if ( vk.xr.fdmTemplate == NULL ) {
+		vk_destroy_authored_fdm();
+		return qfalse;
+	}
+
+	vk.xr.fdmAuthored = qtrue;
+	vk.xr.fdmLayers = layers;
+	vk.xr.foveationWidth = mapWidth;
+	vk.xr.foveationHeight = mapHeight;
+	vk.xr.fdmTexelWidth = texelW;
+	vk.xr.fdmTexelHeight = texelH;
+	return qtrue;
+}
+
+/*
+==================
+vk_fdm_level_shape
+
+Falloff per strength, in fractions of the eye buffer's half diagonal: full density out
+to inner, down to floor by outer, floor to the corner. outer stays well under 1: the lens
+shows a rounded region, so past roughly 0.68 is a corner nobody sees. Fixed keeps a wide
+sharp region because the eyes rove while the head stays put.
+==================
+*/
+static void vk_fdm_level_shape( int level, qboolean eyeTracked, float *inner, float *outer, float *floorDensity )
+{
+	if ( eyeTracked ) {
+		// The floor stays near a quarter: an eighth shades one fragment per 8x8 block, which crawls this close to the fovea
+		switch ( level ) {
+			case VR_FOVEATION_STRENGTH_LOW:    *inner = 0.20f; *outer = 0.66f; *floorDensity = 0.26f; break;
+			case VR_FOVEATION_STRENGTH_MEDIUM: *inner = 0.12f; *outer = 0.56f; *floorDensity = 0.19f; break;
+			default:                           *inner = 0.05f; *outer = 0.42f; *floorDensity = 0.13f; break;
+		}
+		return;
+	}
+
+	// Measured on PICO at 1.3x: about 13, 19 and 26 percent off GPU frame time; fixed foveation stops paying below about a quarter
+	switch ( level ) {
+		case VR_FOVEATION_STRENGTH_LOW:    *inner = 0.30f; *outer = 0.62f; *floorDensity = 0.24f; break;
+		case VR_FOVEATION_STRENGTH_MEDIUM: *inner = 0.21f; *outer = 0.50f; *floorDensity = 0.15f; break;
+		// 0.08 shades about a sixty-fourth of the edge pixels; below that the periphery is mush for little gain
+		default:                           *inner = 0.13f; *outer = 0.40f; *floorDensity = 0.08f; break;
+	}
+}
+
+/*
+==================
+vk_build_fdm_template
+
+The falloff once, centered, at twice the map's size; each eye's map is a window of it,
+so moving the island is a copy, not a rebuild.
+==================
+*/
+static void vk_build_fdm_template( uint32_t width, uint32_t height, int level, qboolean eyeTracked )
+{
+	const uint32_t tw = width * 2, th = height * 2;
+	const float aspect = ( height > 0 ) ? (float)width / (float)height : 1.0f;
+	const float invHalfDiag = 1.0f / ( 0.5f * sqrtf( aspect * aspect + 1.0f ) );
+	float inner, outer, floorDensity, span;
+	byte *dst;
+	uint32_t y, x;
+
+	if ( vk.xr.fdmTemplate == NULL ) {
+		return;
+	}
+	// Keyed on strength and mode, since the two modes have different shapes
+	if ( vk.xr.fdmTemplateLevel == ( eyeTracked ? -level : level ) ) {
+		return;
+	}
+
+	vk_fdm_level_shape( level, eyeTracked, &inner, &outer, &floorDensity );
+	span = outer - inner;
+	if ( span < 0.01f ) {
+		span = 0.01f;
+	}
+
+	// Distances are in map units, not template units: a window must span what it would if the map were drawn directly
+	dst = vk.xr.fdmTemplate;
+	for ( y = 0; y < th; y++ ) {
+		const float ny = ( (float)y + 0.5f ) / (float)height - 1.0f;
+		for ( x = 0; x < tw; x++ ) {
+			const float nx = ( ( (float)x + 0.5f ) / (float)width - 1.0f ) * aspect;
+			// Distance from the center, normalized so the far corner is 1
+			const float r = sqrtf( nx * nx + ny * ny ) * invHalfDiag;
+			float density;
+			byte value;
+
+			if ( r <= inner ) {
+				density = 1.0f;
+			} else {
+				const float t = ( r - inner ) / span;
+				density = 1.0f + ( floorDensity - 1.0f ) * ( t > 1.0f ? 1.0f : t );
+			}
+			if ( density > 1.0f ) density = 1.0f;
+			if ( density < floorDensity ) density = floorDensity;
+
+			value = (byte)( density * 255.0f + 0.5f );
+			dst[0] = value;   // x density
+			dst[1] = value;   // y density
+			dst += 2;
+		}
+	}
+
+	vk.xr.fdmTemplateLevel = eyeTracked ? -level : level;
+}
+
+static void vk_write_fdm_texels( byte *dst, uint32_t width, uint32_t height, uint32_t layers,
+	int level, qboolean eyeTracked, const float center[2][2] )
+{
+	const uint32_t tw = width * 2;
+	uint32_t layer, y;
+
+	vk_build_fdm_template( width, height, level, eyeTracked );
+	if ( vk.xr.fdmTemplate == NULL ) {
+		return;
+	}
+
+	for ( layer = 0; layer < layers; layer++ ) {
+		// Centers arrive with y already running down the image, so neither axis flips; fixed sits on the optical axis
+		const int eye = ( layer < 2 ) ? (int)layer : 0;
+		float cx = ( center[eye][0] + 1.0f ) * 0.5f;
+		float cy = ( center[eye][1] + 1.0f ) * 0.5f;
+		uint32_t ox, oy;
+
+		if ( cx < 0.0f ) cx = 0.0f; else if ( cx > 1.0f ) cx = 1.0f;
+		if ( cy < 0.0f ) cy = 0.0f; else if ( cy > 1.0f ) cy = 1.0f;
+
+		// Sliding the window the other way moves the island toward the gaze
+		ox = (uint32_t)( ( 1.0f - cx ) * (float)width + 0.5f );
+		oy = (uint32_t)( ( 1.0f - cy ) * (float)height + 0.5f );
+		if ( ox > width ) ox = width;
+		if ( oy > height ) oy = height;
+
+		for ( y = 0; y < height; y++ ) {
+			Com_Memcpy( dst, vk.xr.fdmTemplate + ( (size_t)( oy + y ) * tw + ox ) * 2, (size_t)width * 2 );
+			dst += (size_t)width * 2;
+		}
+	}
+}
+
+/*
+==================
+vk_update_authored_fdm
+
+Recorded before the scene render pass opens, and only when the map changed.
+==================
+*/
+void vk_update_authored_fdm( uint32_t index )
+{
+	VkImageMemoryBarrier barrier;
+	VkBufferImageCopy region;
+	int level;
+	qboolean eyeTracked;
+	qboolean changed;
+
+	if ( !vk.xr.fdmAuthored || index >= MAX_SWAPCHAIN_IMAGES || vk.xr.fdmImage[index] == VK_NULL_HANDLE ) {
+		return;
+	}
+	if ( !vk.cmd || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
+		return;
+	}
+
+	level = vk.xr.fdmLevel;
+	eyeTracked = vk.xr.fdmEyeTracked;
+	if ( level <= 0 ) {
+		// Off still needs a map, since the render pass always carries one: all ones
+		level = 0;
+	}
+
+	changed = ( !vk.xr.fdmUploaded[index] ||
+		vk.xr.fdmAppliedLevel[index] != level ||
+		vk.xr.fdmAppliedEyeTracked[index] != eyeTracked );
+	if ( !changed ) {
+		// Only a moved center redraws; this also catches fixed foveation settling onto the optical axis
+		const float dx0 = vk.xr.fdmAppliedCenter[index][0][0] - vk.xr.fdmCenter[0][0];
+		const float dy0 = vk.xr.fdmAppliedCenter[index][0][1] - vk.xr.fdmCenter[0][1];
+		const float dx1 = vk.xr.fdmAppliedCenter[index][1][0] - vk.xr.fdmCenter[1][0];
+		const float dy1 = vk.xr.fdmAppliedCenter[index][1][1] - vk.xr.fdmCenter[1][1];
+		if ( fabsf( dx0 ) > 0.01f || fabsf( dy0 ) > 0.01f || fabsf( dx1 ) > 0.01f || fabsf( dy1 ) > 0.01f ) {
+			changed = qtrue;
+		}
+	}
+	if ( !changed ) {
+		return;
+	}
+
+	if ( level == 0 ) {
+		Com_Memset( vk.xr.fdmStagingMapped[index], 0xFF,
+			(size_t)vk.xr.foveationWidth * vk.xr.foveationHeight * vk.xr.fdmLayers * 2 );
+	} else {
+		vk_write_fdm_texels( (byte*)vk.xr.fdmStagingMapped[index],
+			vk.xr.foveationWidth, vk.xr.foveationHeight, vk.xr.fdmLayers,
+			level, eyeTracked, (const float (*)[2])vk.xr.fdmCenter );
+	}
+
+	Com_Memset( &barrier, 0, sizeof( barrier ) );
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = vk.xr.fdmImage[index];
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = vk.xr.fdmLayers;
+
+	// Whatever it held is not worth keeping, so come from UNDEFINED
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	qvkCmdPipelineBarrier( vk.cmd->command_buffer,
+		VK_PIPELINE_STAGE_FRAGMENT_DENSITY_PROCESS_BIT_EXT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0, 0, NULL, 0, NULL, 1, &barrier );
+
+	Com_Memset( &region, 0, sizeof( region ) );
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.layerCount = vk.xr.fdmLayers;
+	region.imageExtent.width = vk.xr.foveationWidth;
+	region.imageExtent.height = vk.xr.foveationHeight;
+	region.imageExtent.depth = 1;
+	qvkCmdCopyBufferToImage( vk.cmd->command_buffer, vk.xr.fdmStaging[index], vk.xr.fdmImage[index],
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_FRAGMENT_DENSITY_MAP_READ_BIT_EXT;
+	qvkCmdPipelineBarrier( vk.cmd->command_buffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_DENSITY_PROCESS_BIT_EXT,
+		0, 0, NULL, 0, NULL, 1, &barrier );
+
+	vk.xr.fdmUploaded[index] = qtrue;
+	vk.xr.fdmAppliedLevel[index] = level;
+	vk.xr.fdmAppliedEyeTracked[index] = eyeTracked;
+	Com_Memcpy( vk.xr.fdmAppliedCenter[index], vk.xr.fdmCenter, sizeof( vk.xr.fdmCenter ) );
+}
+
+/*
+==================
+vk_set_foveation
+
+Only recorded; the map is rewritten when the frame that needs it opens.
+==================
+*/
+void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] )
+{
+	vk.xr.fdmLevel = level;
+	vk.xr.fdmEyeTracked = eyeTracked;
+	if ( centers != NULL ) {
+		Com_Memcpy( vk.xr.fdmCenter, centers, sizeof( vk.xr.fdmCenter ) );
+	}
+}
+
+/*
  * vk_create_xr_image_views - Create VkImageViews for XR swapchain images
  *
  * Creates multiview array views for the color and depth swapchains,
@@ -9446,8 +10368,40 @@ qboolean vk_create_xr_image_views( void )
 		VK_CHECK( qvkCreateImageView( vk.device, &viewInfo, NULL, &xr->depthViews[i] ) );
 	}
 
-	ri.Printf( PRINT_ALL, "XR image views created: color=%u, depth=%u\n",
-		xr->colorInfo->imageCount, xr->depthInfo->imageCount );
+	// Density map views. VK_REMAINING_ARRAY_LAYERS covers both ours (a layer per eye) and the runtime's
+	if ( xr->foveationActive ) {
+		for ( uint32_t i = 0; i < xr->colorInfo->imageCount && i < MAX_SWAPCHAIN_IMAGES; i++ ) {
+			VkImageViewCreateInfo viewInfo = {
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.pNext = NULL,
+				.flags = 0,
+				.image = xr->fdmAuthored ? xr->fdmImage[i] : xr->colorInfo->foveationImages[i],
+				.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+				.format = VK_FDM_FORMAT,
+				.components = {
+					.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.a = VK_COMPONENT_SWIZZLE_IDENTITY,
+				},
+				.subresourceRange = {
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = VK_REMAINING_ARRAY_LAYERS,
+				},
+			};
+
+			VK_CHECK( qvkCreateImageView( vk.device, &viewInfo, NULL, &xr->foveationViews[i] ) );
+			SET_OBJECT_NAME( xr->foveationViews[i], va( "XR fragment density map view %d", i ),
+				VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT );
+		}
+	}
+
+	ri.Printf( PRINT_ALL, "XR image views created: color=%u, depth=%u, density map=%u\n",
+		xr->colorInfo->imageCount, xr->depthInfo->imageCount,
+		xr->foveationActive ? xr->colorInfo->imageCount : 0 );
 
 	return qtrue;
 }
@@ -9478,6 +10432,13 @@ void vk_destroy_xr_image_views( void )
 			xr->depthViews[i] = VK_NULL_HANDLE;
 		}
 	}
+
+	for ( uint32_t i = 0; i < MAX_SWAPCHAIN_IMAGES; i++ ) {
+		if ( xr->foveationViews[i] != VK_NULL_HANDLE ) {
+			qvkDestroyImageView( vk.device, xr->foveationViews[i], NULL );
+			xr->foveationViews[i] = VK_NULL_HANDLE;
+		}
+	}
 }
 
 /*
@@ -9496,7 +10457,7 @@ qboolean vk_create_xr_framebuffers( void )
 {
 	VkXrResources *xr = &vk.xr;
 	VkFramebufferCreateInfo fbInfo;
-	VkImageView attachments[2];  // Color and depth for direct mode (no MSAA)
+	VkImageView attachments[3];  // Color and depth for direct mode (no MSAA), plus the density map when foveated
 	uint32_t i;
 
 	// FBO mode: main XR framebuffers not needed (gamma framebuffers are used instead)
@@ -9543,6 +10504,10 @@ qboolean vk_create_xr_framebuffers( void )
 			fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 			fbInfo.renderPass = vk.render_pass.main;
 			fbInfo.attachmentCount = 2;
+			if ( xr->foveationActive ) {
+				attachments[2] = xr->foveationViews[i];  // matches the render pass's last attachment
+				fbInfo.attachmentCount = 3;
+			}
 			fbInfo.pAttachments = attachments;
 			fbInfo.width = xr->width;
 			fbInfo.height = xr->height;
@@ -9939,6 +10904,10 @@ static void vk_destroy_subpass_framebuffers( void )
 {
 	uint32_t i;
 	for ( i = 0; i < MAX_SWAPCHAIN_IMAGES; i++ ) {
+		if ( vk.framebuffers.fov_scene[i] != VK_NULL_HANDLE ) {
+			qvkDestroyFramebuffer( vk.device, vk.framebuffers.fov_scene[i], NULL );
+			vk.framebuffers.fov_scene[i] = VK_NULL_HANDLE;
+		}
 		if ( vk.framebuffers.main_with_bloom[i] != VK_NULL_HANDLE ) {
 			qvkDestroyFramebuffer( vk.device, vk.framebuffers.main_with_bloom[i], NULL );
 			vk.framebuffers.main_with_bloom[i] = VK_NULL_HANDLE;
@@ -9965,7 +10934,7 @@ static qboolean vk_create_subpass_framebuffers( void )
 {
 	VkXrResources *xr = &vk.xr;
 	VkFramebufferCreateInfo fbCI;
-	VkImageView attachments[5];  // Max 5 for MSAA bloom path
+	VkImageView attachments[6];  // Max 5 for MSAA bloom path, plus the density map when foveated
 	uint32_t i, attachmentCount;
 	qboolean useBloom;
 	VkRenderPass renderPass;
@@ -10010,7 +10979,37 @@ static qboolean vk_create_subpass_framebuffers( void )
 			continue;
 		}
 
-		if ( vk.msaaActive ) {
+		if ( vk.fovSplit ) {
+			// Foveated split: scene pass [(msaa,) scene, depth, density map], post pass [swapchain]
+			VkImageView sceneView = vk.msaaActive ? vk.transient.resolve_view : vk.transient.scene_view;
+			VkImageView sceneAttachments[4];
+			uint32_t sceneCount = 0;
+
+			if ( vk.msaaActive ) {
+				sceneAttachments[sceneCount++] = vk.transient.msaa_view;
+			}
+			sceneAttachments[sceneCount++] = sceneView;
+			sceneAttachments[sceneCount++] = vk.transient.depth_view;
+			sceneAttachments[sceneCount++] = xr->foveationViews[i];
+
+			Com_Memset( &fbCI, 0, sizeof( fbCI ) );
+			fbCI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			fbCI.renderPass = vk.render_pass.fov_scene;
+			fbCI.attachmentCount = sceneCount;
+			fbCI.pAttachments = sceneAttachments;
+			fbCI.width = xr->width;
+			fbCI.height = xr->height;
+			fbCI.layers = 1;
+			VK_CHECK( qvkCreateFramebuffer( vk.device, &fbCI, NULL, &vk.framebuffers.fov_scene[i] ) );
+			SET_OBJECT_NAME( vk.framebuffers.fov_scene[i], va( "foveated scene framebuffer %d", i ), VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT );
+
+			// The post pass samples the scene, so it is not an attachment there
+			attachmentCount = 0;
+			if ( useBloom ) {
+				attachments[attachmentCount++] = vk.bloom_image_view[0];
+			}
+			attachments[attachmentCount++] = swapchainView;
+		} else if ( vk.msaaActive ) {
 			// MSAA path
 			if ( useBloom ) {
 				// MSAA + bloom: [msaa, resolve, depth, bloom, swapchain]
@@ -10044,6 +11043,11 @@ static qboolean vk_create_subpass_framebuffers( void )
 				attachments[2] = swapchainView;
 				attachmentCount = 3;
 			}
+		}
+
+		// Merged passes carry the density map last (the split puts it on the scene pass)
+		if ( xr->foveationActive && !vk.fovSplit ) {
+			attachments[attachmentCount++] = xr->foveationViews[i];
 		}
 
 		Com_Memset( &fbCI, 0, sizeof( fbCI ) );
@@ -10280,12 +11284,13 @@ static VR_VK_SwapchainInfo s_depthSwapchainInfo;
  */
 static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depthFormat )
 {
-	VkAttachmentDescription attachments[3];  // [0] = resolve/color, [1] = depth, [2] = MSAA color (if active)
+	VkAttachmentDescription attachments[4];  // [0] = resolve/color, [1] = depth, [2] = MSAA color (if active), [3] = density map (if foveated)
 	VkAttachmentReference colorRef, depthRef, colorResolveRef;
 	VkSubpassDescription subpass;
 	VkSubpassDependency deps[2];
 	VkRenderPassCreateInfo desc;
 	VkRenderPassMultiviewCreateInfo multiviewInfo;
+	VkRenderPassFragmentDensityMapCreateInfoEXT fdmInfo;
 	uint32_t viewMask = 0b11;
 	uint32_t correlationMask = 0b11;
 	uint32_t attachmentCount;
@@ -10475,9 +11480,16 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 	desc.dependencyCount = 2;
 	desc.pDependencies = deps;
 
+	// Foveated rendering: the density map goes last, on main and mainResume alike
+	if ( vk.xr.foveationActive ) {
+		vk_chain_fdm_attachment( &desc, &fdmInfo, attachments, attachmentCount );
+		attachmentCount++;
+	}
+
 	VK_CHECK( qvkCreateRenderPass( vk.device, &desc, NULL, &vk.render_pass.main ) );
 	SET_OBJECT_NAME( vk.render_pass.main, "render pass - XR main (multiview, recreated)", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
-	ri.Printf( PRINT_ALL, "Recreated main render pass: %p (attachments: %d)\n", (void*)vk.render_pass.main, attachmentCount );
+	ri.Printf( PRINT_ALL, "Recreated main render pass: %p (attachments: %d, foveated: %s)\n", (void*)vk.render_pass.main, attachmentCount,
+		vk.xr.foveationActive ? "yes" : "no" );
 
 	// Destroy existing pipelines: they were created with the old render pass format
 	// and are no longer compatible. They will be recreated lazily with the new render pass.
@@ -10561,6 +11573,8 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 		gammaDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 		gammaDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+		// Gamma is not foveated: only the multiview info stays chained
+		desc.pNext = &multiviewInfo;
 		desc.attachmentCount = 1;
 		desc.dependencyCount = 1;
 		desc.pDependencies = &gammaDep;
@@ -10648,6 +11662,10 @@ qboolean vk_init_xr_resources( void )
 	s_colorSwapchainInfo.arraySize = xrInfo->colorArraySize;
 	s_colorSwapchainInfo.imageCount = xrInfo->colorImageCount;
 	s_colorSwapchainInfo.images = xrInfo->colorImages;
+	s_colorSwapchainInfo.usage = xrInfo->colorUsage;
+	s_colorSwapchainInfo.foveationImages = xrInfo->foveationImages;
+	s_colorSwapchainInfo.foveationWidth = xrInfo->foveationWidth;
+	s_colorSwapchainInfo.foveationHeight = xrInfo->foveationHeight;
 
 	Com_Memset( &s_depthSwapchainInfo, 0, sizeof( s_depthSwapchainInfo ) );
 	s_depthSwapchainInfo.format = xrInfo->depthFormat;
@@ -10680,11 +11698,45 @@ qboolean vk_init_xr_resources( void )
 		xrInfo->colorWidth, xrInfo->colorHeight, xrInfo->colorImageCount,
 		xrInfo->depthWidth, xrInfo->depthHeight, xrInfo->depthImageCount );
 
+	// Our own density map wherever the device can read one; the runtime's is the fallback
+	vk_destroy_authored_fdm();
+	vk.xr.foveationActive = qfalse;
+	vk.xr.foveationWidth = 0;
+	vk.xr.foveationHeight = 0;
+	if ( vk.xr.fdmSupported ) {
+		if ( vk_create_authored_fdm( xrInfo->colorImageCount, xrInfo->colorArraySize,
+				xrInfo->colorWidth, xrInfo->colorHeight ) ) {
+			vk.xr.foveationActive = qtrue;
+			ri.Printf( PRINT_ALL, "Foveated rendering: %ux%u density maps written by the renderer (%ux%u px texels)\n",
+				vk.xr.foveationWidth, vk.xr.foveationHeight, vk.xr.fdmTexelWidth, vk.xr.fdmTexelHeight );
+		} else if ( xrInfo->foveationImages && xrInfo->foveationWidth > 0 && xrInfo->foveationHeight > 0 ) {
+			vk.xr.foveationActive = qtrue;
+			vk.xr.foveationWidth = xrInfo->foveationWidth;
+			vk.xr.foveationHeight = xrInfo->foveationHeight;
+			ri.Printf( PRINT_ALL, "Foveated rendering: %ux%u density maps from the runtime attached to the scene render passes\n",
+				xrInfo->foveationWidth, xrInfo->foveationHeight );
+		} else {
+			ri.Printf( PRINT_ALL, "Foveated rendering: no density map could be created\n" );
+		}
+	} else {
+		ri.Printf( PRINT_ALL, "Foveated rendering: the device cannot read a density map\n" );
+	}
+
 	// Recreate main render pass with correct XR swapchain formats
 	// The initial render pass was created with desktop swapchain format which may differ
 	if ( !vk_recreate_xr_render_pass( xrInfo->colorFormat, xrInfo->depthFormat ) ) {
 		ri.Printf( PRINT_WARNING, "vk_init_xr_resources: Failed to recreate XR render pass\n" );
 		return qfalse;
+	}
+
+	// The subpass render passes were built before the density maps were known;
+	// rebuild them and everything that references them (scene pipelines are already gone)
+	vk.fovSplit = ( vk.fboActive && vk.xr.foveationActive ) ? qtrue : qfalse;
+	if ( vk.fboActive ) {
+		vk_destroy_post_process_pipelines();
+		vk_destroy_subpass_framebuffers();
+		vk_destroy_subpass_render_passes();
+		vk_create_subpass_render_passes();
 	}
 
 	if ( !vk_create_xr_image_views() ) {
@@ -10765,10 +11817,13 @@ void vk_shutdown_xr_resources( void )
 	vk_destroy_hud_buffer();
 	vk_destroy_xr_framebuffers();
 	vk_destroy_xr_image_views();
+	vk_destroy_authored_fdm();
 
 	// Clear swapchain info pointers
 	vk.xr.colorInfo = NULL;
 	vk.xr.depthInfo = NULL;
+	vk.xr.foveationActive = qfalse;
+	vk.fovSplit = qfalse;
 
 	vk.xr.initialized = qfalse;
 	ri.Printf( PRINT_ALL, "XR resources shutdown complete\n" );

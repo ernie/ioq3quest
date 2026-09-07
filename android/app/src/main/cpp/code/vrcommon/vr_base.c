@@ -27,38 +27,104 @@ qboolean vr_initialized = qfalse;
 qboolean vr_shutdown = qfalse;
 
 // Required extensions first, optional extensions only if the runtime advertises them.
-#define MAX_REQUIRED_EXTENSIONS 10
+#define MAX_REQUIRED_EXTENSIONS 16
 static const char* requiredExtensionNames[MAX_REQUIRED_EXTENSIONS];
 static uint32_t numRequiredExtensions = 0;
 
-static qboolean VR_HasInstanceExtension(const char* name)
+// Instance extensions the runtime advertises, enumerated once per VR_Init
+static XrExtensionProperties* s_instanceExtensions = NULL;
+static uint32_t s_numInstanceExtensions = 0;
+
+static void VR_LogLine(const char* line)
+{
+#if __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "OpenXR", "%s", line);
+#else
+	fprintf(stderr, "[OpenXR] %s\n", line);
+#endif
+}
+
+// Logged as one block so a headset's capabilities can be read off a single logcat capture
+static void VR_EnumerateInstanceExtensions(void)
 {
 	uint32_t count = 0;
+	uint32_t i;
+	char line[256];
+
+	free(s_instanceExtensions);
+	s_instanceExtensions = NULL;
+	s_numInstanceExtensions = 0;
+
 	if (xrEnumerateInstanceExtensionProperties(NULL, 0, &count, NULL) != XR_SUCCESS || count == 0) {
-		return qfalse;
+		VR_LogLine("instance extensions: none enumerated");
+		return;
 	}
 
-	XrExtensionProperties* props = (XrExtensionProperties*)malloc(sizeof(XrExtensionProperties) * count);
-	if (!props) {
-		return qfalse;
+	s_instanceExtensions = (XrExtensionProperties*)malloc(sizeof(XrExtensionProperties) * count);
+	if (!s_instanceExtensions) {
+		return;
 	}
-	for (uint32_t i = 0; i < count; ++i) {
-		props[i].type = XR_TYPE_EXTENSION_PROPERTIES;
-		props[i].next = NULL;
+	for (i = 0; i < count; ++i) {
+		s_instanceExtensions[i].type = XR_TYPE_EXTENSION_PROPERTIES;
+		s_instanceExtensions[i].next = NULL;
 	}
+	if (xrEnumerateInstanceExtensionProperties(NULL, count, &count, s_instanceExtensions) != XR_SUCCESS) {
+		free(s_instanceExtensions);
+		s_instanceExtensions = NULL;
+		return;
+	}
+	s_numInstanceExtensions = count;
 
-	qboolean found = qfalse;
-	if (xrEnumerateInstanceExtensionProperties(NULL, count, &count, props) == XR_SUCCESS) {
-		for (uint32_t i = 0; i < count; ++i) {
-			if (strcmp(props[i].extensionName, name) == 0) {
-				found = qtrue;
-				break;
-			}
+	Com_sprintf(line, sizeof(line), "instance extensions (%u):", count);
+	VR_LogLine(line);
+	for (i = 0; i < count; ++i) {
+		Com_sprintf(line, sizeof(line), "  %s (v%u)",
+			s_instanceExtensions[i].extensionName, s_instanceExtensions[i].extensionVersion);
+		VR_LogLine(line);
+	}
+}
+
+static qboolean VR_HasInstanceExtension(const char* name)
+{
+	uint32_t i;
+	for (i = 0; i < s_numInstanceExtensions; ++i) {
+		if (strcmp(s_instanceExtensions[i].extensionName, name) == 0) {
+			return qtrue;
 		}
 	}
+	return qfalse;
+}
 
-	free(props);
-	return found;
+static qboolean VR_AddOptionalExtension(const char* name)
+{
+	if (numRequiredExtensions < MAX_REQUIRED_EXTENSIONS && VR_HasInstanceExtension(name)) {
+		requiredExtensionNames[numRequiredExtensions++] = name;
+		return qtrue;
+	}
+	return qfalse;
+}
+
+// Each layer is enabled only when all of the one beneath it is, so what is enabled here is usable
+static void VR_BuildFoveationExtensions(VR_Foveation* fov)
+{
+	memset(fov, 0, sizeof(*fov));
+
+	if (VR_HasInstanceExtension(XR_FB_FOVEATION_EXTENSION_NAME) &&
+		VR_HasInstanceExtension(XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME) &&
+		VR_HasInstanceExtension(XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME) &&
+		VR_HasInstanceExtension(XR_FB_FOVEATION_VULKAN_EXTENSION_NAME) &&
+		numRequiredExtensions + 4 <= MAX_REQUIRED_EXTENSIONS)
+	{
+		fov->ExtFoveation = VR_AddOptionalExtension(XR_FB_SWAPCHAIN_UPDATE_STATE_EXTENSION_NAME) &&
+			VR_AddOptionalExtension(XR_FB_FOVEATION_EXTENSION_NAME);
+		fov->ExtConfiguration = VR_AddOptionalExtension(XR_FB_FOVEATION_CONFIGURATION_EXTENSION_NAME);
+		fov->ExtVulkan = VR_AddOptionalExtension(XR_FB_FOVEATION_VULKAN_EXTENSION_NAME);
+	}
+
+	if (fov->ExtFoveation && fov->ExtConfiguration && fov->ExtVulkan)
+	{
+		fov->ExtEyeTracked = VR_AddOptionalExtension(XR_META_FOVEATION_EYE_TRACKED_EXTENSION_NAME);
+	}
 }
 
 static void VR_BuildExtensionList(void)
@@ -97,6 +163,48 @@ static void VR_BuildExtensionList(void)
 #if __ANDROID__
 	__android_log_print(ANDROID_LOG_INFO, "OpenXR", "XR_FB_color_space advertised: %s", haveColorSpace ? "yes" : "no");
 #endif
+
+	VR_BuildFoveationExtensions(&vr_engine.foveation);
+}
+
+static void VR_DecideFoveationCaps(void)
+{
+	VR_Foveation* fov = &vr_engine.foveation;
+	const qboolean deviceOk = VR_Graphics_SupportsFoveation() ? qtrue : qfalse;
+	char line[320];
+
+	fov->SystemEyeTracked = fov->ExtEyeTracked &&
+		vr_engine.systemProperties.FoveationEyeTracked.supportsFoveationEyeTracked;
+
+	if (fov->ExtFoveation && fov->ExtConfiguration && fov->ExtVulkan && deviceOk)
+	{
+		fov->Caps = fov->SystemEyeTracked ? VR_FOVEATION_CAPS_EYE_TRACKED : VR_FOVEATION_CAPS_FIXED;
+	}
+	else
+	{
+		fov->Caps = VR_FOVEATION_CAPS_NONE;
+	}
+
+	Com_sprintf(line, sizeof(line),
+		"foveation: %s (XR_FB_foveation %s, XR_FB_foveation_configuration %s, XR_FB_foveation_vulkan %s, XR_META_foveation_eye_tracked %s, system eye tracked %s, device density map %s)",
+		VR_FoveationCapsString(),
+		fov->ExtFoveation ? "yes" : "no",
+		fov->ExtConfiguration ? "yes" : "no",
+		fov->ExtVulkan ? "yes" : "no",
+		fov->ExtEyeTracked ? "yes" : "no",
+		fov->SystemEyeTracked ? "yes" : "no",
+		deviceOk ? "yes" : "no");
+	VR_LogLine(line);
+}
+
+const char* VR_FoveationCapsString(void)
+{
+	switch (vr_engine.foveation.Caps)
+	{
+		case VR_FOVEATION_CAPS_FIXED:       return "fixed";
+		case VR_FOVEATION_CAPS_EYE_TRACKED: return "eyetracked";
+		default:                            return "none";
+	}
 }
 
 // Part of init
@@ -121,21 +229,22 @@ VR_Engine* VR_Init( void )
 	VR_InitializeLoaderAndroid();
 #endif
 
-	// Build extension list with appropriate graphics API extension
+	VR_EnumerateInstanceExtensions();
 	VR_BuildExtensionList();
 
 	fprintf(stderr, "[OpenXR] Initializing OpenXR instance and system...\n");
 
-	const qboolean listApLayersExtensions = qfalse;
-	if (listApLayersExtensions)
+	const qboolean listApiLayers = qfalse;
+	if (listApiLayers)
 	{
 		VR_ListAPILayers();
-		VR_ListExtensions();
 	}
 
 	// Create the OpenXR instance.
+	// Meta's runtime reads the patch version as the app's SDK and gives 1.0.0 a
+	// legacy profile that ignores the XrSwapchainCreateInfo next chain (no density maps)
 	const char* appName = "Quake 3 Arena";
-	const XrVersion apiVersion = XR_MAKE_VERSION(1, 0, 0);
+	const XrVersion apiVersion = XR_API_VERSION_1_0;
 	XR_CHECK(
 		VR_CreateInstance(appName, apiVersion, numRequiredExtensions, requiredExtensionNames, &vr_engine.appState.Instance), 
 		"Failed to create OpenXR instance");
@@ -157,7 +266,8 @@ VR_Engine* VR_Init( void )
 		"Failed to get OpenXR system ID");
 
 
-	VR_GetSystemProperties(vr_engine.appState.Instance, vr_engine.appState.SystemId, &vr_engine.systemProperties);
+	VR_GetSystemProperties(vr_engine.appState.Instance, vr_engine.appState.SystemId, &vr_engine.systemProperties,
+		vr_engine.foveation.ExtEyeTracked);
 
 	// Get graphics requirements via the graphics-specific implementation
 	XR_CHECK(
@@ -169,6 +279,9 @@ VR_Engine* VR_Init( void )
 
 	// Initialize graphics subsystem (Vulkan: creates VkInstance/VkDevice, OpenGL: no-op)
 	VR_Graphics_Init(vr_engine.appState.Instance, vr_engine.appState.SystemId);
+
+	// Needs both the runtime's extensions and a device that can read the density map
+	VR_DecideFoveationCaps();
 
 	fprintf(stderr,
 		"[OpenXR] system properties:\n"
@@ -217,6 +330,9 @@ void VR_Destroy( VR_Engine* engine )
 		VR_DestroyDebugUtilsMessenger(engine->appState.Instance, &engine->appState.DebugUtilsMessenger);
 		xrDestroyInstance(engine->appState.Instance);
 		memset(&vr_engine, 0, sizeof(vr_engine));
+		free(s_instanceExtensions);
+		s_instanceExtensions = NULL;
+		s_numInstanceExtensions = 0;
 	}
 	vr_initialized = qfalse;
 }

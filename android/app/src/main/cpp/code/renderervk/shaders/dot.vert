@@ -16,7 +16,7 @@
 // vertex-stage reset could clobber the other view's fragment pass.
 layout(push_constant) uniform Transform {
 	vec4 clipPos[2];   // per-eye clip-space probe positions
-	vec4 params;       // xy: ~2px clip extent per unit w (triangle variant only)
+	vec4 params;       // xy: ~2px clip extent per unit w (triangle variant only); z: point size in pixels
 };
 
 layout(location = 0) in vec3 in_position; // unused; satisfies the pipeline's vertex input
@@ -28,5 +28,7 @@ out gl_PerVertex {
 
 void main() {
 	gl_Position = clipPos[gl_ViewIndex];
-	gl_PointSize = 1.0;
+	// 1 pixel normally; wider under a fragment density map so the probe
+	// always covers a coarse fragment's sample position (see vk_flares.c)
+	gl_PointSize = max(params.z, 1.0);
 }

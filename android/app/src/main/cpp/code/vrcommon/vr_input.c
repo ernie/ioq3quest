@@ -31,6 +31,8 @@ XrPath leftHandPath;
 XrPath rightHandPath;
 XrAction handPoseLeftAction;
 XrAction handPoseRightAction;
+XrAction aimPoseLeftAction;
+XrAction aimPoseRightAction;
 XrAction indexLeftAction;
 XrAction indexRightAction;
 XrAction menuAction;
@@ -51,6 +53,11 @@ XrAction thumbrestRightTouchAction;
 XrAction vibrateLeftFeedback;
 XrAction vibrateRightFeedback;
 XrActionSet runningActionSet;
+// Weapon pose, bound to grip: aim is a pointing ray, not the basis an object is held with
+XrSpace leftControllerGripSpace = XR_NULL_HANDLE;
+XrSpace rightControllerGripSpace = XR_NULL_HANDLE;
+
+// Aim pose, for the menu cursor only, so it never inherits the weapon's pitch offset
 XrSpace leftControllerAimSpace = XR_NULL_HANDLE;
 XrSpace rightControllerAimSpace = XR_NULL_HANDLE;
 
@@ -124,6 +131,9 @@ extern cvar_t *vr_switchThumbsticks;
 extern cvar_t *vr_snapturn;
 extern cvar_t *vr_directionMode;
 extern cvar_t *vr_weaponPitch;
+
+// The grip pose runs along the handle; this fixed pitch turns it into the pointing direction, vr_weaponPitch is the player's offset
+#define VR_GRIP_TO_AIM_PITCH (-90.0f)
 extern cvar_t *vr_heightAdjust;
 extern cvar_t *vr_twoHandedWeapons;
 extern cvar_t *vr_refreshrate;
@@ -663,6 +673,8 @@ void VR_InitInstanceInput( VR_Engine* engine )
 	OXR(xrStringToPath(engine->appState.Instance, "/user/hand/right", &rightHandPath));
 	handPoseLeftAction = CreateAction(runningActionSet, XR_ACTION_TYPE_POSE_INPUT, "hand_pose_left", NULL, 1, &leftHandPath);
 	handPoseRightAction = CreateAction(runningActionSet, XR_ACTION_TYPE_POSE_INPUT, "hand_pose_right", NULL, 1, &rightHandPath);
+	aimPoseLeftAction = CreateAction(runningActionSet, XR_ACTION_TYPE_POSE_INPUT, "aim_pose_left", NULL, 1, &leftHandPath);
+	aimPoseRightAction = CreateAction(runningActionSet, XR_ACTION_TYPE_POSE_INPUT, "aim_pose_right", NULL, 1, &rightHandPath);
 
 	XrPath interactionProfilePath = XR_NULL_PATH;
 	XrPath interactionProfilePathValveIndex = XR_NULL_PATH;
@@ -792,8 +804,10 @@ void VR_InitInstanceInput( VR_Engine* engine )
 				bindings[currBinding++] = ActionSuggestedBinding(thumbstickRightClickAction, "/user/hand/right/input/thumbstick/click");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateLeftFeedback, "/user/hand/left/output/haptic");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateRightFeedback, "/user/hand/right/output/haptic");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/aim/pose");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseLeftAction, "/user/hand/left/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseRightAction, "/user/hand/right/input/aim/pose");
 			}
 			else if (interactionProfilePath == interactionProfilePathOculusTouch ||
 					 interactionProfilePath == interactionProfilePathPico4s ||
@@ -817,8 +831,10 @@ void VR_InitInstanceInput( VR_Engine* engine )
 				bindings[currBinding++] = ActionSuggestedBinding(thumbrestRightTouchAction, "/user/hand/right/input/thumbrest/touch");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateLeftFeedback, "/user/hand/left/output/haptic");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateRightFeedback, "/user/hand/right/output/haptic");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/aim/pose");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseLeftAction, "/user/hand/left/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseRightAction, "/user/hand/right/input/aim/pose");
 			}
 			else if (interactionProfilePath == interactionProfilePathKHRSimple)
 			{
@@ -828,8 +844,10 @@ void VR_InitInstanceInput( VR_Engine* engine )
 				bindings[currBinding++] = ActionSuggestedBinding(buttonXAction, "/user/hand/right/input/menu/click");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateLeftFeedback, "/user/hand/left/output/haptic");
 				bindings[currBinding++] = ActionSuggestedBinding(vibrateRightFeedback, "/user/hand/right/output/haptic");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/aim/pose");
-				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseLeftAction, "/user/hand/left/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(handPoseRightAction, "/user/hand/right/input/grip/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseLeftAction, "/user/hand/left/input/aim/pose");
+				bindings[currBinding++] = ActionSuggestedBinding(aimPoseRightAction, "/user/hand/right/input/aim/pose");
 			}
 		}
 
@@ -853,8 +871,10 @@ void VR_InitSessionInput( VR_Engine* engine )
 	memset(&leftController, 0, sizeof(leftController));
 	memset(&rightController, 0, sizeof(rightController));
 
-	leftControllerAimSpace = CreateActionSpace(handPoseLeftAction, leftHandPath);
-	rightControllerAimSpace = CreateActionSpace(handPoseRightAction, rightHandPath);
+	leftControllerGripSpace = CreateActionSpace(handPoseLeftAction, leftHandPath);
+	rightControllerGripSpace = CreateActionSpace(handPoseRightAction, rightHandPath);
+	leftControllerAimSpace = CreateActionSpace(aimPoseLeftAction, leftHandPath);
+	rightControllerAimSpace = CreateActionSpace(aimPoseRightAction, rightHandPath);
 
 	// Enumerate actions
 	XrPath actionPathsBuffer[32];
@@ -954,7 +974,7 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
 	if (isRightController == (vr_righthanded->integer != 0))
 	{
 		//Set gun angles - We need to calculate all those we might need (including adjustments) for the client to then take its pick
-		rotation[PITCH] = vr_weaponPitch->value;
+		rotation[PITCH] = VR_GRIP_TO_AIM_PITCH + vr_weaponPitch->value;
 		QuatToYawPitchRoll(pose.orientation, rotation, vr.weaponangles);
 
 		VectorSubtract(vr.weaponangles_last, vr.weaponangles, vr.weaponangles_delta);
@@ -971,9 +991,10 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
 	}
 	else
 	{
-		QuatToYawPitchRoll(pose.orientation, rotation, vr.offhandangles2); // used for off-hand direction mode
-		rotation[PITCH] = vr_weaponPitch->value;
+		rotation[PITCH] = VR_GRIP_TO_AIM_PITCH + vr_weaponPitch->value;
 		QuatToYawPitchRoll(pose.orientation, rotation, vr.offhandangles);
+		// Steering follows the corrected grip angles too: "forward" is how the hand is held, not the aim ray
+		VectorCopy(vr.offhandangles, vr.offhandangles2);
 
 		///location relative to view
 		vr.offhandposition[0] = pose.position.x;
@@ -995,19 +1016,20 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
 			float pitch;
 			if (vr.menuLeftHanded)
 			{
-				yaw = (vr_righthanded->integer != 0) ? vr.offhandangles[YAW] : vr.weaponangles[YAW];
-				pitch = (vr_righthanded->integer != 0) ? vr.offhandangles[PITCH] : vr.weaponangles[PITCH];
+				yaw = (vr_righthanded->integer != 0) ? vr.offhandaimangles[YAW] : vr.weaponaimangles[YAW];
+				pitch = (vr_righthanded->integer != 0) ? vr.offhandaimangles[PITCH] : vr.weaponaimangles[PITCH];
 			}
 			else
 			{
-				yaw = (vr_righthanded->integer != 0) ? vr.weaponangles[YAW] : vr.offhandangles[YAW];
-				pitch = (vr_righthanded->integer != 0) ? vr.weaponangles[PITCH] : vr.offhandangles[PITCH];
+				yaw = (vr_righthanded->integer != 0) ? vr.weaponaimangles[YAW] : vr.offhandaimangles[YAW];
+				pitch = (vr_righthanded->integer != 0) ? vr.weaponaimangles[PITCH] : vr.offhandaimangles[PITCH];
 			}
 			// During SP intermission, use the anchored yaw for cursor calculation
 			// since the HUD is world-fixed rather than head-locked
 			float referenceYaw = vr.sp_intermission_active ? vr.sp_intermission_yaw : vr.menuYaw;
 			int x = 320 - tan((yaw - referenceYaw) * (M_PI*2 / 360)) * 800;
-			int y = 240 + tan((pitch + vr_weaponPitch->value) * (M_PI*2 / 360)) * 800;
+			// Aim-pose angles: no vr_weaponPitch term, the cursor is not the weapon
+			int y = 240 + tan(pitch * (M_PI*2 / 360)) * 800;
 
 			static int lastMenuCursorX = 320;
 			static int lastMenuCursorY = 240;
@@ -1030,16 +1052,16 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
 				float ohYaw, ohPitch;
 				if (vr.menuLeftHanded)
 				{
-					ohYaw = (vr_righthanded->integer != 0) ? vr.weaponangles[YAW] : vr.offhandangles[YAW];
-					ohPitch = (vr_righthanded->integer != 0) ? vr.weaponangles[PITCH] : vr.offhandangles[PITCH];
+					ohYaw = (vr_righthanded->integer != 0) ? vr.weaponaimangles[YAW] : vr.offhandaimangles[YAW];
+					ohPitch = (vr_righthanded->integer != 0) ? vr.weaponaimangles[PITCH] : vr.offhandaimangles[PITCH];
 				}
 				else
 				{
-					ohYaw = (vr_righthanded->integer != 0) ? vr.offhandangles[YAW] : vr.weaponangles[YAW];
-					ohPitch = (vr_righthanded->integer != 0) ? vr.offhandangles[PITCH] : vr.weaponangles[PITCH];
+					ohYaw = (vr_righthanded->integer != 0) ? vr.offhandaimangles[YAW] : vr.weaponaimangles[YAW];
+					ohPitch = (vr_righthanded->integer != 0) ? vr.offhandaimangles[PITCH] : vr.weaponaimangles[PITCH];
 				}
 				int ohx = 320 - tan((ohYaw - referenceYaw) * (M_PI*2 / 360)) * 800;
-				int ohy = 240 + tan((ohPitch + vr_weaponPitch->value) * (M_PI*2 / 360)) * 800;
+				int ohy = 240 + tan(ohPitch * (M_PI*2 / 360)) * 800;
 
 				static int lastOffhandCursorX = 320;
 				static int lastOffhandCursorY = 240;
@@ -1055,16 +1077,16 @@ static void IN_VRController( qboolean isRightController, XrPosef pose )
 			float pitch;
 			if (vr.menuLeftHanded)
 			{
-				yaw = (vr_righthanded->integer != 0) ? vr.offhandangles[YAW] : vr.weaponangles[YAW];
-				pitch = (vr_righthanded->integer != 0) ? vr.offhandangles[PITCH] : vr.weaponangles[PITCH];
+				yaw = (vr_righthanded->integer != 0) ? vr.offhandaimangles[YAW] : vr.weaponaimangles[YAW];
+				pitch = (vr_righthanded->integer != 0) ? vr.offhandaimangles[PITCH] : vr.weaponaimangles[PITCH];
 			}
 			else
 			{
-				yaw = (vr_righthanded->integer != 0) ? vr.weaponangles[YAW] : vr.offhandangles[YAW];
-				pitch = (vr_righthanded->integer != 0) ? vr.weaponangles[PITCH] : vr.offhandangles[PITCH];
+				yaw = (vr_righthanded->integer != 0) ? vr.weaponaimangles[YAW] : vr.offhandaimangles[YAW];
+				pitch = (vr_righthanded->integer != 0) ? vr.weaponaimangles[PITCH] : vr.offhandaimangles[PITCH];
 			}
 			int x = 320 - tan((yaw - vr.menuYaw) * (M_PI*2 / 360)) * 400;
-			int y = 240 + tan((pitch + vr_weaponPitch->value) * (M_PI*2 / 360)) * 400;
+			int y = 240 + tan(pitch * (M_PI*2 / 360)) * 400;
 			// Clamp cursor to HUD bounds (640x480 virtual screen)
 			if (x < 0) x = 0;
 			if (x > 640) x = 640;
@@ -2187,12 +2209,27 @@ void IN_VRSyncActions( VR_Engine* engine )
 	XR_CHECK(xrSyncActions(engine->appState.Session, &syncInfo), "failed to sync actions");
 }
 
+// Aim pose angles with no pitch offset: they drive the cursor, never the weapon
+static void IN_VRControllerAim( qboolean isRightController, XrPosef pose )
+{
+	vec3_t rotation = {0};
+
+	if (isRightController == (vr_righthanded->integer != 0))
+	{
+		QuatToYawPitchRoll(pose.orientation, rotation, vr.weaponaimangles);
+	}
+	else
+	{
+		QuatToYawPitchRoll(pose.orientation, rotation, vr.offhandaimangles);
+	}
+}
+
 void IN_VRUpdateControllers( VR_Engine* engine, XrTime predictedDisplayTime )
 {
 	//get controller poses
 	XrAction controller[] = {handPoseLeftAction, handPoseRightAction};
 	XrPath subactionPath[] = {leftHandPath, rightHandPath};
-	XrSpace controllerSpace[] = {leftControllerAimSpace, rightControllerAimSpace};
+	XrSpace controllerSpace[] = {leftControllerGripSpace, rightControllerGripSpace};
 	for (int i = 0; i < 2; i++)
 	{
 		if (ActionPoseIsActive(controller[i], subactionPath[i]))
@@ -2211,6 +2248,28 @@ void IN_VRUpdateControllers( VR_Engine* engine, XrTime predictedDisplayTime )
 
 			engine->appState.TrackedController[i].Active = VR_FALSE;
 			engine->appState.TrackedController[i].Pose = posef_identity;
+		}
+	}
+
+	{
+		XrAction aimAction[] = {aimPoseLeftAction, aimPoseRightAction};
+		XrSpace aimSpace[] = {leftControllerAimSpace, rightControllerAimSpace};
+		int i;
+
+		for (i = 0; i < 2; i++)
+		{
+			XrSpaceLocation loc = {};
+			loc.type = XR_TYPE_SPACE_LOCATION;
+
+			if (aimSpace[i] == XR_NULL_HANDLE || !ActionPoseIsActive(aimAction[i], subactionPath[i]))
+			{
+				continue;
+			}
+			OXR(xrLocateSpace(aimSpace[i], engine->appState.CurrentSpace, predictedDisplayTime, &loc));
+			if ((loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0)
+			{
+				IN_VRControllerAim(i == 1 ? qtrue : qfalse, loc.pose);
+			}
 		}
 	}
 

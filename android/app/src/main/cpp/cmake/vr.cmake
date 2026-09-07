@@ -30,6 +30,7 @@ set(VR_VK_SOURCES
     ${SOURCE_DIR}/vrvk/vr_vk_debug.c
     ${SOURCE_DIR}/vrvk/vr_vk_session.c
     ${SOURCE_DIR}/vrvk/vr_vk_swapchains.c
+    ${SOURCE_DIR}/vrvk/vr_vk_foveation.c
     ${SOURCE_DIR}/vrvk/vr_vk_renderer.c
 )
 

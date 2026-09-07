@@ -37,6 +37,13 @@ typedef struct {
     // Multiview support (required for stereo rendering)
     VR_Bool multiviewSupported;
     uint32_t maxMultiviewViewCount;
+
+    // VK_EXT_fragment_density_map (foveated rendering)
+    VR_Bool fragmentDensityMapSupported;
+    VR_Bool fragmentDensityMapNonSubsampled;   // regular images may sit in a density map render pass
+    VR_Bool fragmentDensityMap2Supported;      // Meta recommends VK_EXT_fragment_density_map2 alongside
+    VkExtent2D minFragmentDensityTexelSize;
+    VkExtent2D maxFragmentDensityTexelSize;
 } VR_VulkanState;
 
 // Global VR Vulkan state
@@ -71,6 +78,10 @@ typedef struct {
     VkDevice device;
     VkQueue queue;
     uint32_t queueFamilyIndex;
+    VR_Bool fragmentDensityMap;    // enabled, with non-subsampled images allowed in its render passes
+    // Finest granularity the hardware reads; the renderer writes its map on this grid
+    uint32_t minDensityTexelWidth;
+    uint32_t minDensityTexelHeight;
 } VR_VulkanDeviceInfo;
 
 // Get the XR-created Vulkan device for renderer initialization
@@ -83,11 +94,16 @@ typedef struct {
     VkFormat colorFormat;
     uint32_t colorWidth, colorHeight, colorArraySize, colorImageCount;
     VkImage* colorImages;          // NOT owned: from OpenXR
+    XrSwapchainUsageFlags colorUsage;
 
     // Depth (multiview stereo, arraySize=2)
     VkFormat depthFormat;
     uint32_t depthWidth, depthHeight, depthArraySize, depthImageCount;
     VkImage* depthImages;
+
+    // Density map per color image (XR_FB_foveation_vulkan), NULL without foveation
+    VkImage* foveationImages;      // NOT owned: from OpenXR
+    uint32_t foveationWidth, foveationHeight;
 } VR_VulkanSwapchainInfo;
 
 // Get the XR swapchain info for renderer initialization
@@ -106,9 +122,11 @@ VkFormat VR_Vulkan_SelectColorFormat(const int64_t* formats, uint32_t count);
 VkFormat VR_Vulkan_SelectDepthFormat(const int64_t* formats, uint32_t count);
 
 // Swapchain creation and management
+// foveated needs XR_FB_foveation enabled; it asks for a density map per image
 XrResult VR_Vulkan_CreateSwapchain(XrSession session, VkFormat format,
                                     uint32_t width, uint32_t height,
                                     uint32_t arraySize, XrSwapchainUsageFlags usage,
+                                    XrBool32 foveated,
                                     XrSwapchain* swapchain);
 
 // Create swapchain with format list (XR_KHR_vulkan_swapchain_format_list)
@@ -118,10 +136,14 @@ XrResult VR_Vulkan_CreateSwapchainWithFormatList(XrSession session, VkFormat for
                                                   uint32_t width, uint32_t height,
                                                   uint32_t arraySize, XrSwapchainUsageFlags usage,
                                                   const VkFormat* viewFormats, uint32_t viewFormatCount,
+                                                  XrBool32 foveated,
                                                   XrSwapchain* swapchain);
 
+// The foveation out-params may be NULL; a swapchain created without foveation yields none
 XrResult VR_Vulkan_GetSwapchainImages(XrSwapchain swapchain,
-                                       VkImage** images, uint32_t* imageCount);
+                                       VkImage** images, uint32_t* imageCount,
+                                       VkImage** foveationImages,
+                                       uint32_t* foveationWidth, uint32_t* foveationHeight);
 
 // VkImageView/VkFramebuffer creation in renderer (see vk_create_xr_image_views in vk.c)
 

@@ -379,6 +379,12 @@ static void RB_TestFlare( flare_t *f ) {
 	// triangle probe variant can expand around the pixel center
 	clipPos[8] = 4.0f / (float)vk.renderWidth;
 	clipPos[9] = 4.0f / (float)vk.renderHeight;
+	// point probe size in pixels. Under a fragment density map a coarse
+	// fragment exists only where the point covers the fragment's sample
+	// position, and a one-pixel point at the periphery misses it as the view
+	// moves, so the flare flickers. Cover the largest fragment the density
+	// map can ask for instead; the probe stays well under a flare's size.
+	clipPos[10] = vk.xr.foveationActive ? 8.0f : 1.0f;
 	// dot.vert reads the first 48 bytes of the 64-byte vertex push range as
 	// vec4 clipPos[2] + vec4 params; reuse the matrix push plumbing
 	vk_update_mvp( clipPos );

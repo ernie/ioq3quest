@@ -8,6 +8,7 @@
 
 #include "vr_vk_swapchains.h"
 #include "vr_vk.h"
+#include "vr_vk_foveation.h"
 
 #include "../vrcommon/vr_base.h"
 #include "../vrcommon/vr_macros.h"
@@ -15,6 +16,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #if __ANDROID__
 #include <android/log.h>
@@ -62,6 +64,13 @@ static void VR_VK_CreateSwapchain(
 
 	XrResult result;
 
+	const XrBool32 foveated = isColor && VR_VK_Foveation_SwapchainWanted();
+
+	// Meta's own integrations create foveated swapchains without transfer usage; screenshots check before relying on it
+	if (foveated) {
+		usage &= ~(XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT);
+	}
+
 	// For color swapchains with mutable format, use the format list extension
 	// This tells the runtime which formats we'll use for image views, helping it
 	// avoid adding unnecessary usage flags like VK_IMAGE_USAGE_STORAGE_BIT
@@ -71,14 +80,14 @@ static void VR_VK_CreateSwapchain(
 			vk_get_unorm_format(format)    // UNORM for gamma pass (bypass sRGB conversion)
 		};
 
-		ALOGI("Creating color swapchain with format list: sRGB=0x%x, UNORM=0x%x",
-			(unsigned int)viewFormats[0], (unsigned int)viewFormats[1]);
+		ALOGI("Creating color swapchain with format list: sRGB=0x%x, UNORM=0x%x, foveated=%s",
+			(unsigned int)viewFormats[0], (unsigned int)viewFormats[1], foveated ? "yes" : "no");
 
 		result = VR_Vulkan_CreateSwapchainWithFormatList(session, format, width, height,
-			arraySize, usage, viewFormats, 2, &info->swapchain);
+			arraySize, usage, viewFormats, 2, foveated, &info->swapchain);
 	} else {
 		result = VR_Vulkan_CreateSwapchain(session, format, width, height,
-			arraySize, usage, &info->swapchain);
+			arraySize, usage, foveated, &info->swapchain);
 	}
 
 	CHECK(!XR_FAILED(result), isColor ? "Failed to create color swapchain" : "Failed to create depth swapchain");
@@ -87,11 +96,34 @@ static void VR_VK_CreateSwapchain(
 	info->width = width;
 	info->height = height;
 	info->arraySize = arraySize;
+	info->usage = usage;
 	info->acquired = XR_FALSE;  // Not acquired yet
+	info->foveationImages = NULL;
+	info->foveationWidth = 0;
+	info->foveationHeight = 0;
+
+	// Before enumerating images: a runtime may allocate the maps only once it knows a profile
+	if (foveated) {
+		VR_VK_Foveation_ApplyToSwapchain(VR_GetEngine(), info->swapchain);
+	}
 
 	// Get VkImage handles from OpenXR
-	result = VR_Vulkan_GetSwapchainImages(info->swapchain, &info->images, &info->imageCount);
+	result = VR_Vulkan_GetSwapchainImages(info->swapchain, &info->images, &info->imageCount,
+		foveated ? &info->foveationImages : NULL,
+		foveated ? &info->foveationWidth : NULL,
+		foveated ? &info->foveationHeight : NULL);
 	CHECK(!XR_FAILED(result), "Failed to get swapchain images");
+
+	if (foveated) {
+		if (info->foveationImages) {
+			ALOGI("Fragment density maps: %u images, %ux%u texels for %ux%u pixels",
+				info->imageCount, info->foveationWidth, info->foveationHeight, width, height);
+		} else {
+			// Meta's runtime ignores the create info chain under the legacy profile it gives OpenXR 1.0.0 apps (see vr_base.c)
+			ALOGE("Runtime accepted the foveated swapchain but returned no density maps");
+			VR_VK_Foveation_Disarm(VR_GetEngine(), info->swapchain);
+		}
+	}
 }
 
 static void VR_VK_DestroySwapchain(VR_VK_SwapchainInfo* info)
@@ -113,6 +145,12 @@ static void VR_VK_DestroySwapchain(VR_VK_SwapchainInfo* info)
 		free(info->images);
 		info->images = NULL;
 	}
+	if (info->foveationImages) {
+		free(info->foveationImages);
+		info->foveationImages = NULL;
+	}
+	info->foveationWidth = 0;
+	info->foveationHeight = 0;
 	info->imageCount = 0;
 
 	// Destroy the XR swapchain

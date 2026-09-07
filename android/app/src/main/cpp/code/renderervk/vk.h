@@ -320,6 +320,11 @@ void vk_read_pixels( byte* buffer, uint32_t width, uint32_t height ); // screens
 
 qboolean vk_init_xr_resources( void );  // Initialize XR swapchain resources
 
+// Foveated rendering: the density map the renderer writes itself
+void vk_destroy_authored_fdm( void );
+void vk_update_authored_fdm( uint32_t index );
+void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] );
+
 qboolean vk_alloc_vbo( const byte *vbo_data, int vbo_size );
 void vk_update_mvp( const float *m );
 
@@ -429,6 +434,37 @@ typedef struct {
 	uint32_t width;
 	uint32_t height;
 
+	// Runtime density maps (XR_FB_foveation_vulkan), one per color image, attached to the scene passes when foveationActive
+	qboolean fdmSupported;          // device feature enabled by the VR layer
+	qboolean foveationActive;
+	VkImageView foveationViews[MAX_SWAPCHAIN_IMAGES];
+	uint32_t foveationWidth;
+	uint32_t foveationHeight;
+
+	// Our own density map, one per swapchain image, rewritten in the frame that renders into it
+	qboolean fdmAuthored;
+	VkImage fdmImage[MAX_SWAPCHAIN_IMAGES];
+	VkDeviceMemory fdmMemory[MAX_SWAPCHAIN_IMAGES];
+	VkBuffer fdmStaging[MAX_SWAPCHAIN_IMAGES];
+	VkDeviceMemory fdmStagingMemory[MAX_SWAPCHAIN_IMAGES];
+	void *fdmStagingMapped[MAX_SWAPCHAIN_IMAGES];
+	qboolean fdmUploaded[MAX_SWAPCHAIN_IMAGES];  // written at least once
+	uint32_t fdmLayers;
+	uint32_t fdmTexelWidth;
+	uint32_t fdmTexelHeight;
+
+	// What the map should describe, pushed in by the VR layer each frame
+	int fdmLevel;                   // VR_FOVEATION_OFF..HIGH, or EYE_TRACKED
+	qboolean fdmEyeTracked;
+	float fdmCenter[2][2];          // per eye, normalized device coordinates
+	float fdmAppliedCenter[MAX_SWAPCHAIN_IMAGES][2][2];
+	int fdmAppliedLevel[MAX_SWAPCHAIN_IMAGES];
+	qboolean fdmAppliedEyeTracked[MAX_SWAPCHAIN_IMAGES];
+
+	// Falloff built once at twice the map size; a window at the gaze is copied out each frame
+	byte *fdmTemplate;
+	int fdmTemplateLevel;
+
 	// Initialization state
 	qboolean initialized;
 } VkXrResources;
@@ -473,6 +509,8 @@ typedef struct {
 		// Subpass optimization render passes (tile-local post-processing)
 		VkRenderPass main_with_bloom;  // 3 subpasses: scene, bloom extract, composite+gamma
 		VkRenderPass main_with_gamma;  // 2 subpasses: scene, gamma only
+		// Foveated split (vk.fovSplit): scene alone with the density map; main_with_* then load it for the post subpasses
+		VkRenderPass fov_scene;
 	} render_pass;
 
 	VkDescriptorPool descriptor_pool;
@@ -490,6 +528,10 @@ typedef struct {
 	VkPipelineLayout pipeline_layout_subpass_extract;   // For bloom extract subpass
 	VkPipelineLayout pipeline_layout_subpass_composite; // For final composite subpass
 	VkPipelineLayout pipeline_layout_subpass_gamma;     // For gamma-only subpass
+	// Foveated split: set 0 is a combined image sampler on the stored scene
+	VkPipelineLayout pipeline_layout_fov_extract;
+	VkPipelineLayout pipeline_layout_fov_composite;
+	VkPipelineLayout pipeline_layout_fov_gamma;
 
 	VkDescriptorSet color_descriptor;
 
@@ -530,6 +572,8 @@ typedef struct {
 
 		// Input attachment descriptor for reading scene color in subpasses
 		VkDescriptorSet input_descriptor;
+		// Foveated split: combined image sampler on the stored scene instead
+		VkDescriptorSet scene_descriptor;
 	} transient;
 
 	// screenMap
@@ -561,6 +605,7 @@ typedef struct {
 		// Subpass optimization framebuffers (per swapchain image)
 		VkFramebuffer main_with_bloom[MAX_SWAPCHAIN_IMAGES];
 		VkFramebuffer main_with_gamma[MAX_SWAPCHAIN_IMAGES];
+		VkFramebuffer fov_scene[MAX_SWAPCHAIN_IMAGES];  // foveated split: scene pass, per density map
 	} framebuffers;
 
 #ifdef USE_UPLOAD_QUEUE
@@ -641,6 +686,10 @@ typedef struct {
 		VkShaderModule bloom_extract_subpass_fs;
 		VkShaderModule final_composite_subpass_fs;
 		VkShaderModule gamma_subpass_fs;
+		// Foveated split: same passes, but the stored scene is sampled
+		VkShaderModule bloom_extract_fov_fs;
+		VkShaderModule final_composite_fov_fs;
+		VkShaderModule gamma_fov_fs;
 	} modules;
 
 	VkPipelineCache pipelineCache;
@@ -758,6 +807,10 @@ typedef struct {
 	qboolean deferredHudPending;		// true when combined pass completed before HUD rendering
 	qboolean subpassPostDone;			// true when vk_finish_subpass_post() already ran this frame
 	qboolean inPostBloom2DSubpass;		// true when in post-bloom/post-gamma 2D subpass
+	// Foveated split: under a density map Adreno returns input-attachment reads
+	// of the scene displaced in the periphery, so the scene gets its own foveated
+	// pass into a stored image and the post subpasses sample it in an unfoveated second pass
+	qboolean fovSplit;
 
 	uint32_t screenMapWidth;
 	uint32_t screenMapHeight;

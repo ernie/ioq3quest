@@ -11,4 +11,7 @@ void VR_PrepareForShutdown( void );
 void VR_EnterVR( VR_Engine* engine );
 void VR_LeaveVR( VR_Engine* engine );
 
+// "none", "fixed" or "eyetracked": what vr_foveationCaps publishes to the UI
+const char* VR_FoveationCapsString( void );
+
 #endif
