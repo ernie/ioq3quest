@@ -4500,7 +4500,8 @@ void vk_initialize( void )
 	// r_fbo 0 = direct rendering to XR swapchain (faster, no post-processing)
 	// r_fbo 1 = FBO with post-processing (slower but has bloom/gamma)
 	vk.fboActive = ( r_fbo->integer != 0 ) ? qtrue : qfalse;
-	if ( vk.fboActive && r_ext_multisample->integer ) {
+	// MSAA in direct mode too: a transient multisampled color resolves into the swapchain
+	if ( r_ext_multisample->integer ) {
 		vk.msaaActive = qtrue;
 	}
 
@@ -8418,11 +8419,11 @@ void vk_begin_main_render_pass( void )
 				// Non-MSAA: [scene, depth, bloom?, swapchain]
 				render_pass_begin_info.clearValueCount = useBloom ? 4 : 3;
 			}
-		} else if ( vk.fboActive && vk.msaaActive ) {
-			// MSAA mode: 3 attachments (resolve, depth, MSAA color)
+		} else if ( vk.msaaActive ) {
+			// MSAA mode, FBO or direct: 3 attachments (resolve, depth, MSAA color)
 			render_pass_begin_info.clearValueCount = 3;
 		} else {
-			// Non-MSAA mode or direct mode: 2 attachments (color, depth)
+			// Non-MSAA mode: 2 attachments (color, depth)
 			render_pass_begin_info.clearValueCount = 2;
 		}
 		render_pass_begin_info.pClearValues = clear_values;
@@ -10503,7 +10504,7 @@ qboolean vk_create_xr_framebuffers( void )
 {
 	VkXrResources *xr = &vk.xr;
 	VkFramebufferCreateInfo fbInfo;
-	VkImageView attachments[3];  // Color and depth for direct mode (no MSAA), plus the density map when foveated
+	VkImageView attachments[4];  // color, depth, MSAA color, density map
 	uint32_t i;
 
 	// FBO mode: main XR framebuffers not needed (gamma framebuffers are used instead)
@@ -10526,9 +10527,8 @@ qboolean vk_create_xr_framebuffers( void )
 			return qfalse;
 		}
 
-		// Direct mode: use main render pass for XR framebuffers
-		// Note: MSAA is not supported in direct mode (XR swapchains can't be MSAA)
-		ri.Printf( PRINT_ALL, "Creating XR framebuffers (direct mode)\n" );
+		// Direct mode: with MSAA the swapchain is the resolve target, color and depth are transient.
+		ri.Printf( PRINT_ALL, "Creating XR framebuffers (direct mode%s)\n", vk.msaaActive ? ", MSAA" : "" );
 
 		// Create XR swapchain framebuffers
 		for ( i = 0; i < xr->colorInfo->imageCount && i < MAX_SWAPCHAIN_IMAGES; i++ ) {
@@ -10538,27 +10538,43 @@ qboolean vk_create_xr_framebuffers( void )
 				return qfalse;
 			}
 
+			VkImageView swapchainView;
+			uint32_t attachmentCount;
+
 			// Use UNORM views to bypass automatic sRGB conversion (shader handles gamma)
 			if ( xr->gammaViews[i] != VK_NULL_HANDLE ) {
-				attachments[0] = xr->gammaViews[i];  // UNORM view: no auto sRGB conversion
+				swapchainView = xr->gammaViews[i];  // UNORM view: no auto sRGB conversion
 			} else {
-				attachments[0] = xr->colorViews[i];  // Fallback to sRGB view
+				swapchainView = xr->colorViews[i];  // Fallback to sRGB view
 			}
-			attachments[1] = xr->depthViews[i];  // 2-layer depth array
 
 			Com_Memset( &fbInfo, 0, sizeof( fbInfo ) );
 			fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 			fbInfo.renderPass = vk.render_pass.main;
-			fbInfo.attachmentCount = 2;
-			if ( xr->foveationActive ) {
-				attachments[2] = xr->foveationViews[i];  // matches the render pass's last attachment
-				fbInfo.attachmentCount = 3;
-			}
 			fbInfo.pAttachments = attachments;
 			fbInfo.width = xr->width;
 			fbInfo.height = xr->height;
 			// Multiview render pass: layers must be 1 (view mask handles stereo)
 			fbInfo.layers = 1;
+
+			attachments[0] = swapchainView;
+			if ( vk.msaaActive ) {
+				// [resolve target, transient MSAA depth, transient MSAA color]
+				if ( vk.transient.depth_view == VK_NULL_HANDLE || vk.transient.msaa_view == VK_NULL_HANDLE ) {
+					ri.Printf( PRINT_WARNING, "vk_create_xr_framebuffers: transient MSAA images not created\n" );
+					return qfalse;
+				}
+				attachments[1] = vk.transient.depth_view;
+				attachments[2] = vk.transient.msaa_view;
+				attachmentCount = 3;
+			} else {
+				attachments[1] = xr->depthViews[i];  // 2-layer depth array
+				attachmentCount = 2;
+			}
+			if ( xr->foveationActive ) {
+				attachments[attachmentCount++] = xr->foveationViews[i];  // matches the render pass's last attachment
+			}
+			fbInfo.attachmentCount = attachmentCount;
 
 			VK_CHECK( qvkCreateFramebuffer( vk.device, &fbInfo, NULL, &xr->framebuffers[i] ) );
 			SET_OBJECT_NAME( xr->framebuffers[i], va( "XR framebuffer %d (direct)", i ),
@@ -11371,14 +11387,15 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 
 	Com_Memset( attachments, 0, sizeof( attachments ) );
 
-	if ( vk.fboActive && vk.msaaActive ) {
+	if ( vk.msaaActive ) {
 		// MSAA mode: 3 attachments
-		// [0] = resolve target (1x samples, where MSAA is resolved to)
+		// [0] = resolve target (1x samples): the FBO color image, or in direct mode the swapchain
 		// [1] = depth (multisampled)
 		// [2] = MSAA color (render target)
+		// [1] and [2] are transient: nothing reads the multisampled data after the resolve
 
 		// Attachment 0: Resolve target (non-MSAA)
-		attachments[0].format = vk.color_format;
+		attachments[0].format = mainColorFormat;
 		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // Will be resolved into
 		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -11748,6 +11765,12 @@ qboolean vk_init_xr_resources( void )
 
 	if ( !vk_create_xr_image_views() ) {
 		return qfalse;
+	}
+
+	// Direct mode MSAA transient images were sized before the swapchain dimensions were known
+	if ( !vk.fboActive && vk.msaaActive ) {
+		vk_destroy_subpass_transient_images();
+		vk_create_subpass_transient_images();
 	}
 
 	if ( !vk_create_xr_framebuffers() ) {
