@@ -5367,6 +5367,14 @@ void vk_shutdown( refShutdownCode_t code )
 	qvkDestroyShaderModule(vk.device, vk.modules.gamma_vs, NULL);
 	qvkDestroyShaderModule(vk.device, vk.modules.gamma_fs, NULL);
 
+	qvkDestroyShaderModule(vk.device, vk.modules.bloom_extract_subpass_fs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.final_composite_subpass_fs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.gamma_subpass_fs, NULL);
+	// Null when the density map feature is absent, which vkDestroyShaderModule allows
+	qvkDestroyShaderModule(vk.device, vk.modules.bloom_extract_fov_fs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.final_composite_fov_fs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.gamma_fov_fs, NULL);
+
 __cleanup:
 	if ( vk.device != VK_NULL_HANDLE ) {
 		if ( !vk.xrMode ) {
