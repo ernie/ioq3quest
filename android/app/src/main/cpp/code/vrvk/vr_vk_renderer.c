@@ -29,6 +29,7 @@
 #include "vr_vk.h"
 #include "vr_vk_debug.h"
 #include "vr_vk_foveation.h"
+#include "vr_vk_loading.h"
 #include "vr_vk_swapchains.h"
 
 extern vr_clientinfo_t vr;
@@ -282,6 +283,7 @@ void VR_InitRenderer(VR_Engine* engine)
 
 void VR_DestroyRenderer(VR_Engine* engine)
 {
+	VR_Loading_Shutdown();
 	VR_VK_DestroySwapchains(&engine->appState.Renderer.Swapchains);
 
 	// Destroy VIEW reference space
@@ -302,6 +304,7 @@ void VR_ProcessFrame(VR_Engine* engine)
 	if (VR_VK_Swapchains_HandlePendingRecreate(engine)) {
 		// Swapchains were recreated: renderer's XR resources (VkImageViews, VkFramebuffers)
 		// will be recreated when VR_Renderer_BeginFrame calls re.BeginXRFrame
+		VR_Loading_SetColorReleased(qfalse);
 	}
 
 	const XrBool32 needsRecenter = VR_ProcessXrEvents(&engine->appState);
@@ -413,14 +416,7 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 	// matches weapon_zoomed (set during IN_VRUpdateControllers)
 	VR_UpdatePerFrameState();
 
-	// Acquire XR swapchains
-	VR_VK_Swapchains_Acquire(swapchains, &swapchainColorIndex, &swapchainDepthIndex);
-
-	// Begin XR rendering: sets up Vulkan command buffer and binds XR framebuffers
-	re.BeginXRFrame(swapchainColorIndex, swapchainDepthIndex);
-
-	// Clear framebuffer
-	VR_ClearFrameBuffer(swapchains->color.width, swapchains->color.height);
+	// Images are acquired only when something is about to be drawn, so the compositor shows the last released image, not a held one
 
 	// Set renderer params
 	// Near plane must be in Quake units to match our view matrices
@@ -503,6 +499,14 @@ void VR_Renderer_BeginFrame(VR_Engine* engine, XrBool32 needsRecenter)
 
 void VR_Renderer_EndFrame(VR_Engine* engine)
 {
+	// A load is over once the main thread submits gameplay (or menu) frames again
+	if (VR_Loading_Active() && (clc.state == CA_ACTIVE || clc.state == CA_CINEMATIC ||
+		clc.state == CA_DISCONNECTED || clc.state == CA_UNINITIALIZED ||
+		!VR_Gameplay_ShouldRenderInVirtualScreen()))
+	{
+		VR_Loading_Stop();
+	}
+
 	// If frame was already finished (e.g., by VR_Renderer_FinishFrame during vid_restart),
 	// don't try to end it again
 	if (!frameStarted) {
@@ -570,8 +574,12 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 	// when XR swapchains are involved. The old working version (commit 23f6c08d) did not
 	// wait for fences before releasing swapchains.
 
-	// Release swapchains
-	VR_VK_Swapchains_Release(swapchains);
+	// Release the images this frame drew into, if it drew at all
+	if (swapchains->color.acquired)
+	{
+		VR_VK_Swapchains_Release(swapchains);
+		VR_Loading_SetColorReleased(qtrue);
+	}
 
 	// Submit layers to OpenXR
 	VR_EndFrame(
@@ -582,6 +590,7 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 		engine->appState.CurrentSpace,
 		engine->appState.ViewSpace,
 		lastPredictedDisplayTime);
+	VR_Loading_NoteMainFrame();
 
 	frameStarted = qfalse;
 }
@@ -589,6 +598,8 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 
 void VR_Renderer_FinishFrame(VR_Engine* engine)
 {
+	VR_Loading_Stop();
+
 	// If no frame is in progress, nothing to do
 	if (!frameStarted) {
 		return;
@@ -723,10 +734,42 @@ XrDesktopViewConfiguration VR_GetDesktopViewConfiguration(void)
 }
 
 
+void VR_Renderer_MapLoadBegin(VR_Engine* engine)
+{
+	VR_Loading_Begin(engine);
+}
+
+
+void VR_Renderer_LoadingPump(VR_Engine* engine)
+{
+	VR_Loading_Pump(engine);
+}
+
+
+void VR_Renderer_BeginRender(VR_Engine* engine)
+{
+	VR_SwapchainInfos* swapchains = engine ? engine->appState.Renderer.Swapchains : NULL;
+
+	if (!frameStarted || !swapchains || swapchains->color.acquired)
+	{
+		return;
+	}
+
+	VR_VK_Swapchains_Acquire(swapchains, &swapchainColorIndex, &swapchainDepthIndex);
+
+	// Begin XR rendering: sets up Vulkan command buffer and binds XR framebuffers
+	re.BeginXRFrame(swapchainColorIndex, swapchainDepthIndex);
+
+	// Clear framebuffer
+	VR_ClearFrameBuffer(swapchains->color.width, swapchains->color.height);
+}
+
+
 qboolean VR_Renderer_SubmitLoadingFrame(VR_Engine* engine)
 {
-	// Only submit frames during loading states
-	if (clc.state != CA_LOADING && clc.state != CA_PRIMED)
+	// Only submit frames during loading states, plus the connect screen a local map load draws
+	if (clc.state != CA_LOADING && clc.state != CA_PRIMED &&
+		!(VR_Loading_Active() && clc.state >= CA_CONNECTING && clc.state <= CA_PRIMED))
 	{
 		return qfalse;
 	}

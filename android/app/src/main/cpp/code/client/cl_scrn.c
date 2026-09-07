@@ -832,6 +832,8 @@ void SCR_UpdateScreen( void ) {
 		// if running in stereo, we need to draw the frame twice
 		if ( cls.glconfig.stereoEnabled || in_anaglyphMode) {
 #endif
+		VR_Renderer_BeginRender( VR_GetEngine() );
+
 		if (qfalse) {
 			SCR_DrawScreenField( STEREO_LEFT );
 			SCR_DrawScreenField( STEREO_RIGHT );

@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../vrcommon/vr_base.h"
 #include "../vrcommon/vr_clientinfo.h"
 #include "../vrcommon/vr_input.h"
+#include "../vrcommon/vr_renderer.h"
 
 #ifdef USE_MUMBLE
 #include "libmumblelink.h"
@@ -1014,6 +1015,9 @@ void CL_InitCGame( void ) {
 		Com_Error( ERR_DROP, "VM_Create on cgame failed" );
 	}
 	clc.state = CA_LOADING;
+
+	// remote loads block in CG_INIT too; a local load began this in CL_MapLoading
+	VR_Renderer_MapLoadBegin( VR_GetEngine() );
 
 	// vid_restart tears down and re-inits the VR state with the derived mode
 	// flags zeroed, and no input frame runs before cgame draws its loading

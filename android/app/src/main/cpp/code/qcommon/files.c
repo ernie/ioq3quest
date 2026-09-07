@@ -3160,6 +3160,9 @@ void FS_AddGameDirectory( const char *path, const char *dir ) {
 			// store the game name for downloading
 			Q_strncpyz(pak->pakGamename, dir, sizeof(pak->pakGamename));
 
+			// a large pak library takes a while to scan on a map change
+			CL_LoadingPump();
+
 			pak->index = fs_packCount;
 			fs_packCount++;
 

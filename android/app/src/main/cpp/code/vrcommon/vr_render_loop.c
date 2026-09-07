@@ -227,9 +227,58 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 	projection_layer.views = projection_layer_elements;
 
 	// Cylinder layer for virtual screen (menus, spectator mode)
-	// Uses the main color swapchain rendered content, displayed on a curved surface
 	XrCompositionLayerCylinderKHR cylinder_layer = {};
-	if (useVirtualScreen && viewCount > 0)
+	qboolean haveScreen = useVirtualScreen &&
+		VR_BuildVirtualScreenLayer(swapchains, views, viewCount, worldSpace, &cylinder_layer);
+
+	// Submit layers
+	const XrCompositionLayerBaseHeader* layers[2];
+	int layerCount = 0;
+
+	if (haveScreen)
+	{
+		// Virtual screen mode: use cylinder layer instead of projection
+		layers[layerCount++] = (const XrCompositionLayerBaseHeader*)&cylinder_layer;
+	}
+	else
+	{
+		// Normal gameplay: use projection layer
+		if (viewCount > 0)
+		{
+			layers[layerCount++] = (const XrCompositionLayerBaseHeader*)&projection_layer;
+		}
+	}
+	XrFrameEndInfo endFrameInfo = {};
+	endFrameInfo.type = XR_TYPE_FRAME_END_INFO;
+	endFrameInfo.displayTime = predictedDisplayTime;
+	endFrameInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+	endFrameInfo.layerCount = layerCount;
+	endFrameInfo.layers = layerCount > 0 ? layers : NULL;
+
+	XR_CHECK(
+		xrEndFrame(session, &endFrameInfo),
+		"Failed to end XR frame");
+}
+
+/*
+==================
+VR_BuildVirtualScreenLayer
+
+The cylinder showing the color swapchain's centered 4:3 crop as the virtual screen
+(menus, loading, spectating). The loading pump submits it too, showing the last
+released image.
+==================
+*/
+qboolean VR_BuildVirtualScreenLayer(VR_SwapchainInfos* swapchains, const XrView* views, uint32_t viewCount, XrSpace worldSpace, XrCompositionLayerCylinderKHR* out)
+{
+	extern vr_clientinfo_t vr;
+	extern cvar_t* vr_screenCurvature;
+	XrCompositionLayerCylinderKHR cylinder_layer = {};
+
+	if (viewCount == 0)
+	{
+		return qfalse;
+	}
 	{
 		int width = swapchains->color.width;
 		int height = swapchains->color.height;
@@ -323,32 +372,6 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 		cylinder_layer.aspectRatio = (float)srcWidth / (float)srcHeight;
 	}
 
-	// Submit layers
-	const XrCompositionLayerBaseHeader* layers[2];
-	int layerCount = 0;
-
-	if (useVirtualScreen && viewCount > 0)
-	{
-		// Virtual screen mode: use cylinder layer instead of projection
-		layers[layerCount++] = (const XrCompositionLayerBaseHeader*)&cylinder_layer;
-	}
-	else
-	{
-		// Normal gameplay: use projection layer
-		if (viewCount > 0)
-		{
-			layers[layerCount++] = (const XrCompositionLayerBaseHeader*)&projection_layer;
-		}
-	}
-
-	XrFrameEndInfo endFrameInfo = {};
-	endFrameInfo.type = XR_TYPE_FRAME_END_INFO;
-	endFrameInfo.displayTime = predictedDisplayTime;
-	endFrameInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-	endFrameInfo.layerCount = layerCount;
-	endFrameInfo.layers = layerCount > 0 ? layers : NULL;
-
-	XR_CHECK(
-		xrEndFrame(session, &endFrameInfo),
-		"Failed to end XR frame");
+	*out = cylinder_layer;
+	return qtrue;
 }
