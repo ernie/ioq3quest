@@ -502,7 +502,6 @@ typedef struct {
 		VkRenderPass main;        // Multiview main rendering (clears framebuffer)
 		VkRenderPass screenmap;
 		VkRenderPass gamma;       // Multiview gamma correction (if r_fbo)
-		VkRenderPass bloom_extract; // Multiview bloom extraction
 		VkRenderPass blur[VK_NUM_BLOOM_PASSES*2]; // Multiview blur passes
 		VkRenderPass post_bloom;  // Multiview post-bloom blend
 		VkRenderPass hudBuffer;       // HUD buffer (1280x960, single layer, color+depth), color loaded
@@ -590,7 +589,6 @@ typedef struct {
 
 	struct {
 		VkFramebuffer blur[VK_NUM_BLOOM_PASSES*2];
-		VkFramebuffer bloom_extract;
 		VkFramebuffer post_bloom;   // For post-bloom blend pass (color-only, no depth)
 		VkFramebuffer main;         // FBO mode: single framebuffer for main rendering
 		VkFramebuffer gamma[MAX_SWAPCHAIN_IMAGES];
@@ -736,10 +734,7 @@ typedef struct {
 	uint32_t dot_total_pipeline;  // flare probe, no depth test: counts all fragments
 
 	// Post-processing pipelines (multiview)
-	VkPipeline gamma_pipeline;           // Legacy (unused)
-	VkPipeline bloom_extract_pipeline;   // Legacy (unused)
 	VkPipeline blur_pipeline[VK_NUM_BLOOM_PASSES*2];  // Blur passes for bloom
-	VkPipeline bloom_blend_pipeline;     // Legacy (unused)
 
 	// Post pass pipelines, in its subpass 0
 	VkPipeline final_composite_subpass_pipeline;  // composite + gamma

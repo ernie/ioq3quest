@@ -1304,9 +1304,6 @@ static void vk_create_render_passes( void )
 		attachments[0].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.bloom_extract ) );
-		SET_OBJECT_NAME( vk.render_pass.bloom_extract, "render pass - XR bloom extract (multiview)", VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
-
 		for ( i = 0; i < ARRAY_LEN( vk.render_pass.blur ); i++ ) {
 			VK_CHECK( qvkCreateRenderPass( device, &desc, NULL, &vk.render_pass.blur[i] ) );
 			SET_OBJECT_NAME( vk.render_pass.blur[i], va( "render pass - XR blur %i (multiview)", i ), VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT );
@@ -3631,9 +3628,6 @@ static void vk_create_framebuffers( void )
 		VK_CHECK( qvkCreateFramebuffer( vk.device, &desc, NULL, &vk.framebuffers.screenmap ) );
 		SET_OBJECT_NAME( vk.framebuffers.screenmap, "framebuffer - screenmap", VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT );
 
-		// Note: Legacy vk.framebuffers.bloom_extract removed -
-		// subpass optimization does bloom extraction in subpass 1 of main_with_bloom
-
 		// Blur framebuffers: still used by vk_finish_subpass_post() to prepare bloom for next frame
 		if ( r_bloom->integer )
 		{
@@ -3782,11 +3776,6 @@ static void vk_destroy_framebuffers( void ) {
 			qvkDestroyFramebuffer( vk.device, vk.framebuffers.gamma[n], NULL );
 			vk.framebuffers.gamma[n] = VK_NULL_HANDLE;
 		}
-	}
-
-	if ( vk.framebuffers.bloom_extract != VK_NULL_HANDLE ) {
-		qvkDestroyFramebuffer( vk.device, vk.framebuffers.bloom_extract, NULL );
-		vk.framebuffers.bloom_extract = VK_NULL_HANDLE;
 	}
 
 	if ( vk.framebuffers.screenmap != VK_NULL_HANDLE ) {
@@ -4479,11 +4468,6 @@ static void vk_destroy_render_passes( void )
 		vk.render_pass.gamma = VK_NULL_HANDLE;
 	}
 
-	if ( vk.render_pass.bloom_extract != VK_NULL_HANDLE ) {
-		qvkDestroyRenderPass( vk.device, vk.render_pass.bloom_extract, NULL );
-		vk.render_pass.bloom_extract = VK_NULL_HANDLE;
-	}
-
 	for ( i = 0; i < ARRAY_LEN( vk.render_pass.blur ); i++ ) {
 		if ( vk.render_pass.blur[i] != VK_NULL_HANDLE ) {
 			qvkDestroyRenderPass( vk.device, vk.render_pass.blur[i], NULL );
@@ -4547,21 +4531,6 @@ static void vk_destroy_pipelines( qboolean resetCounter )
 	if ( resetCounter ) {
 		Com_Memset( &vk.pipelines, 0, sizeof( vk.pipelines ) );
 		vk.pipelines_count = 0;
-	}
-
-	if ( vk.gamma_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.gamma_pipeline, NULL );
-		vk.gamma_pipeline = VK_NULL_HANDLE;
-	}
-
-	if ( vk.bloom_extract_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.bloom_extract_pipeline, NULL );
-		vk.bloom_extract_pipeline = VK_NULL_HANDLE;
-	}
-
-	if ( vk.bloom_blend_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.bloom_blend_pipeline, NULL );
-		vk.bloom_blend_pipeline = VK_NULL_HANDLE;
 	}
 
 	for ( i = 0; i < ARRAY_LEN( vk.blur_pipeline ); i++ ) {
@@ -5590,26 +5559,11 @@ static void vk_destroy_post_process_pipelines( void )
 {
 	uint32_t i;
 
-	if ( vk.gamma_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.gamma_pipeline, NULL );
-		vk.gamma_pipeline = VK_NULL_HANDLE;
-	}
-
-	if ( vk.bloom_extract_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.bloom_extract_pipeline, NULL );
-		vk.bloom_extract_pipeline = VK_NULL_HANDLE;
-	}
-
 	for ( i = 0; i < VK_NUM_BLOOM_PASSES * 2; i++ ) {
 		if ( vk.blur_pipeline[i] != VK_NULL_HANDLE ) {
 			qvkDestroyPipeline( vk.device, vk.blur_pipeline[i], NULL );
 			vk.blur_pipeline[i] = VK_NULL_HANDLE;
 		}
-	}
-
-	if ( vk.bloom_blend_pipeline != VK_NULL_HANDLE ) {
-		qvkDestroyPipeline( vk.device, vk.bloom_blend_pipeline, NULL );
-		vk.bloom_blend_pipeline = VK_NULL_HANDLE;
 	}
 
 	// Post pass pipelines
