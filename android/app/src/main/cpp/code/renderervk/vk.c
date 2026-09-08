@@ -6889,6 +6889,28 @@ static void get_scissor_rect(VkRect2D *r) {
 	}
 }
 
+
+// vk.renderWidth/Height name the bound target; glConfig is only the eye buffer.
+static void clamp_clear_rect_to_render_area( VkRect2D *r ) {
+
+	if ( r->offset.x < 0 )
+		r->offset.x = 0;
+	if ( r->offset.y < 0 )
+		r->offset.y = 0;
+
+	// Extents are unsigned, so test the offset before subtracting
+	if ( r->offset.x >= vk.renderWidth )
+		r->extent.width = 0;
+	else if ( r->offset.x + r->extent.width > vk.renderWidth )
+		r->extent.width = vk.renderWidth - r->offset.x;
+
+	if ( r->offset.y >= vk.renderHeight )
+		r->extent.height = 0;
+	else if ( r->offset.y + r->extent.height > vk.renderHeight )
+		r->extent.height = vk.renderHeight - r->offset.y;
+}
+
+
 void vk_clear_color( const vec4_t color ) {
 
 	VkClearAttachment attachment;
@@ -6913,6 +6935,7 @@ void vk_clear_color( const vec4_t color ) {
 	attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 	get_scissor_rect( &clear_rect.rect );
+	clamp_clear_rect_to_render_area( &clear_rect.rect );
 	clear_rect.baseArrayLayer = 0;
 	// In multiview render passes, layerCount must be 1: the view mask
 	// automatically broadcasts the clear to all active views (both eyes)
@@ -6951,6 +6974,7 @@ void vk_clear_depth( qboolean clear_stencil ) {
 	}
 
 	get_scissor_rect( &clear_rect[0].rect );
+	clamp_clear_rect_to_render_area( &clear_rect[0].rect );
 	clear_rect[0].baseArrayLayer = 0;
 	// In multiview render passes, layerCount must be 1: the view mask
 	// automatically broadcasts the clear to all active views (both eyes)
