@@ -467,7 +467,7 @@ static void RB_TestFlare( flare_t *f ) {
 		}
 
 		if ( clip[3] > 0.0f ) {
-			const int b = vk_fdm_block_at( i, clip[0] / clip[3], clip[1] / clip[3] );
+			const int b = vk_foveation_block_at( i, clip[0] / clip[3], clip[1] / clip[3] );
 			if ( b > block ) {
 				block = b;
 			}

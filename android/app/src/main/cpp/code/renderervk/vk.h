@@ -322,7 +322,7 @@ void vk_destroy_authored_fdm( void );
 void vk_update_authored_fdm( uint32_t index );
 void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] );
 // Fragment edge in pixels (1..16) the frame's density map asks for at an ndc position in one eye; 1 when not foveating
-int vk_fdm_block_at( int eye, float ndcX, float ndcY );
+int vk_foveation_block_at( int eye, float ndcX, float ndcY );
 
 qboolean vk_alloc_vbo( const byte *vbo_data, int vbo_size );
 void vk_update_mvp( const float *m );

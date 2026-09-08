@@ -9321,7 +9321,7 @@ static qboolean vk_create_authored_fdm( uint32_t imageCount, uint32_t layers, ui
 
 /*
 ==================
-vk_fdm_level_shape
+vk_foveation_level_shape
 
 Falloff per strength, in fractions of the eye buffer's half diagonal: full density out
 to inner, down to floor by outer, floor to the corner. outer stays well under 1: the lens
@@ -9329,7 +9329,7 @@ shows a rounded region, so past roughly 0.68 is a corner nobody sees. Fixed keep
 sharp region because the eyes rove while the head stays put.
 ==================
 */
-static void vk_fdm_level_shape( int level, qboolean eyeTracked, float *inner, float *outer, float *floorDensity )
+static void vk_foveation_level_shape( int level, qboolean eyeTracked, float *inner, float *outer, float *floorDensity )
 {
 	if ( eyeTracked ) {
 		// The floor stays near a quarter: an eighth shades one fragment per 8x8 block, which crawls this close to the fovea
@@ -9352,13 +9352,13 @@ static void vk_fdm_level_shape( int level, qboolean eyeTracked, float *inner, fl
 
 /*
 ==================
-vk_build_fdm_template
+vk_build_foveation_template
 
 The falloff once, centered, at twice the map's size; each eye's map is a window of it,
 so moving the island is a copy, not a rebuild.
 ==================
 */
-static void vk_build_fdm_template( uint32_t width, uint32_t height, int level, qboolean eyeTracked )
+static void vk_build_foveation_template( uint32_t width, uint32_t height, int level, qboolean eyeTracked )
 {
 	const uint32_t tw = width * 2, th = height * 2;
 	const float aspect = ( height > 0 ) ? (float)width / (float)height : 1.0f;
@@ -9375,7 +9375,7 @@ static void vk_build_fdm_template( uint32_t width, uint32_t height, int level, q
 		return;
 	}
 
-	vk_fdm_level_shape( level, eyeTracked, &inner, &outer, &floorDensity );
+	vk_foveation_level_shape( level, eyeTracked, &inner, &outer, &floorDensity );
 	span = outer - inner;
 	if ( span < 0.01f ) {
 		span = 0.01f;
@@ -9444,7 +9444,7 @@ static void vk_write_fdm_texels( byte *dst, uint32_t width, uint32_t height, uin
 	const uint32_t tw = width * 2;
 	uint32_t layer, y;
 
-	vk_build_fdm_template( width, height, level, eyeTracked );
+	vk_build_foveation_template( width, height, level, eyeTracked );
 	if ( vk.xr.fdmTemplate == NULL ) {
 		return;
 	}
@@ -9588,7 +9588,7 @@ void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2]
 
 /*
 ==================
-vk_fdm_block_at
+vk_foveation_block_at
 
 Fragment edge in pixels the map asks for at a normalized device position. The device
 rounds density to a fragment area no larger than 1/density, so the largest power of two
@@ -9596,7 +9596,7 @@ that fits. Reads the staging copy, which holds what the frame's map holds; the r
 own map cannot be read here and counts as its coarsest.
 ==================
 */
-int vk_fdm_block_at( int eye, float ndcX, float ndcY )
+int vk_foveation_block_at( int eye, float ndcX, float ndcY )
 {
 	const byte *map;
 	float fx, fy, density;
