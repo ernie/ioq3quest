@@ -335,19 +335,9 @@ add_custom_command(
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} frag_tx2_cl_fog
 
     # ========================================================
-    # SUBPASS OPTIMIZATION SHADERS
-    # These use input attachments for tile-local scene color reads
+    # POST PASS SHADERS
     # Requires --target-env vulkan1.1 for multiview gl_ViewIndex
     # ========================================================
-    COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/bloom_extract_subpass.frag
-    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} bloom_extract_subpass_frag_spv
-    COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/final_composite_subpass.frag
-    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} final_composite_subpass_frag_spv
-    COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/gamma_subpass.frag
-    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} gamma_subpass_frag_spv
-    # Foveated split variants: the stored scene is sampled instead of read as an input attachment
-    COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/bloom_extract_fov.frag
-    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} bloom_extract_fov_frag_spv
     COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/final_composite_fov.frag
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} final_composite_fov_frag_spv
     COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/gamma_fov.frag

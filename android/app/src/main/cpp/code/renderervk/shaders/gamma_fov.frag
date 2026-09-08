@@ -1,6 +1,5 @@
 #version 450
 #extension GL_EXT_multiview : enable
-#extension GL_EXT_fragment_invocation_density : enable
 
 // gamma_subpass.frag for the foveated split: Adreno displaces input attachment reads under
 // a density map, so sample the stored scene instead.
@@ -19,30 +18,8 @@ layout(constant_id = 7) const int ditherMode = 0; // 0 - disabled, 1 - ordered
 layout(constant_id = 8) const int depth_r = 255;
 layout(constant_id = 9) const int depth_g = 255;
 layout(constant_id = 10) const int depth_b = 255;
-layout(constant_id = 11) const int foveationDebug = 0; // r_foveationDebug
-
 const vec3 lumCoeff = { 0.2126, 0.7152, 0.0722 };
 
-// r_foveationDebug tint by fragment area
-vec3 foveationTint(vec3 color) {
-	// square fragments cover 1, 4, 16 or 64 pixels; the in-between bands catch non-square ones
-	int area = gl_FragSizeEXT.x * gl_FragSizeEXT.y;
-	vec3 tint;
-	if (area <= 1) {
-		return color;
-	} else if (area <= 2) {
-		tint = vec3(0.2, 0.6, 1.0);   // 2x1, half the pixels
-	} else if (area <= 4) {
-		tint = vec3(0.2, 1.0, 0.2);   // 2x2, a quarter
-	} else if (area <= 8) {
-		tint = vec3(1.0, 1.0, 0.2);   // 4x2, an eighth
-	} else if (area <= 16) {
-		tint = vec3(1.0, 0.5, 0.1);   // 4x4, a sixteenth
-	} else {
-		tint = vec3(1.0, 0.2, 0.2);   // 8x8 or coarser
-	}
-	return mix(color, tint, 0.4);
-}
 
 // Dithering functions (from gamma.frag)
 const int bayerSize = 8;
@@ -103,7 +80,4 @@ void main() {
 		out_color.rgb = dither(out_color.rgb);
 	}
 
-	if ( foveationDebug != 0 ) {
-		out_color.rgb = foveationTint(out_color.rgb);
-	}
 }

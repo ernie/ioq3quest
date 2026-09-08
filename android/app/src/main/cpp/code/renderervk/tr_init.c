@@ -99,7 +99,6 @@ cvar_t	*r_vbo;
 cvar_t	*r_fbo;
 cvar_t	*r_hdr;
 cvar_t	*r_bloom;
-cvar_t	*r_foveationDebug;
 cvar_t	*r_bloom_threshold;
 cvar_t	*r_bloom_intensity;
 cvar_t	*r_bloom_threshold_mode;
@@ -1796,9 +1795,6 @@ static void R_Register( void )
 	r_hdr = ri.Cvar_Get( "r_hdr", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	ri.Cvar_SetDescription(r_hdr, "Enables high dynamic range frame buffer texture format.\n -1: 4-bit, for testing purposes, heavy color banding, might not work on all systems\n  0: 8 bit, default, moderate color banding with multi-stage shaders\n  1: 16 bit, enhanced blending precision, no color banding, might decrease performance on AMD / Intel GPUs\n" );
 	r_bloom = ri.Cvar_Get( "r_bloom", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
-	r_foveationDebug = ri.Cvar_Get( "r_foveationDebug", "0", CVAR_LATCH );
-	ri.Cvar_CheckRange( r_foveationDebug, 0, 1, qtrue );
-	ri.Cvar_SetDescription( r_foveationDebug, "Show the foveation density map as a tint: green half, yellow quarter, orange eighth, red lower density.\nRequires " S_COLOR_CYAN "\\r_fbo 1" S_COLOR_WHITE " and an active " S_COLOR_CYAN "\\vr_foveation" S_COLOR_WHITE " level." );
 	ri.Cvar_CheckRange( r_bloom, 0, 1, qtrue );
 	ri.Cvar_SetDescription(r_bloom, "Enables bloom post-processing effect.");
 

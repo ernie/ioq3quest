@@ -1,21 +1,14 @@
 #version 450
 #extension GL_EXT_multiview : enable
-#extension GL_EXT_fragment_invocation_density : enable
 
 // final_composite_subpass.frag for the foveated split: the stored scene is sampled (see gamma_fov.frag)
 layout(set = 0, binding = 0) uniform sampler2DArray sceneColor;
 
-// Bloom blur samplers (from previous frame's blur passes)
-// All 4 blur textures in one descriptor set with different bindings (Quest 2 compat)
+// Bloom blur samplers, blurred from this frame's scene; all 4 in one descriptor set (Quest 2 compat)
 layout(set = 1, binding = 0) uniform sampler2DArray texture0;  // blur 0
 layout(set = 1, binding = 1) uniform sampler2DArray texture1;  // blur 1
 layout(set = 1, binding = 2) uniform sampler2DArray texture2;  // blur 2
 layout(set = 1, binding = 3) uniform sampler2DArray texture3;  // blur 3
-
-// Push constant for bloom UV reprojection (compensates for head rotation)
-layout(push_constant) uniform PushConstants {
-	vec2 bloomUvOffset;  // UV offset to reproject bloom (x=yaw, y=pitch)
-} pc;
 
 layout(location = 0) in vec2 frag_tex_coord;
 layout(location = 1) in flat uint view_index;
@@ -31,30 +24,8 @@ layout(constant_id = 7) const int ditherMode = 0; // 0 - disabled, 1 - ordered
 layout(constant_id = 8) const int depth_r = 255;
 layout(constant_id = 9) const int depth_g = 255;
 layout(constant_id = 10) const int depth_b = 255;
-layout(constant_id = 11) const int foveationDebug = 0; // r_foveationDebug
-
 const vec3 lumCoeff = { 0.2126, 0.7152, 0.0722 };
 
-// r_foveationDebug tint by fragment area (same bands as gamma_fov.frag)
-vec3 foveationTint(vec3 color) {
-	// square fragments cover 1, 4, 16 or 64 pixels; the in-between bands catch non-square ones
-	int area = gl_FragSizeEXT.x * gl_FragSizeEXT.y;
-	vec3 tint;
-	if (area <= 1) {
-		return color;
-	} else if (area <= 2) {
-		tint = vec3(0.2, 0.6, 1.0);   // 2x1, half the pixels
-	} else if (area <= 4) {
-		tint = vec3(0.2, 1.0, 0.2);   // 2x2, a quarter
-	} else if (area <= 8) {
-		tint = vec3(1.0, 1.0, 0.2);   // 4x2, an eighth
-	} else if (area <= 16) {
-		tint = vec3(1.0, 0.5, 0.1);   // 4x4, a sixteenth
-	} else {
-		tint = vec3(1.0, 0.2, 0.2);   // 8x8 or coarser
-	}
-	return mix(color, tint, 0.4);
-}
 
 // Dithering functions (from gamma.frag)
 const int bayerSize = 8;
@@ -90,13 +61,11 @@ void main() {
 	float layer = float(view_index);
 	vec3 base = texture(sceneColor, vec3(frag_tex_coord, layer)).rgb;
 
-	// Add bloom from samplers (previous frame's blur result)
-	// Apply UV offset to reproject bloom to compensate for head rotation
-	vec2 bloom_uv = frag_tex_coord + pc.bloomUvOffset;
-	vec3 bloom = texture(texture0, vec3(bloom_uv, layer)).rgb
-	           + texture(texture1, vec3(bloom_uv, layer)).rgb
-	           + texture(texture2, vec3(bloom_uv, layer)).rgb
-	           + texture(texture3, vec3(bloom_uv, layer)).rgb;
+	// Blur is from this frame's scene, so it lines up and needs no reprojection
+	vec3 bloom = texture(texture0, vec3(frag_tex_coord, layer)).rgb
+	           + texture(texture1, vec3(frag_tex_coord, layer)).rgb
+	           + texture(texture2, vec3(frag_tex_coord, layer)).rgb
+	           + texture(texture3, vec3(frag_tex_coord, layer)).rgb;
 
 	// Additive blend with bloom factor (same as blend.frag)
 	base = base + bloom * bloomFactor;
@@ -127,7 +96,4 @@ void main() {
 		out_color.rgb = dither(out_color.rgb);
 	}
 
-	if ( foveationDebug != 0 ) {
-		out_color.rgb = foveationTint(out_color.rgb);
-	}
 }

@@ -518,19 +518,13 @@ typedef struct {
 	VkDescriptorSetLayout set_layout_sampler;	// combined image sampler
 	VkDescriptorSetLayout set_layout_uniform;	// dynamic uniform buffer
 	VkDescriptorSetLayout set_layout_storage;	// feedback buffer
-	VkDescriptorSetLayout set_layout_input_attachment;	// subpass input attachment
 	VkDescriptorSetLayout set_layout_4samplers;			// 4 combined image samplers for bloom blur
 
 	VkPipelineLayout pipeline_layout;			// main shaders (64-byte mono modelview push; per-eye projection in set 0 binding 1)
 	VkPipelineLayout pipeline_layout_storage;	// flare test shader layout
 	VkPipelineLayout pipeline_layout_post_process;	// post-processing
 	VkPipelineLayout pipeline_layout_blend;		// post-processing
-	// Subpass optimization pipeline layouts
-	VkPipelineLayout pipeline_layout_subpass_extract;   // For bloom extract subpass
-	VkPipelineLayout pipeline_layout_subpass_composite; // For final composite subpass
-	VkPipelineLayout pipeline_layout_subpass_gamma;     // For gamma-only subpass
-	// Foveated split: set 0 is a combined image sampler on the stored scene
-	VkPipelineLayout pipeline_layout_fov_extract;
+	// Post pass: set 0 is a combined image sampler on the stored scene
 	VkPipelineLayout pipeline_layout_fov_composite;
 	VkPipelineLayout pipeline_layout_fov_gamma;
 
@@ -571,9 +565,7 @@ typedef struct {
 		VkImageView resolve_view;
 		VkDeviceMemory resolve_memory;
 
-		// Input attachment descriptor for reading scene color in subpasses
-		VkDescriptorSet input_descriptor;
-		// Foveated split: combined image sampler on the stored scene instead
+		// Combined image sampler on the stored scene
 		VkDescriptorSet scene_descriptor;
 	} transient;
 
@@ -683,12 +675,7 @@ typedef struct {
 		VkShaderModule dot_fs;      // flare probe counters (dot.frag)
 		VkShaderModule dot_vs;      // flare probe patch (dot.vert)
 
-		// Subpass optimization shaders (input attachments)
-		VkShaderModule bloom_extract_subpass_fs;
-		VkShaderModule final_composite_subpass_fs;
-		VkShaderModule gamma_subpass_fs;
-		// Foveated split: same passes, but the stored scene is sampled
-		VkShaderModule bloom_extract_fov_fs;
+		// Post pass shaders; they sample the stored scene
 		VkShaderModule final_composite_fov_fs;
 		VkShaderModule gamma_fov_fs;
 	} modules;
@@ -754,10 +741,9 @@ typedef struct {
 	VkPipeline blur_pipeline[VK_NUM_BLOOM_PASSES*2];  // Blur passes for bloom
 	VkPipeline bloom_blend_pipeline;     // Legacy (unused)
 
-	// Subpass optimization pipelines (tile-local post-processing)
-	VkPipeline bloom_extract_subpass_pipeline;    // Subpass 1: bloom extract
-	VkPipeline final_composite_subpass_pipeline;  // Subpass 2: composite+gamma
-	VkPipeline gamma_subpass_pipeline;            // Subpass 1: gamma only (no bloom)
+	// Post pass pipelines, in its subpass 0
+	VkPipeline final_composite_subpass_pipeline;  // composite + gamma
+	VkPipeline gamma_subpass_pipeline;            // gamma only (no bloom)
 
 	uint32_t frame_count;
 	qboolean active;
@@ -819,10 +805,6 @@ typedef struct {
 	// These flags indicate that vk_finish_subpass_post() was already called.
 	qboolean subpassPostDone;			// true when vk_finish_subpass_post() already ran this frame
 	qboolean inPostBloom2DSubpass;		// true when in post-bloom/post-gamma 2D subpass
-	// Foveated split: under a density map Adreno returns input-attachment reads
-	// of the scene displaced in the periphery, so the scene gets its own foveated
-	// pass into a stored image and the post subpasses sample it in an unfoveated second pass
-	qboolean fovSplit;
 
 	uint32_t screenMapWidth;
 	uint32_t screenMapHeight;
