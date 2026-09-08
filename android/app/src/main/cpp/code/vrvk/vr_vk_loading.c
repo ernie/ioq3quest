@@ -26,7 +26,6 @@ extern uint32_t viewCount;
 #define PUMP_INTERVAL_MS 25
 
 static int loadingActive;
-static int colorReleased;
 static int64_t lastFrameMs;
 static int pumpFailures;
 
@@ -42,12 +41,6 @@ static int64_t NowMs( void )
 void VR_Loading_NoteMainFrame( void )
 {
 	lastFrameMs = NowMs();
-}
-
-
-void VR_Loading_SetColorReleased( qboolean released )
-{
-	colorReleased = released ? 1 : 0;
 }
 
 
@@ -75,7 +68,7 @@ static XrResult SubmitLoadingLayers( VR_Engine *engine, XrTime displayTime )
 	XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO, NULL };
 	VR_SwapchainInfos *swapchains = engine->appState.Renderer.Swapchains;
 
-	if ( colorReleased && swapchains &&
+	if ( swapchains && swapchains->color.everReleased &&
 		VR_BuildVirtualScreenLayer( swapchains, views, viewCount, engine->appState.CurrentSpace, &screen ) )
 	{
 		layers[layerCount++] = (const XrCompositionLayerBaseHeader *)&screen;
@@ -183,5 +176,4 @@ void VR_Loading_Stop( void )
 void VR_Loading_Shutdown( void )
 {
 	VR_Loading_Stop();
-	colorReleased = 0;
 }

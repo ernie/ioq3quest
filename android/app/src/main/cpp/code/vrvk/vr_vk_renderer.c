@@ -301,11 +301,7 @@ void VR_ProcessFrame(VR_Engine* engine)
 	// This MUST happen before xrBeginFrame (called in VR_Renderer_BeginFrame).
 	// If swapchains were marked for recreation during the previous frame's Com_Frame,
 	// we destroy and recreate them here at a safe point outside the XR frame lifecycle.
-	if (VR_VK_Swapchains_HandlePendingRecreate(engine)) {
-		// Swapchains were recreated: renderer's XR resources (VkImageViews, VkFramebuffers)
-		// will be recreated when VR_Renderer_BeginFrame calls re.BeginXRFrame
-		VR_Loading_SetColorReleased(qfalse);
-	}
+	VR_VK_Swapchains_HandlePendingRecreate(engine);
 
 	const XrBool32 needsRecenter = VR_ProcessXrEvents(&engine->appState);
 
@@ -578,7 +574,6 @@ void VR_Renderer_EndFrame(VR_Engine* engine)
 	if (swapchains->color.acquired)
 	{
 		VR_VK_Swapchains_Release(swapchains);
-		VR_Loading_SetColorReleased(qtrue);
 	}
 
 	// Submit layers to OpenXR

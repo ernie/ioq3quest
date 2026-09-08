@@ -235,7 +235,12 @@ void VR_EndFrame(XrSession session, VR_SwapchainInfos* swapchains, XrView* views
 	const XrCompositionLayerBaseHeader* layers[2];
 	int layerCount = 0;
 
-	if (haveScreen)
+	// Both layers name the color swapchain, and naming one that has never released an image is rejected
+	if (!swapchains->color.everReleased)
+	{
+		layerCount = 0;
+	}
+	else if (haveScreen)
 	{
 		// Virtual screen mode: use cylinder layer instead of projection
 		layers[layerCount++] = (const XrCompositionLayerBaseHeader*)&cylinder_layer;

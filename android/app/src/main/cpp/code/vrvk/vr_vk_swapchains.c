@@ -315,6 +315,8 @@ void VR_VK_Swapchains_Release(VR_SwapchainInfos* swapchains)
 	// Mark swapchains as released
 	swapchains->color.acquired = XR_FALSE;
 	swapchains->depth.acquired = XR_FALSE;
+	swapchains->color.everReleased = XR_TRUE;
+	swapchains->depth.everReleased = XR_TRUE;
 }
 
 //

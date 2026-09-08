@@ -40,6 +40,8 @@ typedef struct VR_VK_SwapchainInfo_s {
 	uint32_t imageCount;         // Number of swapchain images
 	VkImage* images;             // VkImage handles from XR (NOT owned: from OpenXR)
 	XrBool32 acquired;           // Whether an image is currently acquired (for cleanup)
+	// A layer may only name a swapchain that has released an image; tracked here so it cannot outlive a vid_restart
+	XrBool32 everReleased;
 	VkImage* foveationImages;    // NOT owned: from OpenXR; NULL without foveation
 	uint32_t foveationWidth;
 	uint32_t foveationHeight;
