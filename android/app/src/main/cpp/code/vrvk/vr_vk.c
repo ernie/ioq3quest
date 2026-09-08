@@ -150,6 +150,7 @@ const VR_VulkanDeviceInfo* VR_Vulkan_GetDeviceInfo(void)
     info.queue = vr_vk.queue;
     info.queueFamilyIndex = vr_vk.queueFamilyIndex;
     info.fragmentDensityMap = vr_vk.fragmentDensityMapSupported && vr_vk.fragmentDensityMapNonSubsampled;
+    info.debugMarkers = vr_vk.debugMarkersEnabled;
     info.minDensityTexelWidth = vr_vk.minFragmentDensityTexelSize.width;
     info.minDensityTexelHeight = vr_vk.minFragmentDensityTexelSize.height;
     return &info;
@@ -250,55 +251,29 @@ XrResult VR_Vulkan_CreateInstance(XrInstance xrInstance, XrSystemId systemId)
     const char* extensions[4];  // Max possible extensions
     uint32_t extensionCount = 0;
 
-#ifdef _DEBUG
-    // Check if validation layer is available before requesting debug extension
-    uint32_t layerCount = 0;
-    vkEnumerateInstanceLayerProperties(&layerCount, NULL);
-
-    qboolean validationLayerAvailable = qfalse;
-    if (layerCount > 0) {
-        VkLayerProperties* layers = (VkLayerProperties*)malloc(layerCount * sizeof(VkLayerProperties));
-        vkEnumerateInstanceLayerProperties(&layerCount, layers);
-
-        for (uint32_t i = 0; i < layerCount; i++) {
-            if (strcmp(layers[i].layerName, "VK_LAYER_KHRONOS_validation") == 0) {
-                validationLayerAvailable = qtrue;
-                break;
-            }
-        }
-        free(layers);
-    }
-
-    if (validationLayerAvailable) {
-        // Check if debug report extension is available
-        uint32_t extCount = 0;
-        vkEnumerateInstanceExtensionProperties(NULL, &extCount, NULL);
-
-        qboolean debugReportAvailable = qfalse;
-        if (extCount > 0) {
-            VkExtensionProperties* exts = (VkExtensionProperties*)malloc(extCount * sizeof(VkExtensionProperties));
-            vkEnumerateInstanceExtensionProperties(NULL, &extCount, exts);
-
-            for (uint32_t i = 0; i < extCount; i++) {
-                if (strcmp(exts[i].extensionName, VK_EXT_DEBUG_REPORT_EXTENSION_NAME) == 0) {
+    // VK_EXT_debug_marker requires this; the loader implements it, so its presence does not prove a layer is loaded
+    qboolean debugReportAvailable = qfalse;
+    {
+        uint32_t availCount = 0;
+        vkEnumerateInstanceExtensionProperties(NULL, &availCount, NULL);
+        if (availCount > 0) {
+            VkExtensionProperties* avail = (VkExtensionProperties*)malloc(
+                availCount * sizeof(VkExtensionProperties));
+            vkEnumerateInstanceExtensionProperties(NULL, &availCount, avail);
+            for (uint32_t i = 0; i < availCount; i++) {
+                if (strcmp(avail[i].extensionName, VK_EXT_DEBUG_REPORT_EXTENSION_NAME) == 0) {
                     debugReportAvailable = qtrue;
                     break;
                 }
             }
-            free(exts);
+            free(avail);
         }
-
         if (debugReportAvailable) {
             extensions[extensionCount++] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
-            fprintf(stdout, "[VRVK] Validation layer and debug report extension available\n");
-        } else {
-            validationLayerAvailable = qfalse;  // Can't use layer without debug extension
-            fprintf(stdout, "[VRVK] Validation layer found but VK_EXT_debug_report not available\n");
         }
-    } else {
-        fprintf(stdout, "[VRVK] Validation layer not available (install libVkLayer_khronos_validation.so in jniLibs)\n");
+        fprintf(stdout, "[VRVK] VK_EXT_debug_report %s\n",
+            debugReportAvailable ? "available, object names enabled" : "absent, objects will print as bare handles");
     }
-#endif
 
     // Application info
     VkApplicationInfo appInfo = {
@@ -323,16 +298,7 @@ XrResult VR_Vulkan_CreateInstance(XrInstance xrInstance, XrSystemId systemId)
         .ppEnabledExtensionNames = extensionCount > 0 ? extensions : NULL,
     };
 
-#ifdef _DEBUG
-    // Enable validation layer only if available
-    const char* validationLayers[] = {
-        "VK_LAYER_KHRONOS_validation",
-    };
-    if (validationLayerAvailable) {
-        instanceCreateInfo.enabledLayerCount = 1;
-        instanceCreateInfo.ppEnabledLayerNames = validationLayers;
-    }
-#endif
+    // No layer named here: the loader injects one via gpu_debug_layers, and naming it would request it twice
 
     // Use xrCreateVulkanInstanceKHR to create instance with XR-required extensions
     // The runtime adds any extensions it needs automatically
@@ -530,7 +496,7 @@ static void VR_Vulkan_QueryFragmentDensityMap(void)
 XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
 {
     // Our required extensions: runtime will add any additional ones via xrCreateVulkanDeviceKHR
-    const char* extensions[3] = {
+    const char* extensions[4] = {
         VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering
     };
     uint32_t extensionCount = 1;
@@ -542,6 +508,14 @@ XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
             extensions[extensionCount++] = VK_EXT_FRAGMENT_DENSITY_MAP_2_EXTENSION_NAME;
         }
     }
+
+    // Only a loaded validation layer offers this; it is what makes SET_OBJECT_NAME reach the layer
+    vr_vk.debugMarkersEnabled = VR_Vulkan_HasDeviceExtension(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
+    if (vr_vk.debugMarkersEnabled) {
+        extensions[extensionCount++] = VK_EXT_DEBUG_MARKER_EXTENSION_NAME;
+    }
+    __android_log_print(ANDROID_LOG_INFO, "VRVK", "VK_EXT_debug_marker %s",
+        vr_vk.debugMarkersEnabled ? "enabled, Vulkan objects will be named" : "absent, objects print as bare handles");
 
     // Find graphics queue family
     uint32_t queueFamilyCount = 0;

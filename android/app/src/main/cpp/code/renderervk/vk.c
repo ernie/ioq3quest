@@ -1870,6 +1870,8 @@ static void init_vulkan_library( void )
 	vk_instance = xrDevice->instance;
 	// VK_EXT_fragment_density_map is enabled by the VR layer when the runtime can foveate
 	vk.xr.fdmSupported = xrDevice->fragmentDensityMap ? qtrue : qfalse;
+	// Gates the vkDebugMarkerSetObjectNameEXT load below, and so every SET_OBJECT_NAME
+	vk.debugMarkers = xrDevice->debugMarkers ? qtrue : qfalse;
 	// The density map is written at the finest granularity the hardware reads
 	vk.xr.fdmTexelWidth = xrDevice->minDensityTexelWidth;
 	vk.xr.fdmTexelHeight = xrDevice->minDensityTexelHeight;
@@ -2637,7 +2639,7 @@ static void vk_create_geometry_buffers( VkDeviceSize size )
 		SET_OBJECT_NAME( vk.tess[i].vertex_buffer, va( "geometry buffer %i", i ), VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT );
 	}
 
-	SET_OBJECT_NAME( vk.geometry_buffer_memory, "geometry buffer memory", VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT );
+	SET_OBJECT_NAME( vk.geometry_buffer_memory, "geometry buffer memory", VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT );
 
 	vk.geometry_buffer_size = vb_memory_requirements.size;
 
@@ -3582,7 +3584,7 @@ static void vk_create_attachments( void )
 	// Note: Legacy vk.depth_image and vk.color_image debug names removed -
 	// subpass optimization uses vk.transient.* images which are named in create_subpass_transient_images()
 
-	SET_OBJECT_NAME( vk.capture.image, "capture image", VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT );
+	SET_OBJECT_NAME( vk.capture.image, "capture image", VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT );
 	SET_OBJECT_NAME( vk.capture.image_view, "capture image view", VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT );
 
 	for ( i = 0; i < ARRAY_LEN( vk.bloom_image ); i++ )
@@ -4066,7 +4068,7 @@ void vk_initialize( void )
 	Q_strncpyz( glConfig.vendor_string, vendor_name, sizeof( glConfig.vendor_string ) );
 	Q_strncpyz( glConfig.renderer_string, renderer_name( &props ), sizeof( glConfig.renderer_string ) );
 
-	SET_OBJECT_NAME( (intptr_t)vk.device, glConfig.renderer_string, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT );
+	// The device goes unnamed: the layer's debug_marker tracker never holds a VkDevice, so naming it always reports 01492.
 
 	// do early texture mode setup to avoid redundant descriptor updates in GL_SetDefaultState()
 	vk.samplers.filter_min = -1;

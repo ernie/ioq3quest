@@ -44,6 +44,8 @@ typedef struct {
     VR_Bool fragmentDensityMap2Supported;      // Meta recommends VK_EXT_fragment_density_map2 alongside
     VkExtent2D minFragmentDensityTexelSize;
     VkExtent2D maxFragmentDensityTexelSize;
+
+    VR_Bool debugMarkersEnabled;   // VK_EXT_debug_marker was available and was requested
 } VR_VulkanState;
 
 // Global VR Vulkan state
@@ -79,6 +81,7 @@ typedef struct {
     VkQueue queue;
     uint32_t queueFamilyIndex;
     VR_Bool fragmentDensityMap;    // enabled, with non-subsampled images allowed in its render passes
+    VR_Bool debugMarkers;          // VK_EXT_debug_marker enabled, so object names reach a loaded layer
     // Finest granularity the hardware reads; the renderer writes its map on this grid
     uint32_t minDensityTexelWidth;
     uint32_t minDensityTexelHeight;
