@@ -120,11 +120,21 @@ jobs:
           name: trinity-standalone-apk
           path: dist
 
+      - name: Fetch OpenAL Soft source
+        run: |
+          # LGPL-2 wants corresponding source offered from the same place as the
+          # binary. Version tracks libs/android/arm64-v8a/BUILD_LIBOPENAL.md.
+          OPENAL_VERSION=1.25.1
+          curl -sSfL \
+            -o "dist/openal-soft-${OPENAL_VERSION}-source.tar.gz" \
+            "https://github.com/kcat/openal-soft/archive/refs/tags/${OPENAL_VERSION}.tar.gz"
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/trinity-standalone-*.apk
             dist/trinity-quest-*.apk
+            dist/openal-soft-*-source.tar.gz
           generate_release_notes: true
           draft: ${{ github.event_name == 'workflow_dispatch' }}

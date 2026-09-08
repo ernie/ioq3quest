@@ -162,6 +162,9 @@ public class MainActivity extends SDLActivity // implements KeyEvent.Callback
 		// Copy CA certificate bundle for HTTPS
 		copy_asset(HOME_DIR, "cacert.pem", true);
 
+		// Licenses belong where a user can read them, not only inside the APK
+		copy_asset(HOME_DIR, "THIRD-PARTY-NOTICES.txt", true);
+
 		// Copy the command line params file and autoexec
 		copy_asset(HOME_DIR, "commandline.txt", false);
 		copy_asset(HOME_DIR + "/baseq3", "autoexec.cfg", false);

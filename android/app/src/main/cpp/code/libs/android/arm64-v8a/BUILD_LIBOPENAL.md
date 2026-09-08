@@ -13,9 +13,13 @@ with OpenSL backend support for Android audio.
 
 **OpenAL-Soft**: https://github.com/kcat/openal-soft
 
-Clone with:
+The bundled `libopenal.so` reports version **1.25.1**, read from the binary with
+`strings -a libopenal.so | grep -oE "1\.[0-9]+\.[0-9]+"`. The LGPL requires the corresponding source
+to be identifiable, so build from that tag rather than from the branch tip, and update this line if
+the bundled binary is ever rebuilt.
+
 ```
-git clone https://github.com/kcat/openal-soft.git
+git clone --branch 1.25.1 --depth 1 https://github.com/kcat/openal-soft.git
 ```
 
 ## Build Script (Windows, Git Bash)
