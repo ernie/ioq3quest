@@ -5433,9 +5433,11 @@ void vk_create_post_process_pipelines( void )
 				vk.blur_pipeline[i] = VK_NULL_HANDLE;
 			}
 
-			// Calculate blur pass dimensions
-			blur_width = width / ( 2 << ( i / 2 ) );
-			blur_height = height / ( 2 << ( i / 2 ) );
+			// Sized from the bloom images this renders into, which vk_create_attachments and
+			// the blur framebuffers both derive from gls.capture, as does vk.renderWidth at
+			// record time. width/height above is the swapchain, for the passes that target it.
+			blur_width = gls.captureWidth / ( 2 << ( i / 2 ) );
+			blur_height = gls.captureHeight / ( 2 << ( i / 2 ) );
 
 			// Offsets are in source texels; the horizontal passes downsample 2:1
 			blur_spec_data[0] = 1.2f / (float)( blur_width * 2 );  // x offset
