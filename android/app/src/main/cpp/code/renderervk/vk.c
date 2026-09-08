@@ -2462,7 +2462,7 @@ static void vk_update_bloom_blur_combined_descriptor( void )
 	VkWriteDescriptorSet writes[4];
 	Vk_Sampler_Def samplerDef;
 	int i;
-	int blurResultIndices[4] = { 1, 3, 5, 7 };  // Blur outputs at odd indices
+	int blurResultIndices[4] = { 2, 4, 6, 8 };  // vertical outputs; framebuffers.blur[n] targets view[n+1]
 
 	if ( vk.bloom_blur_combined_descriptor == VK_NULL_HANDLE )
 		return;
@@ -5433,9 +5433,10 @@ void vk_create_post_process_pipelines( void )
 			blur_width = width / ( 2 << ( i / 2 ) );
 			blur_height = height / ( 2 << ( i / 2 ) );
 
-			blur_spec_data[0] = 1.2f / (float)blur_width;   // x offset
-			blur_spec_data[1] = 1.2f / (float)blur_height;  // y offset
-			blur_spec_data[2] = 1.0f;                        // intensity
+			// Offsets are in source texels; the horizontal passes downsample 2:1
+			blur_spec_data[0] = 1.2f / (float)( blur_width * 2 );  // x offset
+			blur_spec_data[1] = 1.2f / (float)blur_height;         // y offset
+			blur_spec_data[2] = 1.0f;                              // intensity
 
 			if ( horizontal ) {
 				blur_spec_data[1] = 0.0f;
