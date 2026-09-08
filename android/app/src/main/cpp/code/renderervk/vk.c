@@ -632,9 +632,9 @@ static void vk_create_fov_split_render_passes( void )
 
 	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
@@ -1372,7 +1372,7 @@ static void vk_create_render_passes( void )
 	 * HUD Buffer Render Pass (1280x960, single layer, no multiview)
 	 * Used for HUD mode 1 (in-world sprite). Depth needed for 3D models.
 	 * [0] Color: LOAD preserves content (1-frame latency)
-	 * [1] Depth: CLEAR each frame, STORE ensures clear completes
+	 * [1] Depth: CLEAR each frame, never stored
 	 */
 	{
 		VkRenderPassMultiviewCreateInfo hudMultiviewInfo;
@@ -1420,11 +1420,12 @@ static void vk_create_render_passes( void )
 		// Dependencies: wait for sampling before load, complete writes before sampling
 		hudDeps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 		hudDeps[0].dstSubpass = 0;
-		hudDeps[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		hudDeps[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		hudDeps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		hudDeps[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		hudDeps[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		hudDeps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		hudDeps[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+		// Not by-region: the source is the previous frame sampling this texture anywhere in the eye framebuffer
+		hudDeps[0].dependencyFlags = 0;
 
 		hudDeps[1].srcSubpass = 0;
 		hudDeps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
@@ -1435,7 +1436,8 @@ static void vk_create_render_passes( void )
 		hudDeps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
 		                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		hudDeps[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		hudDeps[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+		// Mirrored: the frame command buffer samples it at arbitrary coordinates
+		hudDeps[1].dependencyFlags = 0;
 
 		Com_Memset( &desc, 0, sizeof( desc ) );
 		desc.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
