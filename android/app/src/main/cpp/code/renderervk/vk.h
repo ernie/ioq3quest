@@ -458,7 +458,7 @@ typedef struct {
 	int fdmLevel;                   // VR_FOVEATION_OFF..HIGH, or EYE_TRACKED
 	qboolean fdmEyeTracked;
 	float fdmCenter[2][2];          // per eye, normalized device coordinates
-	float fdmAppliedCenter[MAX_SWAPCHAIN_IMAGES][2][2];
+	uint32_t fdmAppliedOffset[MAX_SWAPCHAIN_IMAGES][2][2];  // window origin per eye, in map texels
 	int fdmAppliedLevel[MAX_SWAPCHAIN_IMAGES];
 	qboolean fdmAppliedEyeTracked[MAX_SWAPCHAIN_IMAGES];
 

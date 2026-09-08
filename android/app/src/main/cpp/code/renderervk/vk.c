@@ -9411,6 +9411,33 @@ static void vk_build_fdm_template( uint32_t width, uint32_t height, int level, q
 	vk.xr.fdmTemplateLevel = eyeTracked ? -level : level;
 }
 
+/*
+==================
+vk_fdm_window_offset
+
+Where one eye's window starts in the template, in map texels. The map only ever
+changes when this does, so the upload test compares these rather than the centers
+that produce them.
+==================
+*/
+static void vk_fdm_window_offset( const float center[2], uint32_t width, uint32_t height,
+	uint32_t *ox, uint32_t *oy )
+{
+	// Centers arrive with y already running down the image, so neither axis flips; fixed sits on the optical axis
+	float cx = ( center[0] + 1.0f ) * 0.5f;
+	float cy = ( center[1] + 1.0f ) * 0.5f;
+
+	if ( cx < 0.0f ) cx = 0.0f; else if ( cx > 1.0f ) cx = 1.0f;
+	if ( cy < 0.0f ) cy = 0.0f; else if ( cy > 1.0f ) cy = 1.0f;
+
+	// Sliding the window the other way moves the island toward the gaze
+	*ox = (uint32_t)( ( 1.0f - cx ) * (float)width + 0.5f );
+	*oy = (uint32_t)( ( 1.0f - cy ) * (float)height + 0.5f );
+	if ( *ox > width ) *ox = width;
+	if ( *oy > height ) *oy = height;
+}
+
+
 static void vk_write_fdm_texels( byte *dst, uint32_t width, uint32_t height, uint32_t layers,
 	int level, qboolean eyeTracked, const float center[2][2] )
 {
@@ -9423,20 +9450,10 @@ static void vk_write_fdm_texels( byte *dst, uint32_t width, uint32_t height, uin
 	}
 
 	for ( layer = 0; layer < layers; layer++ ) {
-		// Centers arrive with y already running down the image, so neither axis flips; fixed sits on the optical axis
 		const int eye = ( layer < 2 ) ? (int)layer : 0;
-		float cx = ( center[eye][0] + 1.0f ) * 0.5f;
-		float cy = ( center[eye][1] + 1.0f ) * 0.5f;
 		uint32_t ox, oy;
 
-		if ( cx < 0.0f ) cx = 0.0f; else if ( cx > 1.0f ) cx = 1.0f;
-		if ( cy < 0.0f ) cy = 0.0f; else if ( cy > 1.0f ) cy = 1.0f;
-
-		// Sliding the window the other way moves the island toward the gaze
-		ox = (uint32_t)( ( 1.0f - cx ) * (float)width + 0.5f );
-		oy = (uint32_t)( ( 1.0f - cy ) * (float)height + 0.5f );
-		if ( ox > width ) ox = width;
-		if ( oy > height ) oy = height;
+		vk_fdm_window_offset( center[eye], width, height, &ox, &oy );
 
 		for ( y = 0; y < height; y++ ) {
 			Com_Memcpy( dst, vk.xr.fdmTemplate + ( (size_t)( oy + y ) * tw + ox ) * 2, (size_t)width * 2 );
@@ -9477,14 +9494,20 @@ void vk_update_authored_fdm( uint32_t index )
 	changed = ( !vk.xr.fdmUploaded[index] ||
 		vk.xr.fdmAppliedLevel[index] != level ||
 		vk.xr.fdmAppliedEyeTracked[index] != eyeTracked );
-	if ( !changed ) {
-		// Only a moved center redraws; this also catches fixed foveation settling onto the optical axis
-		const float dx0 = vk.xr.fdmAppliedCenter[index][0][0] - vk.xr.fdmCenter[0][0];
-		const float dy0 = vk.xr.fdmAppliedCenter[index][0][1] - vk.xr.fdmCenter[0][1];
-		const float dx1 = vk.xr.fdmAppliedCenter[index][1][0] - vk.xr.fdmCenter[1][0];
-		const float dy1 = vk.xr.fdmAppliedCenter[index][1][1] - vk.xr.fdmCenter[1][1];
-		if ( fabsf( dx0 ) > 0.01f || fabsf( dy0 ) > 0.01f || fabsf( dx1 ) > 0.01f || fabsf( dy1 ) > 0.01f ) {
-			changed = qtrue;
+	if ( !changed && level > 0 ) {
+		// Same level and mode, so only a window that has moved a whole texel can change a byte.
+		// Level 0 is all ones and reads no center at all.
+		const uint32_t eyes = ( vk.xr.fdmLayers < 2 ) ? 1 : 2;
+		uint32_t eye;
+
+		for ( eye = 0; eye < eyes; eye++ ) {
+			uint32_t ox, oy;
+
+			vk_fdm_window_offset( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight, &ox, &oy );
+			if ( vk.xr.fdmAppliedOffset[index][eye][0] != ox || vk.xr.fdmAppliedOffset[index][eye][1] != oy ) {
+				changed = qtrue;
+				break;
+			}
 		}
 	}
 	if ( !changed ) {
@@ -9538,7 +9561,13 @@ void vk_update_authored_fdm( uint32_t index )
 	vk.xr.fdmUploaded[index] = qtrue;
 	vk.xr.fdmAppliedLevel[index] = level;
 	vk.xr.fdmAppliedEyeTracked[index] = eyeTracked;
-	Com_Memcpy( vk.xr.fdmAppliedCenter[index], vk.xr.fdmCenter, sizeof( vk.xr.fdmCenter ) );
+	{
+		uint32_t eye;
+		for ( eye = 0; eye < 2; eye++ ) {
+			vk_fdm_window_offset( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight,
+				&vk.xr.fdmAppliedOffset[index][eye][0], &vk.xr.fdmAppliedOffset[index][eye][1] );
+		}
+	}
 }
 
 /*
