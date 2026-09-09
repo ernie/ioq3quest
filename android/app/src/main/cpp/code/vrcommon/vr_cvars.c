@@ -78,7 +78,7 @@ void VR_InitCvars( void )
 	// none / fixed / eyetracked: what the runtime can do, decided at instance creation, for the UI
 	vr_foveationCaps = Cvar_Get ("vr_foveationCaps", "none", CVAR_ROM);
 	Cvar_Set2( "vr_foveationCaps", VR_FoveationCapsString(), qtrue );
-	vr_superSampling = Cvar_Get ("vr_superSampling", "1.0", CVAR_ARCHIVE | CVAR_LATCH);
+	vr_superSampling = Cvar_Get ("vr_superSampling", "1.0", CVAR_ARCHIVE);
 	vr_weaponScope = Cvar_Get ("vr_weaponScope", "1", CVAR_ARCHIVE);
 	vr_6dof = Cvar_Get ("vr_6dof", "1", CVAR_ARCHIVE); // 0 - fake 6DoF in SP, 1 - true 6DoF in SP (requires enhanced physics coefficients)
 	vr_rollWhenHit = Cvar_Get ("vr_rollWhenHit", "0", CVAR_ARCHIVE);

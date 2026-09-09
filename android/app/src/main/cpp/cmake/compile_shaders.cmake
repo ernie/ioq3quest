@@ -343,6 +343,10 @@ add_custom_command(
     COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/gamma_fov.frag
     COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} gamma_fov_frag_spv
 
+    # r_foveationDebug: reads gl_FragSizeEXT, so it belongs to the foveated scene pass
+    COMMAND ${GLSLANG_VALIDATOR} -S frag -V --target-env vulkan1.1 -o ${SPIRV_DIR}/temp.spv ${SHADER_DIR}/foveationdebug.frag
+    COMMAND ${BIN2HEX_EXECUTABLE} ${SPIRV_DIR}/temp.spv +${SHADER_DATA_OUTPUT} foveationdebug_frag_spv
+
     # Cleanup temp file and copy to source tree atomically
     COMMAND ${CMAKE_COMMAND} -E remove -f ${SPIRV_DIR}/temp.spv
     COMMAND ${CMAKE_COMMAND} -E copy ${SHADER_DATA_OUTPUT} ${SHADER_DATA_FINAL}

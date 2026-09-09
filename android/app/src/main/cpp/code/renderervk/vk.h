@@ -320,7 +320,7 @@ qboolean vk_init_xr_resources( void );  // Initialize XR swapchain resources
 // Foveated rendering: the density map the renderer writes itself
 void vk_destroy_authored_fdm( void );
 void vk_update_authored_fdm( uint32_t index );
-void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] );
+void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2], const float fovTan[2][4] );
 // Fragment edge in pixels (1..16) the frame's density map asks for at an ndc position in one eye; 1 when not foveating
 int vk_foveation_block_at( int eye, float ndcX, float ndcY );
 
@@ -437,6 +437,9 @@ typedef struct {
 
 	// Runtime density maps (XR_FB_foveation_vulkan), one per color image, attached to the scene passes when foveationActive
 	qboolean fdmSupported;          // device feature enabled by the VR layer
+	qboolean tileProperties;        // VK_QCOM_tile_properties enabled, so the bin size can be read back
+	uint32_t tileWidth;             // bin the tiler chose for the scene pass, 0 until the query answers
+	uint32_t tileHeight;
 	qboolean foveationActive;
 	VkImageView foveationViews[MAX_SWAPCHAIN_IMAGES];
 	uint32_t foveationWidth;
@@ -458,13 +461,10 @@ typedef struct {
 	int fdmLevel;                   // VR_FOVEATION_OFF..HIGH, or EYE_TRACKED
 	qboolean fdmEyeTracked;
 	float fdmCenter[2][2];          // per eye, normalized device coordinates
-	uint32_t fdmAppliedOffset[MAX_SWAPCHAIN_IMAGES][2][2];  // window origin per eye, in map texels
+	float fdmFovTan[2][4];          // per eye frustum: tangents of left, right, up, down
+	uint32_t fdmAppliedOffset[MAX_SWAPCHAIN_IMAGES][2][2];  // gaze per eye, quantized to map texels
 	int fdmAppliedLevel[MAX_SWAPCHAIN_IMAGES];
 	qboolean fdmAppliedEyeTracked[MAX_SWAPCHAIN_IMAGES];
-
-	// Falloff built once at twice the map size; a window at the gaze is copied out each frame
-	byte *fdmTemplate;
-	int fdmTemplateLevel;
 
 	// Initialization state
 	qboolean initialized;
@@ -666,6 +666,7 @@ typedef struct {
 
 		VkShaderModule gamma_fs;
 		VkShaderModule gamma_vs;
+		VkShaderModule foveationdebug_fs;  // reuses gamma_vs for its fullscreen quad
 
 		VkShaderModule fog_fs;  // multiview
 		VkShaderModule fog_vs;  // multiview
@@ -739,6 +740,9 @@ typedef struct {
 	// Post pass pipelines, in its subpass 0
 	VkPipeline final_composite_subpass_pipeline;  // composite + gamma
 	VkPipeline gamma_subpass_pipeline;            // gamma only (no bloom)
+	// Built lazily on first r_foveationDebug enable, against whichever pass carries the map
+	VkPipeline foveation_debug_pipeline;
+	VkRenderPass foveation_debug_pass;
 
 	uint32_t frame_count;
 	qboolean active;

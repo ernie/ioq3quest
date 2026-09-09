@@ -153,6 +153,7 @@ const VR_VulkanDeviceInfo* VR_Vulkan_GetDeviceInfo(void)
     info.debugMarkers = vr_vk.debugMarkersEnabled;
     info.minDensityTexelWidth = vr_vk.minFragmentDensityTexelSize.width;
     info.minDensityTexelHeight = vr_vk.minFragmentDensityTexelSize.height;
+    info.tileProperties = vr_vk.tilePropertiesSupported;
     return &info;
 }
 
@@ -465,6 +466,7 @@ static void VR_Vulkan_QueryFragmentDensityMap(void)
 
     vr_vk.fragmentDensityMapSupported = VR_FALSE;
     vr_vk.fragmentDensityMapNonSubsampled = VR_FALSE;
+    vr_vk.tilePropertiesSupported = VR_FALSE;
 
     if (!engine || !engine->foveation.ExtFoveation || !engine->foveation.ExtVulkan) {
         fprintf(stdout, "  Fragment density map: not needed (runtime has no foveation)\n");
@@ -496,7 +498,7 @@ static void VR_Vulkan_QueryFragmentDensityMap(void)
 XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
 {
     // Our required extensions: runtime will add any additional ones via xrCreateVulkanDeviceKHR
-    const char* extensions[4] = {
+    const char* extensions[5] = {
         VK_KHR_MULTIVIEW_EXTENSION_NAME,  // For stereo rendering
     };
     uint32_t extensionCount = 1;
@@ -507,6 +509,13 @@ XrResult VR_Vulkan_CreateDevice(XrInstance xrInstance, XrSystemId systemId)
         if (vr_vk.fragmentDensityMap2Supported) {
             extensions[extensionCount++] = VK_EXT_FRAGMENT_DENSITY_MAP_2_EXTENSION_NAME;
         }
+        // The tiler applies a density map one bin at a time, so the bin is the map's real resolution
+        vr_vk.tilePropertiesSupported = VR_Vulkan_HasDeviceExtension(VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME);
+        if (vr_vk.tilePropertiesSupported) {
+            extensions[extensionCount++] = VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME;
+        }
+        VR_VK_LogLine(va("Tile properties: %s",
+            vr_vk.tilePropertiesSupported ? "supported, bin size will be reported" : "absent"));
     }
 
     // Only a loaded validation layer offers this; it is what makes SET_OBJECT_NAME reach the layer

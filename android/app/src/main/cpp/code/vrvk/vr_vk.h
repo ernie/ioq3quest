@@ -45,6 +45,8 @@ typedef struct {
     VkExtent2D minFragmentDensityTexelSize;
     VkExtent2D maxFragmentDensityTexelSize;
 
+    VR_Bool tilePropertiesSupported;  // VK_QCOM_tile_properties was available, so the bin size can be read back
+
     VR_Bool debugMarkersEnabled;   // VK_EXT_debug_marker was available and was requested
 } VR_VulkanState;
 
@@ -85,6 +87,7 @@ typedef struct {
     // Finest granularity the hardware reads; the renderer writes its map on this grid
     uint32_t minDensityTexelWidth;
     uint32_t minDensityTexelHeight;
+    VR_Bool tileProperties;        // VK_QCOM_tile_properties enabled, so the bin size can be read back
 } VR_VulkanDeviceInfo;
 
 // Get the XR-created Vulkan device for renderer initialization

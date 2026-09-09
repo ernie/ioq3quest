@@ -99,6 +99,7 @@ cvar_t	*r_vbo;
 cvar_t	*r_fbo;
 cvar_t	*r_hdr;
 cvar_t	*r_bloom;
+cvar_t	*r_foveationDebug;
 cvar_t	*r_bloom_threshold;
 cvar_t	*r_bloom_intensity;
 cvar_t	*r_bloom_threshold_mode;
@@ -1794,6 +1795,9 @@ static void R_Register( void )
 	ri.Cvar_SetDescription( r_fbo, "Framebuffer objects. 0=direct rendering (faster), 1=FBO with post-processing (bloom/gamma)." );
 	r_hdr = ri.Cvar_Get( "r_hdr", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	ri.Cvar_SetDescription(r_hdr, "Enables high dynamic range frame buffer texture format.\n -1: 4-bit, for testing purposes, heavy color banding, might not work on all systems\n  0: 8 bit, default, moderate color banding with multi-stage shaders\n  1: 16 bit, enhanced blending precision, no color banding, might decrease performance on AMD / Intel GPUs\n" );
+	r_foveationDebug = ri.Cvar_Get( "r_foveationDebug", "0", CVAR_TEMP );
+	ri.Cvar_SetDescription( r_foveationDebug, "Tints the scene pass by the fragment size the device chose: "
+		"green 1x2, yellow 2x2, orange 2x4, red 4x4. Needs " S_COLOR_CYAN "\\vr_foveation" S_COLOR_WHITE " on, fixed or eye tracked." );
 	r_bloom = ri.Cvar_Get( "r_bloom", "0", CVAR_ARCHIVE_ND | CVAR_LATCH );
 	ri.Cvar_CheckRange( r_bloom, 0, 1, qtrue );
 	ri.Cvar_SetDescription(r_bloom, "Enables bloom post-processing effect.");
@@ -2142,8 +2146,8 @@ qboolean RE_InitXRResources( void ) {
 	return vk_init_xr_resources();
 }
 
-static void RE_SetFoveation( int level, qboolean eyeTracked, const float centers[2][2] ) {
-	vk_set_foveation( level, eyeTracked, centers );
+static void RE_SetFoveation( int level, qboolean eyeTracked, const float centers[2][2], const float fovTan[2][4] ) {
+	vk_set_foveation( level, eyeTracked, centers, fovTan );
 }
 
 /*

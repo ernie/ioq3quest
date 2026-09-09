@@ -137,6 +137,7 @@ static PFN_vkGetBufferMemoryRequirements2KHR			qvkGetBufferMemoryRequirements2KH
 static PFN_vkGetImageMemoryRequirements2KHR				qvkGetImageMemoryRequirements2KHR;
 
 static PFN_vkDebugMarkerSetObjectNameEXT				qvkDebugMarkerSetObjectNameEXT;
+static PFN_vkGetFramebufferTilePropertiesQCOM			qvkGetFramebufferTilePropertiesQCOM;
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -1869,6 +1870,7 @@ static void init_vulkan_library( void )
 	vk_instance = xrDevice->instance;
 	// VK_EXT_fragment_density_map is enabled by the VR layer when the runtime can foveate
 	vk.xr.fdmSupported = xrDevice->fragmentDensityMap ? qtrue : qfalse;
+	vk.xr.tileProperties = xrDevice->tileProperties ? qtrue : qfalse;
 	// Gates the vkDebugMarkerSetObjectNameEXT load below, and so every SET_OBJECT_NAME
 	vk.debugMarkers = xrDevice->debugMarkers ? qtrue : qfalse;
 	// The density map is written at the finest granularity the hardware reads
@@ -2016,6 +2018,10 @@ static void init_vulkan_library( void )
 
 	if ( vk.debugMarkers ) {
 		INIT_DEVICE_FUNCTION_EXT(vkDebugMarkerSetObjectNameEXT)
+	}
+
+	if ( vk.xr.tileProperties ) {
+		INIT_DEVICE_FUNCTION_EXT(vkGetFramebufferTilePropertiesQCOM)
 	}
 
 	// Check multiview support for VR single-pass stereo rendering
@@ -2180,6 +2186,7 @@ static void deinit_device_functions( void )
 	qvkGetImageMemoryRequirements2KHR			= NULL;
 
 	qvkDebugMarkerSetObjectNameEXT				= NULL;
+	qvkGetFramebufferTilePropertiesQCOM			= NULL;
 }
 
 
@@ -2973,6 +2980,8 @@ static void vk_create_shader_modules( void )
 
 	vk.modules.gamma_fs = SHADER_MODULE( gamma_frag_spv );
 	vk.modules.gamma_vs = SHADER_MODULE( gamma_vert_spv );
+	vk.modules.foveationdebug_fs = SHADER_MODULE( foveationdebug_frag_spv );
+	SET_OBJECT_NAME( vk.modules.foveationdebug_fs, "foveation debug fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
 
 	SET_OBJECT_NAME( vk.modules.gamma_fs, "gamma post-processing fragment module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
 	SET_OBJECT_NAME( vk.modules.gamma_vs, "gamma post-processing vertex module", VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT );
@@ -4691,6 +4700,7 @@ void vk_shutdown( refShutdownCode_t code )
 
 	qvkDestroyShaderModule(vk.device, vk.modules.gamma_vs, NULL);
 	qvkDestroyShaderModule(vk.device, vk.modules.gamma_fs, NULL);
+	qvkDestroyShaderModule(vk.device, vk.modules.foveationdebug_fs, NULL);
 
 	// Null when the density map feature is absent, which vkDestroyShaderModule allows
 	qvkDestroyShaderModule(vk.device, vk.modules.final_composite_fov_fs, NULL);
@@ -5553,11 +5563,170 @@ void vk_create_post_process_pipelines( void )
 
 
 /*
+==================
+vk_create_foveation_debug_pipeline
+
+The r_foveationDebug tint, built on first enable rather than alongside the rest: a view
+nobody asks for should cost the binary its shader and no more. The first frame after the
+cvar goes on hitches, which is the right trade.
+
+It belongs to whichever pass carries the density map -- fov_scene under r_fbo 1, main
+under r_fbo 0 -- since that is where gl_FragSizeEXT reports the map's fragment.
+==================
+*/
+static void vk_create_foveation_debug_pipeline( VkRenderPass renderPass )
+{
+	VkPipelineShaderStageCreateInfo shader_stages[2];
+	VkPipelineVertexInputStateCreateInfo vertex_input_state;
+	VkPipelineInputAssemblyStateCreateInfo input_assembly_state;
+	VkPipelineRasterizationStateCreateInfo rasterization_state;
+	VkPipelineDepthStencilStateCreateInfo depth_stencil_state;
+	VkPipelineViewportStateCreateInfo viewport_state;
+	VkPipelineMultisampleStateCreateInfo multisample_state;
+	VkPipelineColorBlendStateCreateInfo blend_state;
+	VkPipelineColorBlendAttachmentState attachment_blend_state;
+	VkGraphicsPipelineCreateInfo create_info;
+	VkViewport viewport;
+	VkRect2D scissor;
+
+	Com_Memset( &vertex_input_state, 0, sizeof( vertex_input_state ) );
+	vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+	Com_Memset( &input_assembly_state, 0, sizeof( input_assembly_state ) );
+	input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+	Com_Memset( &rasterization_state, 0, sizeof( rasterization_state ) );
+	rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterization_state.cullMode = VK_CULL_MODE_NONE;
+	rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterization_state.lineWidth = 1.0f;
+
+	// The scene pass's sample count
+	Com_Memset( &multisample_state, 0, sizeof( multisample_state ) );
+	multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample_state.rasterizationSamples = vk.msaaActive ? vkSamples : VK_SAMPLE_COUNT_1_BIT;
+	multisample_state.minSampleShading = 1.0f;
+
+	// Goes over everything already in the pass: nothing to test or write
+	Com_Memset( &depth_stencil_state, 0, sizeof( depth_stencil_state ) );
+	depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_stencil_state.depthCompareOp = VK_COMPARE_OP_NEVER;
+
+	set_shader_stage_desc( shader_stages+0, VK_SHADER_STAGE_VERTEX_BIT, vk.modules.gamma_vs, "main" );
+	set_shader_stage_desc( shader_stages+1, VK_SHADER_STAGE_FRAGMENT_BIT, vk.modules.foveationdebug_fs, "main" );
+
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)vk.xr.width;
+	viewport.height = (float)vk.xr.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = vk.xr.width;
+	scissor.extent.height = vk.xr.height;
+
+	Com_Memset( &viewport_state, 0, sizeof( viewport_state ) );
+	viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport_state.viewportCount = 1;
+	viewport_state.pViewports = &viewport;
+	viewport_state.scissorCount = 1;
+	viewport_state.pScissors = &scissor;
+
+	// Tints rather than replaces
+	Com_Memset( &attachment_blend_state, 0, sizeof( attachment_blend_state ) );
+	attachment_blend_state.blendEnable = VK_TRUE;
+	attachment_blend_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	attachment_blend_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	attachment_blend_state.colorBlendOp = VK_BLEND_OP_ADD;
+	attachment_blend_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	attachment_blend_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	attachment_blend_state.alphaBlendOp = VK_BLEND_OP_ADD;
+	attachment_blend_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+		VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+	Com_Memset( &blend_state, 0, sizeof( blend_state ) );
+	blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend_state.attachmentCount = 1;
+	blend_state.pAttachments = &attachment_blend_state;
+
+	Com_Memset( &create_info, 0, sizeof( create_info ) );
+	create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	create_info.stageCount = 2;
+	create_info.pStages = shader_stages;
+	create_info.pVertexInputState = &vertex_input_state;
+	create_info.pInputAssemblyState = &input_assembly_state;
+	create_info.pViewportState = &viewport_state;
+	create_info.pRasterizationState = &rasterization_state;
+	create_info.pMultisampleState = &multisample_state;
+	create_info.pDepthStencilState = &depth_stencil_state;
+	create_info.pColorBlendState = &blend_state;
+	create_info.layout = vk.pipeline_layout_post_process;
+	create_info.renderPass = renderPass;
+	create_info.subpass = 0;
+
+	if ( qvkCreateGraphicsPipelines( vk.device, VK_NULL_HANDLE, 1, &create_info, NULL,
+			&vk.foveation_debug_pipeline ) != VK_SUCCESS ) {
+		ri.Printf( PRINT_WARNING, "r_foveationDebug: the tint pipeline could not be created\n" );
+		vk.foveation_debug_pipeline = VK_NULL_HANDLE;
+		return;
+	}
+	vk.foveation_debug_pass = renderPass;
+	SET_OBJECT_NAME( vk.foveation_debug_pipeline, "foveation debug tint pipeline", VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT );
+}
+
+/*
+==================
+vk_draw_foveation_debug
+
+Last thing inside the foveated pass, so the tint covers whatever the frame drew.
+==================
+*/
+void vk_draw_foveation_debug( void )
+{
+	// The pass that carries the map: the split scene pass, or the main pass in direct mode
+	VkRenderPass pass = vk.fboActive ? vk.render_pass.fov_scene : vk.render_pass.main;
+
+	if ( !r_foveationDebug->integer || !vk.xr.foveationActive || !vk.inRenderPass ) {
+		return;
+	}
+	if ( pass == VK_NULL_HANDLE || vk.cmd == NULL || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
+		return;
+	}
+
+	// A pass that has been recreated under us leaves the pipeline pointing at nothing
+	if ( vk.foveation_debug_pipeline != VK_NULL_HANDLE && vk.foveation_debug_pass != pass ) {
+		vk_wait_idle();
+		qvkDestroyPipeline( vk.device, vk.foveation_debug_pipeline, NULL );
+		vk.foveation_debug_pipeline = VK_NULL_HANDLE;
+	}
+	if ( vk.foveation_debug_pipeline == VK_NULL_HANDLE ) {
+		vk_create_foveation_debug_pipeline( pass );
+	}
+	if ( vk.foveation_debug_pipeline == VK_NULL_HANDLE ) {
+		return;
+	}
+
+	qvkCmdBindPipeline( vk.cmd->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk.foveation_debug_pipeline );
+	qvkCmdDraw( vk.cmd->command_buffer, 4, 1, 0, 0 );
+	vk.cmd->last_pipeline = VK_NULL_HANDLE;
+}
+
+/*
  * vk_destroy_post_process_pipelines - Clean up post-processing pipelines
  */
 static void vk_destroy_post_process_pipelines( void )
 {
 	uint32_t i;
+
+	if ( vk.foveation_debug_pipeline != VK_NULL_HANDLE ) {
+		qvkDestroyPipeline( vk.device, vk.foveation_debug_pipeline, NULL );
+		vk.foveation_debug_pipeline = VK_NULL_HANDLE;
+		vk.foveation_debug_pass = VK_NULL_HANDLE;
+	}
 
 	for ( i = 0; i < VK_NUM_BLOOM_PASSES * 2; i++ ) {
 		if ( vk.blur_pipeline[i] != VK_NULL_HANDLE ) {
@@ -7797,6 +7966,11 @@ void vk_end_render_pass( void )
 		return; // Not in a render pass, nothing to end
 	}
 
+	// Direct mode ends its scene pass here
+	if ( vk.renderPassIndex == RENDER_PASS_MAIN ) {
+		vk_draw_foveation_debug();
+	}
+
 	// For subpass-based render passes, need to advance to final subpass before ending
 	if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
 		if ( vk.inPostBloom2DSubpass ) {
@@ -8930,6 +9104,9 @@ void vk_finish_subpass_post( void )
 		return;
 	}
 
+	// The scene subpass ends here, at the 3D to 2D boundary, so this is the tint's last chance
+	vk_draw_foveation_debug();
+
 	useBloom = ( r_bloom && r_bloom->integer );
 
 	if ( useBloom && vk.final_composite_subpass_pipeline != VK_NULL_HANDLE ) {
@@ -9124,8 +9301,10 @@ Authored fragment density map
 
 The runtime's map stops at its High level and sits on the lens rather than following
 the eyes, so we write our own. R8G8_UNORM texels are the fraction of a fragment to
-shade per pixel, which drivers quantize to whole fragment sizes: a smooth falloff
-bands. One map per swapchain image, rewritten in the frame that renders into it.
+shade per pixel. The tiler reads one texel per bin and holds it across the bin, and
+scales a bin by at most four per axis, so the map carries three levels at the
+resolution of bins. One map per swapchain image, rewritten in the frame that renders
+into it.
 ================================================================================
 */
 
@@ -9160,11 +9339,6 @@ void vk_destroy_authored_fdm( void )
 		vk.xr.fdmUploaded[i] = qfalse;
 		vk.xr.fdmAppliedLevel[i] = -1;
 	}
-	if ( vk.xr.fdmTemplate != NULL ) {
-		ri.Free( vk.xr.fdmTemplate );
-		vk.xr.fdmTemplate = NULL;
-	}
-	vk.xr.fdmTemplateLevel = -1;
 	vk.xr.fdmAuthored = qfalse;
 }
 
@@ -9258,14 +9432,6 @@ static qboolean vk_create_authored_fdm( uint32_t imageCount, uint32_t layers, ui
 		vk.xr.fdmAppliedLevel[i] = -1;
 	}
 
-	// Twice the map in each direction, so the island can be slid anywhere
-	vk.xr.fdmTemplate = (byte*)ri.Malloc( (int)( mapWidth * 2 * mapHeight * 2 * 2 ) );
-	vk.xr.fdmTemplateLevel = -1;
-	if ( vk.xr.fdmTemplate == NULL ) {
-		vk_destroy_authored_fdm();
-		return qfalse;
-	}
-
 	vk.xr.fdmAuthored = qtrue;
 	vk.xr.fdmLayers = layers;
 	vk.xr.foveationWidth = mapWidth;
@@ -9277,107 +9443,48 @@ static qboolean vk_create_authored_fdm( uint32_t imageCount, uint32_t layers, ui
 
 /*
 ==================
-vk_foveation_level_shape
+vk_foveation_level_angles
 
-Falloff per strength, in fractions of the eye buffer's half diagonal: full density out
-to inner, down to floor by outer, floor to the corner. outer stays well under 1: the lens
-shows a rounded region, so past roughly 0.68 is a corner nobody sees. Fixed keeps a wide
-sharp region because the eyes rove while the head stays put.
+Falloff per strength, as eccentricity from the gaze: full resolution out to sharp, a
+quarter of the pixels at sharp falling to an eighth by coarse, a sixteenth beyond. Degrees
+hold the shape steady on any headset, off its own reported field of view. Fixed keeps a
+wide sharp region because the eyes rove while the head stays put; the eye-tracked island
+rides the fovea and can be tighter.
+
+A wide sharp core with an early drop to a sixteenth puts the resolution where a player
+tracking a target is looking, which is what this game wants from the trade.
 ==================
 */
-static void vk_foveation_level_shape( int level, qboolean eyeTracked, float *inner, float *outer, float *floorDensity )
+static void vk_foveation_level_angles( int level, qboolean eyeTracked, float *sharpDeg, float *coarseDeg )
 {
 	if ( eyeTracked ) {
-		// The floor stays near a quarter: an eighth shades one fragment per 8x8 block, which crawls this close to the fovea
 		switch ( level ) {
-			case VR_FOVEATION_STRENGTH_LOW:    *inner = 0.20f; *outer = 0.66f; *floorDensity = 0.26f; break;
-			case VR_FOVEATION_STRENGTH_MEDIUM: *inner = 0.12f; *outer = 0.56f; *floorDensity = 0.19f; break;
-			default:                           *inner = 0.05f; *outer = 0.42f; *floorDensity = 0.13f; break;
+			case VR_FOVEATION_STRENGTH_LOW:    *sharpDeg = 20.0f; *coarseDeg = 33.0f; break;
+			case VR_FOVEATION_STRENGTH_MEDIUM: *sharpDeg = 16.0f; *coarseDeg = 27.0f; break;
+			default:                           *sharpDeg = 12.0f; *coarseDeg = 21.0f; break;
 		}
 		return;
 	}
 
-	// Measured on PICO at 1.3x: about 13, 19 and 26 percent off GPU frame time; fixed foveation stops paying below about a quarter
+	// About 42, 30 and 24 percent of an unfoveated frame's fragments on a Quest 3 buffer. The map
+	// asks for 30, 22 and 18, and one density sample a bin spends the difference
 	switch ( level ) {
-		case VR_FOVEATION_STRENGTH_LOW:    *inner = 0.30f; *outer = 0.62f; *floorDensity = 0.24f; break;
-		case VR_FOVEATION_STRENGTH_MEDIUM: *inner = 0.21f; *outer = 0.50f; *floorDensity = 0.15f; break;
-		// 0.08 shades about a sixty-fourth of the edge pixels; below that the periphery is mush for little gain
-		default:                           *inner = 0.13f; *outer = 0.40f; *floorDensity = 0.08f; break;
+		case VR_FOVEATION_STRENGTH_LOW:    *sharpDeg = 30.0f; *coarseDeg = 41.0f; break;
+		case VR_FOVEATION_STRENGTH_MEDIUM: *sharpDeg = 25.0f; *coarseDeg = 35.0f; break;
+		default:                           *sharpDeg = 22.0f; *coarseDeg = 28.0f; break;
 	}
 }
 
 /*
 ==================
-vk_build_foveation_template
+vk_fdm_gaze_texel
 
-The falloff once, centered, at twice the map's size; each eye's map is a window of it,
-so moving the island is a copy, not a rebuild.
+The gaze in map texels. The map only ever changes when this does, so the upload test
+compares these rather than the centers that produce them.
 ==================
 */
-static void vk_build_foveation_template( uint32_t width, uint32_t height, int level, qboolean eyeTracked )
-{
-	const uint32_t tw = width * 2, th = height * 2;
-	const float aspect = ( height > 0 ) ? (float)width / (float)height : 1.0f;
-	const float invHalfDiag = 1.0f / ( 0.5f * sqrtf( aspect * aspect + 1.0f ) );
-	float inner, outer, floorDensity, span;
-	byte *dst;
-	uint32_t y, x;
-
-	if ( vk.xr.fdmTemplate == NULL ) {
-		return;
-	}
-	// Keyed on strength and mode, since the two modes have different shapes
-	if ( vk.xr.fdmTemplateLevel == ( eyeTracked ? -level : level ) ) {
-		return;
-	}
-
-	vk_foveation_level_shape( level, eyeTracked, &inner, &outer, &floorDensity );
-	span = outer - inner;
-	if ( span < 0.01f ) {
-		span = 0.01f;
-	}
-
-	// Distances are in map units, not template units: a window must span what it would if the map were drawn directly
-	dst = vk.xr.fdmTemplate;
-	for ( y = 0; y < th; y++ ) {
-		const float ny = ( (float)y + 0.5f ) / (float)height - 1.0f;
-		for ( x = 0; x < tw; x++ ) {
-			const float nx = ( ( (float)x + 0.5f ) / (float)width - 1.0f ) * aspect;
-			// Distance from the center, normalized so the far corner is 1
-			const float r = sqrtf( nx * nx + ny * ny ) * invHalfDiag;
-			float density;
-			byte value;
-
-			if ( r <= inner ) {
-				density = 1.0f;
-			} else {
-				const float t = ( r - inner ) / span;
-				density = 1.0f + ( floorDensity - 1.0f ) * ( t > 1.0f ? 1.0f : t );
-			}
-			if ( density > 1.0f ) density = 1.0f;
-			if ( density < floorDensity ) density = floorDensity;
-
-			value = (byte)( density * 255.0f + 0.5f );
-			dst[0] = value;   // x density
-			dst[1] = value;   // y density
-			dst += 2;
-		}
-	}
-
-	vk.xr.fdmTemplateLevel = eyeTracked ? -level : level;
-}
-
-/*
-==================
-vk_fdm_window_offset
-
-Where one eye's window starts in the template, in map texels. The map only ever
-changes when this does, so the upload test compares these rather than the centers
-that produce them.
-==================
-*/
-static void vk_fdm_window_offset( const float center[2], uint32_t width, uint32_t height,
-	uint32_t *ox, uint32_t *oy )
+static void vk_fdm_gaze_texel( const float center[2], uint32_t width, uint32_t height,
+	uint32_t *tx, uint32_t *ty )
 {
 	// Centers arrive with y already running down the image, so neither axis flips; fixed sits on the optical axis
 	float cx = ( center[0] + 1.0f ) * 0.5f;
@@ -9386,34 +9493,81 @@ static void vk_fdm_window_offset( const float center[2], uint32_t width, uint32_
 	if ( cx < 0.0f ) cx = 0.0f; else if ( cx > 1.0f ) cx = 1.0f;
 	if ( cy < 0.0f ) cy = 0.0f; else if ( cy > 1.0f ) cy = 1.0f;
 
-	// Sliding the window the other way moves the island toward the gaze
-	*ox = (uint32_t)( ( 1.0f - cx ) * (float)width + 0.5f );
-	*oy = (uint32_t)( ( 1.0f - cy ) * (float)height + 0.5f );
-	if ( *ox > width ) *ox = width;
-	if ( *oy > height ) *oy = height;
+	*tx = (uint32_t)( cx * (float)width );
+	*ty = (uint32_t)( cy * (float)height );
+	if ( *tx >= width ) *tx = width - 1;
+	if ( *ty >= height ) *ty = height - 1;
 }
 
+/*
+==================
+vk_write_fdm_texels
 
+A map per eye, each drawn in that eye's own frustum, since the angle a texel subtends
+depends on where in the frustum it sits.
+
+A texel and the gaze are both directions, (tan x, tan y, 1), and the eccentricity is the
+angle between them. Comparing the cosine squared against the two thresholds keeps that to
+a few multiplies a texel.
+==================
+*/
 static void vk_write_fdm_texels( byte *dst, uint32_t width, uint32_t height, uint32_t layers,
-	int level, qboolean eyeTracked, const float center[2][2] )
+	int level, qboolean eyeTracked, const float center[2][2], const float fovTan[2][4] )
 {
-	const uint32_t tw = width * 2;
-	uint32_t layer, y;
+	const float invFbWidth = ( vk.xr.width > 0 ) ? 1.0f / (float)vk.xr.width : 0.0f;
+	const float invFbHeight = ( vk.xr.height > 0 ) ? 1.0f / (float)vk.xr.height : 0.0f;
+	const float texelW = (float)vk.xr.fdmTexelWidth;
+	const float texelH = (float)vk.xr.fdmTexelHeight;
+	float sharpDeg, coarseDeg, midDeg, cosSharp, cosMid, cosCoarse;
+	uint32_t layer, y, x;
 
-	vk_build_foveation_template( width, height, level, eyeTracked );
-	if ( vk.xr.fdmTemplate == NULL ) {
-		return;
-	}
+	vk_foveation_level_angles( level, eyeTracked, &sharpDeg, &coarseDeg );
+	// The outer half of the quarter-density band goes to a fragment twice its area
+	midDeg = 0.5f * ( sharpDeg + coarseDeg );
+	cosSharp = cosf( (float)DEG2RAD( sharpDeg ) );
+	cosMid = cosf( (float)DEG2RAD( midDeg ) );
+	cosCoarse = cosf( (float)DEG2RAD( coarseDeg ) );
 
 	for ( layer = 0; layer < layers; layer++ ) {
 		const int eye = ( layer < 2 ) ? (int)layer : 0;
-		uint32_t ox, oy;
-
-		vk_fdm_window_offset( center[eye], width, height, &ox, &oy );
+		const float tanL = fovTan[eye][0], tanR = fovTan[eye][1];
+		const float tanU = fovTan[eye][2], tanD = fovTan[eye][3];
+		const float spanX = tanR - tanL, spanY = tanU - tanD;
+		// The gaze in the same tangent space. Fixed foveation names the optical axis, which lands on zero
+		const float gx = tanL + ( center[eye][0] + 1.0f ) * 0.5f * spanX;
+		const float gy = tanU - ( center[eye][1] + 1.0f ) * 0.5f * spanY;
+		const float gazeLen2 = gx * gx + gy * gy + 1.0f;
+		const float sharpK = cosSharp * cosSharp * gazeLen2;
+		const float midK = cosMid * cosMid * gazeLen2;
+		const float coarseK = cosCoarse * cosCoarse * gazeLen2;
 
 		for ( y = 0; y < height; y++ ) {
-			Com_Memcpy( dst, vk.xr.fdmTemplate + ( (size_t)( oy + y ) * tw + ox ) * 2, (size_t)width * 2 );
-			dst += (size_t)width * 2;
+			// A bin past the buffer's edge is sampled at its own center, so the falloff carries on to meet it
+			const float ty = tanU - ( ( (float)y + 0.5f ) * texelH * invFbHeight ) * spanY;
+
+			for ( x = 0; x < width; x++ ) {
+				const float tx = tanL + ( ( (float)x + 0.5f ) * texelW * invFbWidth ) * spanX;
+				const float dot = tx * gx + ty * gy + 1.0f;
+				const float cosNum = dot * dot;
+				const float texelLen2 = tx * tx + ty * ty + 1.0f;
+				byte value;
+
+				// The device reads one texel a bin and scales it by at most four an axis, rounding
+				// one axis up inside whatever area the two channels leave spare. 255, 127 and 63
+				// sit far enough inside their areas to land square; 64 leaves room for the round-up
+				if ( cosNum > sharpK * texelLen2 ) {
+					value = 255;  // 1x1
+				} else if ( cosNum > midK * texelLen2 ) {
+					value = 127;  // 2x2
+				} else if ( cosNum > coarseK * texelLen2 ) {
+					value = 64;   // 2x4
+				} else {
+					value = 63;   // 4x4
+				}
+				dst[0] = value;   // x density
+				dst[1] = value;   // y density
+				dst += 2;
+			}
 		}
 	}
 }
@@ -9451,7 +9605,7 @@ void vk_update_authored_fdm( uint32_t index )
 		vk.xr.fdmAppliedLevel[index] != level ||
 		vk.xr.fdmAppliedEyeTracked[index] != eyeTracked );
 	if ( !changed && level > 0 ) {
-		// Same level and mode, so only a window that has moved a whole texel can change a byte.
+		// Same level and mode, so only a gaze that has moved a whole texel can change a byte.
 		// Level 0 is all ones and reads no center at all.
 		const uint32_t eyes = ( vk.xr.fdmLayers < 2 ) ? 1 : 2;
 		uint32_t eye;
@@ -9459,7 +9613,7 @@ void vk_update_authored_fdm( uint32_t index )
 		for ( eye = 0; eye < eyes; eye++ ) {
 			uint32_t ox, oy;
 
-			vk_fdm_window_offset( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight, &ox, &oy );
+			vk_fdm_gaze_texel( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight, &ox, &oy );
 			if ( vk.xr.fdmAppliedOffset[index][eye][0] != ox || vk.xr.fdmAppliedOffset[index][eye][1] != oy ) {
 				changed = qtrue;
 				break;
@@ -9476,7 +9630,8 @@ void vk_update_authored_fdm( uint32_t index )
 	} else {
 		vk_write_fdm_texels( (byte*)vk.xr.fdmStagingMapped[index],
 			vk.xr.foveationWidth, vk.xr.foveationHeight, vk.xr.fdmLayers,
-			level, eyeTracked, (const float (*)[2])vk.xr.fdmCenter );
+			level, eyeTracked, (const float (*)[2])vk.xr.fdmCenter,
+			(const float (*)[4])vk.xr.fdmFovTan );
 	}
 
 	Com_Memset( &barrier, 0, sizeof( barrier ) );
@@ -9520,7 +9675,7 @@ void vk_update_authored_fdm( uint32_t index )
 	{
 		uint32_t eye;
 		for ( eye = 0; eye < 2; eye++ ) {
-			vk_fdm_window_offset( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight,
+			vk_fdm_gaze_texel( vk.xr.fdmCenter[eye], vk.xr.foveationWidth, vk.xr.foveationHeight,
 				&vk.xr.fdmAppliedOffset[index][eye][0], &vk.xr.fdmAppliedOffset[index][eye][1] );
 		}
 	}
@@ -9533,12 +9688,15 @@ vk_set_foveation
 Only recorded; the map is rewritten when the frame that needs it opens.
 ==================
 */
-void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2] )
+void vk_set_foveation( int level, qboolean eyeTracked, const float centers[2][2], const float fovTan[2][4] )
 {
 	vk.xr.fdmLevel = level;
 	vk.xr.fdmEyeTracked = eyeTracked;
 	if ( centers != NULL ) {
 		Com_Memcpy( vk.xr.fdmCenter, centers, sizeof( vk.xr.fdmCenter ) );
+	}
+	if ( fovTan != NULL ) {
+		Com_Memcpy( vk.xr.fdmFovTan, fovTan, sizeof( vk.xr.fdmFovTan ) );
 	}
 }
 
@@ -9598,6 +9756,46 @@ int vk_foveation_block_at( int eye, float ndcX, float ndcY )
 	}
 	return block;
 }
+
+/*
+==================
+vk_log_tile_size
+
+The tiler applies a density map one bin at a time -- one sample per bin, held across
+the whole bin -- so the bin is the map's real resolution.
+Print it once per framebuffer set; it is the number that says how much of the falloff
+survives, and whether the bin grid is a strip grid or something square.
+==================
+*/
+static void vk_log_tile_size( VkFramebuffer framebuffer, const char *pass )
+{
+	VkTilePropertiesQCOM props;
+	uint32_t count = 1;
+
+	if ( qvkGetFramebufferTilePropertiesQCOM == NULL || framebuffer == VK_NULL_HANDLE ) {
+		return;
+	}
+
+	Com_Memset( &props, 0, sizeof( props ) );
+	props.sType = VK_STRUCTURE_TYPE_TILE_PROPERTIES_QCOM;
+	if ( qvkGetFramebufferTilePropertiesQCOM( vk.device, framebuffer, &count, &props ) < VK_SUCCESS || count == 0 ) {
+		ri.Printf( PRINT_WARNING, "Tile size for the %s pass: query failed\n", pass );
+		return;
+	}
+
+	vk.xr.tileWidth = props.tileSize.width;
+	vk.xr.tileHeight = props.tileSize.height;
+
+	// Bins per eye buffer, and how many map texels fall inside one bin, since that is what gets thrown away
+	ri.Printf( PRINT_ALL, "Tile size for the %s pass: %ux%u (%ux%u bins over %ux%u, %ux%u map texels a bin)\n",
+		pass, props.tileSize.width, props.tileSize.height,
+		props.tileSize.width ? ( vk.xr.width + props.tileSize.width - 1 ) / props.tileSize.width : 0,
+		props.tileSize.height ? ( vk.xr.height + props.tileSize.height - 1 ) / props.tileSize.height : 0,
+		vk.xr.width, vk.xr.height,
+		vk.xr.fdmTexelWidth ? props.tileSize.width / vk.xr.fdmTexelWidth : 0,
+		vk.xr.fdmTexelHeight ? props.tileSize.height / vk.xr.fdmTexelHeight : 0 );
+}
+
 
 /*
  * vk_create_xr_image_views - Create VkImageViews for XR swapchain images
@@ -9850,6 +10048,9 @@ qboolean vk_create_xr_framebuffers( void )
 			VK_CHECK( qvkCreateFramebuffer( vk.device, &fbInfo, NULL, &xr->framebuffers[i] ) );
 			SET_OBJECT_NAME( xr->framebuffers[i], va( "XR framebuffer %d (direct)", i ),
 				VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT );
+			if ( i == 0 ) {
+				vk_log_tile_size( xr->framebuffers[i], "direct scene" );
+			}
 		}
 
 		ri.Printf( PRINT_ALL, "...XR swapchain framebuffers created (%d, direct mode)\n",
@@ -10331,6 +10532,9 @@ static qboolean vk_create_subpass_framebuffers( void )
 			fbCI.layers = 1;
 			VK_CHECK( qvkCreateFramebuffer( vk.device, &fbCI, NULL, &vk.framebuffers.fov_scene[i] ) );
 			SET_OBJECT_NAME( vk.framebuffers.fov_scene[i], va( "foveated scene framebuffer %d", i ), VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT );
+			if ( i == 0 ) {
+				vk_log_tile_size( vk.framebuffers.fov_scene[i], "foveated scene" );
+			}
 
 			// Post pass: the scene is sampled, not attached, and the first blur pass does the extract
 			attachmentCount = 0;

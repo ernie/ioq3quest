@@ -35,8 +35,8 @@ static float s_gazeCenter[2][2] = { { 0.0f, 0.0f }, { 0.0f, 0.0f } };
 ==================
 VR_VK_Foveation_OpticalCenter
 
-Straight ahead in the gaze's NDC. The FOV is asymmetric, so the optical axis sits off
-the middle of the eye buffer, by a different amount on each headset.
+Where the fixed island sits, in the gaze's NDC: horizontally on the direction both eyes
+share, vertically at the middle of the buffer.
 ==================
 */
 static void VR_VK_Foveation_OpticalCenter(float centers[2][2])
@@ -44,6 +44,8 @@ static void VR_VK_Foveation_OpticalCenter(float centers[2][2])
 	const float tanUp = tanf(vr.fov_angle_up);
 	const float tanDown = tanf(vr.fov_angle_down);
 	const float spanY = tanUp - tanDown;
+	// The angular bisector of the vertical field
+	const float midTan = tanf(0.5f * (vr.fov_angle_up + vr.fov_angle_down));
 	int eye;
 
 	for (eye = 0; eye < 2; ++eye)
@@ -51,10 +53,12 @@ static void VR_VK_Foveation_OpticalCenter(float centers[2][2])
 		const float tanLeft = tanf(vr.eye_fov_angle_left[eye]);
 		const float tanRight = tanf(vr.eye_fov_angle_right[eye]);
 		const float spanX = tanRight - tanLeft;
+		// Where head-forward falls in this eye's frame: a canted panel carries its own axis
+		// outward, and the island belongs on the direction both eyes share
+		const float forwardTan = tanf(vr.eyeCantYaw[eye]);
 
-		centers[eye][0] = (fabsf(spanX) > 1e-6f) ? -(tanLeft + tanRight) / spanX : 0.0f;
-		// y runs down the image, matching the convention the gaze uses
-		centers[eye][1] = (fabsf(spanY) > 1e-6f) ? (tanUp + tanDown) / spanY : 0.0f;
+		centers[eye][0] = (fabsf(spanX) > 1e-6f) ? (2.0f * forwardTan - tanLeft - tanRight) / spanX : 0.0f;
+		centers[eye][1] = (fabsf(spanY) > 1e-6f) ? (tanUp + tanDown - 2.0f * midTan) / spanY : 0.0f;
 	}
 }
 
@@ -467,7 +471,19 @@ void VR_VK_Foveation_Frame(VR_Engine* engine)
 		}
 		if (re.SetFoveation)
 		{
-			re.SetFoveation(strength, eyeTracked, (const float (*)[2])s_gazeCenter);
+			// The renderer draws the falloff in each eye's own frustum
+			float fovTan[2][4];
+			int eye;
+
+			for (eye = 0; eye < 2; ++eye)
+			{
+				fovTan[eye][0] = tanf(vr.eye_fov_angle_left[eye]);
+				fovTan[eye][1] = tanf(vr.eye_fov_angle_right[eye]);
+				fovTan[eye][2] = tanf(vr.fov_angle_up);
+				fovTan[eye][3] = tanf(vr.fov_angle_down);
+			}
+			re.SetFoveation(strength, eyeTracked, (const float (*)[2])s_gazeCenter,
+				(const float (*)[4])fovTan);
 		}
 	}
 }
