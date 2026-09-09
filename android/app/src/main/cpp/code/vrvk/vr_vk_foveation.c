@@ -28,18 +28,21 @@ static PFN_xrUpdateSwapchainFB pfnUpdateSwapchainFB = NULL;
 static PFN_xrGetFoveationEyeTrackedStateMETA pfnGetFoveationEyeTrackedStateMETA = NULL;
 static XrInstance s_functionsInstance = XR_NULL_HANDLE;
 
-// Sharp island center per eye in NDC: the last valid gaze, or the optical axis when fixed
+// Sharp island center per eye in NDC: the last valid gaze, or the fixed center when eye tracking is off
 static float s_gazeCenter[2][2] = { { 0.0f, 0.0f }, { 0.0f, 0.0f } };
 
 /*
 ==================
-VR_VK_Foveation_OpticalCenter
+VR_VK_Foveation_FixedCenter
 
 Where the fixed island sits, in the gaze's NDC: horizontally on the direction both eyes
-share, vertically at the middle of the buffer.
+share, vertically on the angular bisector of the vertical field. A headset that gives more
+field one way than the other is saying where its designer expects the eye to go, so the
+island follows that lean; a symmetric field leaves it on the optical axis. The Quest 3
+reaches 44 degrees up and 55 down, which puts the island 5.5 degrees below the axis.
 ==================
 */
-static void VR_VK_Foveation_OpticalCenter(float centers[2][2])
+static void VR_VK_Foveation_FixedCenter(float centers[2][2])
 {
 	const float tanUp = tanf(vr.fov_angle_up);
 	const float tanDown = tanf(vr.fov_angle_down);
@@ -467,7 +470,7 @@ void VR_VK_Foveation_Frame(VR_Engine* engine)
 		else
 		{
 			// Nothing to follow, so sit on the axis the eye looks down
-			VR_VK_Foveation_OpticalCenter(s_gazeCenter);
+			VR_VK_Foveation_FixedCenter(s_gazeCenter);
 		}
 		if (re.SetFoveation)
 		{
