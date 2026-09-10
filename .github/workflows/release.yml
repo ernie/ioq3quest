@@ -83,7 +83,7 @@ jobs:
             VERSION=$(git show -s --pretty=format:%h)
           fi
           OUTDIR=android/app/build/outputs/apk/release
-          SIGNED=$OUTDIR/trinity-standalone-${VERSION}.apk
+          SIGNED=$OUTDIR/trinity-standalone.apk
           $APKSIGNER sign \
             --ks /tmp/keystore.jks \
             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -104,7 +104,7 @@ jobs:
         with:
           name: trinity-standalone-apk
           path: |
-            android/app/build/outputs/apk/release/trinity-standalone-*.apk
+            android/app/build/outputs/apk/release/trinity-standalone.apk
             android/app/build/outputs/apk/release/trinity-quest-*.apk
           if-no-files-found: error
           retention-days: 5
@@ -133,7 +133,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/trinity-standalone-*.apk
+            dist/trinity-standalone.apk
             dist/trinity-quest-*.apk
             dist/openal-soft-*-source.tar.gz
           generate_release_notes: true
