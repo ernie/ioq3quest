@@ -36,7 +36,6 @@ if %BUILD_TYPE%==debug (
 	set CMAKE_BUILD_TYPE=Debug
 )
 
-echo #define Q3QVERSION  "%VERSION%" > .\android\app\src\main\cpp\code\vrcommon\vr_version.h
 
 pushd %~dp0\..
 

@@ -42,7 +42,6 @@ if [ "$1" == "clean" ] || [ "$2" == "clean" ] || [ "$3" == "clean" ] || [ "$4" =
 	rm -rf $SCRIPTDIR/app/src/main/jniLibs
 fi
 
-echo "#define Q3QVERSION  \"$APP_VERSION"\" > $SCRIPTDIR/app/src/main/cpp/code/vr/vr_version.h
 
 cd $SCRIPTDIR/..
 
