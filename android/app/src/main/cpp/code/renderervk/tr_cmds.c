@@ -213,7 +213,7 @@ void RE_SetColor( const float *rgba ) {
 
 	// Capture whether this color was queued during post-bloom 2D rendering.
 	// If so, the backend should use full brightness (no pre-dimming for gamma).
-	cmd->fullBrightness = tr.postBloom2D;
+	cmd->postScene = tr.sceneComplete;
 }
 
 
@@ -318,7 +318,7 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 
 	tr.frameCount++;
 	tr.frameSceneNum = 0;
-	tr.postBloom2D = qfalse;
+	tr.sceneComplete = qfalse;
 
 	if ( ( cmd = R_GetCommandBuffer( sizeof( *cmd ) ) ) == NULL )
 		return;
@@ -521,15 +521,14 @@ void RE_HUDBufferEnd( void )
 
 
 /*
- * RE_BeginPostBloom2D - Begin post-bloom/post-gamma 2D rendering subpass
+ * RE_SceneComplete - the 3D scene is finished
  *
- * Called after trap_R_RenderScene() to transition from scene rendering through
- * bloom extraction and compositing, then into the post-bloom 2D subpass.
- * All 2D content rendered after this call will NOT be subjected to bloom extraction.
+ * Called after trap_R_RenderScene(). Bloom extract and composite, or gamma
+ * alone, runs here; the pass then sits in its final 2D subpass.
  */
-void RE_BeginPostBloom2D( void )
+void RE_SceneComplete( void )
 {
-	beginPostBloom2DCommand_t *cmd;
+	sceneCompleteCommand_t *cmd;
 
 	if ( !tr.registered ) {
 		return;
@@ -538,33 +537,9 @@ void RE_BeginPostBloom2D( void )
 	if ( !cmd ) {
 		return;
 	}
-	cmd->commandId = RC_BEGIN_POST_BLOOM_2D;
+	cmd->commandId = RC_SCENE_COMPLETE;
 
-	// Set frontend flag so subsequent color commands know to use full brightness
-	tr.postBloom2D = qtrue;
-}
-
-
-/*
- * RE_EndPostBloom2D - End post-bloom/post-gamma 2D rendering subpass
- *
- * Called after all post-scene 2D rendering is complete to end the render pass
- * and run blur passes for next frame's bloom.
- */
-void RE_EndPostBloom2D( void )
-{
-	endPostBloom2DCommand_t *cmd;
-
-	if ( !tr.registered ) {
-		return;
-	}
-	cmd = R_GetCommandBufferReserved( sizeof( *cmd ), 0 );
-	if ( !cmd ) {
-		return;
-	}
-	cmd->commandId = RC_END_POST_BLOOM_2D;
-
-	// Note: We intentionally do NOT clear tr.postBloom2D here.
-	// Once we're past the gamma pass, all subsequent 2D content (console, keyboard, etc.)
-	// should use full brightness. The flag is reset at frame start in RE_BeginFrame.
+	// Colors queued from here draw at full brightness: gamma is applied
+	// downstream rather than pre-compensated. Cleared by RE_BeginFrame.
+	tr.sceneComplete = qtrue;
 }

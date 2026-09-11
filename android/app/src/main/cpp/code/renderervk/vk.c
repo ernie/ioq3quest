@@ -9,7 +9,7 @@ extern vr_clientinfo_t vr;
 
 // Forward declarations for subpass post-processing
 void vk_finish_subpass_post( void );
-void vk_end_post_bloom_subpass( void );
+void vk_end_post_scene_subpass( void );
 
 #if defined (_DEBUG)
 #if defined (__ANDROID__)
@@ -3244,9 +3244,9 @@ static void vk_invalidate_post_bloom_2d_pipelines( void )
 	vk_wait_idle();
 
 	for ( i = 0; i < vk.pipelines_count; i++ ) {
-		if ( vk.pipelines[i].handle[RENDER_PASS_POST_BLOOM_2D] != VK_NULL_HANDLE ) {
-			qvkDestroyPipeline( vk.device, vk.pipelines[i].handle[RENDER_PASS_POST_BLOOM_2D], NULL );
-			vk.pipelines[i].handle[RENDER_PASS_POST_BLOOM_2D] = VK_NULL_HANDLE;
+		if ( vk.pipelines[i].handle[RENDER_PASS_POST_SCENE_2D] != VK_NULL_HANDLE ) {
+			qvkDestroyPipeline( vk.device, vk.pipelines[i].handle[RENDER_PASS_POST_SCENE_2D], NULL );
+			vk.pipelines[i].handle[RENDER_PASS_POST_SCENE_2D] = VK_NULL_HANDLE;
 			invalidated++;
 		}
 	}
@@ -6226,7 +6226,7 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	// For post-bloom 2D subpass, apply full post-processing in fragment shader
 	// since this content bypasses the gamma subpass
 	// Matches gamma subpass: greyscale -> pow(color, 1/r_gamma) * obScale -> dither
-	if (renderPassIndex == RENDER_PASS_POST_BLOOM_2D) {
+	if (renderPassIndex == RENDER_PASS_POST_SCENE_2D) {
 		frag_spec_data[12].f = 1.0f / r_gamma->value;
 		frag_spec_data[13].f = (float)(1 << tr.overbrightBits);
 		frag_spec_data[14].f = r_greyscale->value;
@@ -6596,7 +6596,7 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	// - HUD always uses 1 sample (its render pass is non-MSAA)
 	if ( renderPassIndex == RENDER_PASS_SCREENMAP ) {
 		multisample_state.rasterizationSamples = vk.screenMapSamples;
-	} else if ( renderPassIndex == RENDER_PASS_HUD || renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+	} else if ( renderPassIndex == RENDER_PASS_HUD || renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 		// HUD and post-bloom 2D render to non-MSAA targets (HUD buffer, swapchain)
 		multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 	} else {
@@ -6615,8 +6615,8 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 	depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	depth_stencil_state.pNext = NULL;
 	depth_stencil_state.flags = 0;
-	// For subpasses without depth attachment (RENDER_PASS_POST_BLOOM_2D), force depth disabled
-	if ( renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+	// For subpasses without depth attachment (RENDER_PASS_POST_SCENE_2D), force depth disabled
+	if ( renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 		depth_stencil_state.depthTestEnable = VK_FALSE;
 		depth_stencil_state.depthWriteEnable = VK_FALSE;
 	} else {
@@ -6825,7 +6825,7 @@ VkPipeline create_pipeline( const Vk_Pipeline_Def *def, renderPass_t renderPassI
 			create_info.renderPass = vk.render_pass.main;
 		}
 		create_info.subpass = 0;
-	} else if ( renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+	} else if ( renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 		// Post-scene 2D: the post pass's second subpass, after the composite or gamma quad
 		if ( r_bloom && r_bloom->integer && vk.render_pass.main_with_bloom != VK_NULL_HANDLE ) {
 			create_info.renderPass = vk.render_pass.main_with_bloom;
@@ -7816,20 +7816,20 @@ void vk_begin_main_render_pass( void )
 	// End current render pass if active
 	if ( vk.inRenderPass ) {
 		// If we're in the post-bloom 2D subpass, end it properly
-		if ( vk.inPostBloom2DSubpass ) {
-			vk_end_post_bloom_subpass();
+		if ( VK_IN_POST_SCENE_2D() ) {
+			vk_end_post_scene_subpass();
 		} else {
 			// Need to advance through remaining subpasses before ending
 			// Use vk_finish_subpass_post if we haven't done the post processing yet,
-			// then vk_end_post_bloom_subpass to finish cleanly
+			// then vk_end_post_scene_subpass to finish cleanly
 			if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
 				if ( !vk.subpassPostDone ) {
 					vk_finish_subpass_post();  // Advances to post-bloom/gamma 2D subpass
 				}
-				vk_end_post_bloom_subpass();  // Ends the render pass properly
-			} else if ( vk.renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+				vk_end_post_scene_subpass();  // Ends the render pass properly
+			} else if ( vk.renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 				// Already transitioned to post-bloom 2D (vk_finish_subpass_post changed renderPassIndex)
-				vk_end_post_bloom_subpass();
+				vk_end_post_scene_subpass();
 			} else {
 				qvkCmdEndRenderPass( vk.cmd->command_buffer );
 				vk.inRenderPass = qfalse;
@@ -7973,17 +7973,17 @@ void vk_end_render_pass( void )
 
 	// For subpass-based render passes, need to advance to final subpass before ending
 	if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
-		if ( vk.inPostBloom2DSubpass ) {
-			vk_end_post_bloom_subpass();
+		if ( VK_IN_POST_SCENE_2D() ) {
+			vk_end_post_scene_subpass();
 		} else {
 			if ( !vk.subpassPostDone ) {
 				vk_finish_subpass_post();  // Advances to post-bloom/gamma 2D subpass
 			}
-			vk_end_post_bloom_subpass();  // Ends the render pass properly
+			vk_end_post_scene_subpass();  // Ends the render pass properly
 		}
-	} else if ( vk.renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+	} else if ( vk.renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 		// Already in post-bloom 2D subpass (vk_finish_subpass_post changed renderPassIndex)
-		vk_end_post_bloom_subpass();
+		vk_end_post_scene_subpass();
 	} else {
 		qvkCmdEndRenderPass( vk.cmd->command_buffer );
 		vk.inRenderPass = qfalse;
@@ -8032,7 +8032,6 @@ static void vk_leave_hud_command_buffer( void )
 	vk.inHudCommandBuffer = qfalse;
 	vk.inRenderPass = vk.hudSaved.inRenderPass;
 	vk.renderPassIndex = vk.hudSaved.renderPassIndex;
-	vk.inPostBloom2DSubpass = vk.hudSaved.inPostBloom2DSubpass;
 	vk.renderWidth = vk.hudSaved.renderWidth;
 	vk.renderHeight = vk.hudSaved.renderHeight;
 	vk.renderScaleX = vk.hudSaved.renderScaleX;
@@ -8085,7 +8084,6 @@ void vk_begin_hud_render_pass( qboolean clear )
 		vk.hudSaved.commandBuffer = vk.cmd->command_buffer;
 		vk.hudSaved.inRenderPass = vk.inRenderPass;
 		vk.hudSaved.renderPassIndex = vk.renderPassIndex;
-		vk.hudSaved.inPostBloom2DSubpass = vk.inPostBloom2DSubpass;
 		vk.hudSaved.renderWidth = vk.renderWidth;
 		vk.hudSaved.renderHeight = vk.renderHeight;
 		vk.hudSaved.renderScaleX = vk.renderScaleX;
@@ -8094,7 +8092,6 @@ void vk_begin_hud_render_pass( qboolean clear )
 		vk.cmd->command_buffer = vk.cmd->hud_command_buffer;
 		vk.inHudCommandBuffer = qtrue;
 		vk.inRenderPass = qfalse;
-		vk.inPostBloom2DSubpass = qfalse;
 		vk_reset_command_buffer_caches();
 	} else if ( vk.inRenderPass ) {
 		// a bracket left open: close its pass before opening the next
@@ -8510,9 +8507,9 @@ void vk_end_frame( void )
 		// Check if we're using subpass optimization
 		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.inRenderPass ) {
 			// Subpass path: need to finish subpasses and end render pass
-			if ( vk.inPostBloom2DSubpass ) {
+			if ( VK_IN_POST_SCENE_2D() ) {
 				// Already in post-bloom 2D subpass, just end it
-				vk_end_post_bloom_subpass();
+				vk_end_post_scene_subpass();
 			} else if ( vk.subpassPostDone ) {
 				// Subpass post done but not in post-bloom 2D (shouldn't happen, but handle it)
 				vk_end_render_pass();
@@ -8522,7 +8519,7 @@ void vk_end_frame( void )
 				vk_finish_subpass_post();
 				// vk_finish_subpass_post transitions to post-bloom 2D subpass but doesn't end it
 
-				// Fallback deferred-corona site for frames without an RC_BEGIN_POST_BLOOM_2D
+				// Fallback deferred-corona site for frames without an RC_SCENE_COMPLETE
 				// command; doneFlares makes this a no-op once the tr_backend hook ran.
 				RB_RenderDeferredFlares();
 				// Fallback replay of the in-world HUD sprite over the corona; hudDeferred
@@ -8530,12 +8527,12 @@ void vk_end_frame( void )
 				RB_DrawDeferredHud();
 
 				// Now end the post-bloom 2D subpass
-				vk_end_post_bloom_subpass();
+				vk_end_post_scene_subpass();
 			}
 		}
-		else if ( vk.renderPassIndex == RENDER_PASS_POST_BLOOM_2D && vk.inRenderPass ) {
+		else if ( vk.renderPassIndex == RENDER_PASS_POST_SCENE_2D && vk.inRenderPass ) {
 			// Already transitioned to post-bloom 2D subpass (vk_finish_subpass_post changed renderPassIndex)
-			vk_end_post_bloom_subpass();
+			vk_end_post_scene_subpass();
 		}
 		else if ( vk.subpassPostDone ) {
 			// Subpass post was already done earlier (e.g., before HUD/overlay rendering)
@@ -8543,7 +8540,7 @@ void vk_end_frame( void )
 			vk_end_render_pass();
 		}
 		else {
-			// Direct-mode fallback for frames without an RC_BEGIN_POST_BLOOM_2D
+			// Direct-mode fallback for frames without an RC_SCENE_COMPLETE
 			// command; doneFlares/hudDeferred no-op these once the tr_backend
 			// hook ran, and both refuse to draw once 2D projection is active.
 			if ( vk.renderPassIndex == RENDER_PASS_MAIN && vk.inRenderPass ) {
@@ -8602,7 +8599,6 @@ static qboolean vk_end_interrupted_pass( void )
 	// Safety check: if cmd is null or command buffer is invalid, we can't do anything
 	if ( !vk.cmd || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
 		vk.inRenderPass = qfalse;
-		vk.inPostBloom2DSubpass = qfalse;
 		vk.recordingCommands = qfalse;
 		vk.frame_count = 0;
 		vk.renderPassIndex = RENDER_PASS_MAIN;
@@ -8613,17 +8609,16 @@ static qboolean vk_end_interrupted_pass( void )
 	if ( vk.inRenderPass && vk.recordingCommands ) {
 		// Only the post pass needs advancing, and only when the composite ran without the 2D subpass being entered.
 		if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST ) {
-			if ( vk.subpassPostDone && !vk.inPostBloom2DSubpass ) {
+			if ( vk.subpassPostDone && !VK_IN_POST_SCENE_2D() ) {
 				qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );  // to 1 (post-scene 2D)
 			}
-		} else if ( vk.renderPassIndex == RENDER_PASS_POST_BLOOM_2D ) {
+		} else if ( vk.renderPassIndex == RENDER_PASS_POST_SCENE_2D ) {
 			// Already in post-bloom 2D subpass (vk_finish_subpass_post changed renderPassIndex)
 			// Already in final subpass, safe to end
 		}
 		// All other render pass types (RENDER_PASS_MAIN, HUD, etc.) just end directly
 		qvkCmdEndRenderPass( vk.cmd->command_buffer );
 		vk.inRenderPass = qfalse;
-		vk.inPostBloom2DSubpass = qfalse;
 		vk.subpassPostDone = qfalse;
 	}
 	return vk.recordingCommands;
@@ -8679,7 +8674,6 @@ void vk_finish_frame( void )
 	// Reset frame tracking
 	vk.frame_count = 0;
 	vk.renderPassIndex = RENDER_PASS_MAIN;
-	vk.inPostBloom2DSubpass = qfalse;
 }
 
 
@@ -8717,7 +8711,6 @@ void vk_discard_frame( void )
 	// previous real submission, which vk_begin_frame must still wait on.
 	vk.frame_count = 0;
 	vk.renderPassIndex = RENDER_PASS_MAIN;
-	vk.inPostBloom2DSubpass = qfalse;
 }
 
 
@@ -9086,7 +9079,7 @@ static void vk_begin_fov_post_pass( void )
 /*
  * vk_finish_subpass_post - End the scene pass, run the post pass's first subpass
  *
- * Leaves the post pass open in its 2D subpass; vk_end_post_bloom_subpass() completes it.
+ * Leaves the post pass open in its 2D subpass; vk_end_post_scene_subpass() completes it.
  */
 void vk_finish_subpass_post( void )
 {
@@ -9134,8 +9127,7 @@ void vk_finish_subpass_post( void )
 
 		ri.Printf( PRINT_DEVELOPER, "vk_finish_subpass_post: transitioned to the post-scene 2D subpass\n" );
 
-		vk.inPostBloom2DSubpass = qtrue;
-		vk.renderPassIndex = RENDER_PASS_POST_BLOOM_2D;  // Use special pass for 2D pipelines in subpass 3
+		vk.renderPassIndex = RENDER_PASS_POST_SCENE_2D;  // Use special pass for 2D pipelines in subpass 3
 		vk.subpassPostDone = qtrue;  // Mark bloom/gamma subpasses as done
 		backEnd.doneBloom = qtrue;
 		vk.cmd->last_pipeline = VK_NULL_HANDLE;  // Force pipeline rebind for subpass 3
@@ -9177,7 +9169,7 @@ void vk_finish_subpass_post( void )
 		}
 
 		// NOTE: Render pass is NOT ended here.
-		// 2D rendering happens in subpass 3, then vk_end_post_bloom_subpass() finishes.
+		// 2D rendering happens in subpass 3, then vk_end_post_scene_subpass() finishes.
 	}
 	else if ( vk.gamma_subpass_pipeline != VK_NULL_HANDLE ) {
 		// === No bloom: gamma alone in the post pass's subpass 0 ===
@@ -9194,8 +9186,7 @@ void vk_finish_subpass_post( void )
 		// Don't end the render pass: 2D content will render in this subpass
 		qvkCmdNextSubpass( vk.cmd->command_buffer, VK_SUBPASS_CONTENTS_INLINE );
 
-		vk.inPostBloom2DSubpass = qtrue;  // Same flag for post-gamma case
-		vk.renderPassIndex = RENDER_PASS_POST_BLOOM_2D;  // Use special pass for 2D pipelines in subpass 2
+		vk.renderPassIndex = RENDER_PASS_POST_SCENE_2D;  // Use special pass for 2D pipelines in subpass 2
 		vk.subpassPostDone = qtrue;  // Mark gamma subpass as done
 		vk.cmd->last_pipeline = VK_NULL_HANDLE;  // Force pipeline rebind for subpass 2
 		vk.cmd->depth_range = DEPTH_RANGE_COUNT;  // Force viewport/scissor reset
@@ -9244,44 +9235,40 @@ void vk_finish_subpass_post( void )
 
 
 /*
- * vk_end_post_bloom_subpass - End the post-scene 2D subpass and finish the pass
+ * vk_end_post_scene_subpass - End the post-scene 2D subpass and finish the pass
  *
  * Called after all post-scene 2D rendering; the blur chain ran when the scene pass ended.
  */
-void vk_end_post_bloom_subpass( void )
+void vk_end_post_scene_subpass( void )
 {
 
 	if ( !vk.inRenderPass ) {
-		ri.Printf( PRINT_WARNING, "vk_end_post_bloom_subpass: not in render pass\n" );
-		vk.inPostBloom2DSubpass = qfalse;
+		ri.Printf( PRINT_WARNING, "vk_end_post_scene_subpass: not in render pass\n" );
 		return;
 	}
 
-	if ( !vk.inPostBloom2DSubpass ) {
+	if ( !VK_IN_POST_SCENE_2D() ) {
 		// Not in the post-bloom 2D subpass, but we're in some render pass
 		// End it anyway to maintain state consistency
-		ri.Printf( PRINT_WARNING, "vk_end_post_bloom_subpass: not in post-bloom 2D subpass, ending render pass anyway\n" );
+		ri.Printf( PRINT_WARNING, "vk_end_post_scene_subpass: not in post-bloom 2D subpass, ending render pass anyway\n" );
 		if ( vk.cmd && vk.cmd->command_buffer != VK_NULL_HANDLE ) {
 			qvkCmdEndRenderPass( vk.cmd->command_buffer );
 		}
 		vk.inRenderPass = qfalse;
-		vk.inPostBloom2DSubpass = qfalse;
 		vk.renderPassIndex = RENDER_PASS_MAIN;
 		return;
 	}
 
 	// Safety check for valid command buffer (during map loads/shutdowns vk.cmd may be NULL)
 	if ( !vk.cmd || vk.cmd->command_buffer == VK_NULL_HANDLE ) {
-		ri.Printf( PRINT_WARNING, "vk_end_post_bloom_subpass: no valid command buffer\n" );
+		ri.Printf( PRINT_WARNING, "vk_end_post_scene_subpass: no valid command buffer\n" );
 		vk.inRenderPass = qfalse;
-		vk.inPostBloom2DSubpass = qfalse;
 		return;
 	}
 
 	// End the render pass
 	qvkCmdEndRenderPass( vk.cmd->command_buffer );
 	vk.inRenderPass = qfalse;
-	vk.inPostBloom2DSubpass = qfalse;
 	vk.renderPassIndex = RENDER_PASS_MAIN;  // Reset for subsequent rendering
 }
 
@@ -10912,13 +10899,8 @@ static qboolean vk_recreate_xr_render_pass( VkFormat colorFormat, VkFormat depth
 		attachments[1].format = mainDepthFormat;
 		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		// Only STORE depth when MSAA is active, because empty HUD render passes cause
-		// crashes with MSAA without a stored depth attachment to read from.
-		if ( vk.msaaActive ) {
-			attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		} else {
-			attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		}
+		// Stored only where a later pass loads these samples; depth ends here
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachments[1].stencilLoadOp = glConfig.stencilBits ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;

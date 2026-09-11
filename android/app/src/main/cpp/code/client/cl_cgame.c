@@ -532,12 +532,8 @@ qboolean CL_GetValue( char *value, int valueSize, const char *key ) {
 		return qtrue;
 	}
 
-	if ( !Q_stricmp( key, "trap_R_BeginPostBloom2D" ) ) {
-		Com_sprintf( value, valueSize, "%i", CG_R_BEGIN_POST_BLOOM_2D );
-		return qtrue;
-	}
-	if ( !Q_stricmp( key, "trap_R_EndPostBloom2D" ) ) {
-		Com_sprintf( value, valueSize, "%i", CG_R_END_POST_BLOOM_2D );
+	if ( !Q_stricmp( key, "trap_R_SceneComplete" ) ) {
+		Com_sprintf( value, valueSize, "%i", CG_R_SCENE_COMPLETE );
 		return qtrue;
 	}
 	if ( !Q_stricmp( key, "trap_R_HUDBufferStart" ) ) {
@@ -921,11 +917,8 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 	case CG_R_HUDBUFFER_END:
 		re.HUDBufferEnd();
 		return 0;
-	case CG_R_BEGIN_POST_BLOOM_2D:
-		re.BeginPostBloom2D();
-		return 0;
-	case CG_R_END_POST_BLOOM_2D:
-		re.EndPostBloom2D();
+	case CG_R_SCENE_COMPLETE:
+		re.SceneComplete();
 		return 0;
 	case CG_TRAP_GETVALUE:
 		return CL_GetValue( VMA(1), args[2], VMA(3) );

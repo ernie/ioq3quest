@@ -182,7 +182,7 @@ typedef enum {
 	RENDER_PASS_POST_BLOOM,
 	RENDER_PASS_HUD,            // HUD buffer (1280x960) for HUD mode 1 sprite
 	RENDER_PASS_MAIN_WITH_POST, // Combined subpass render pass (scene + bloom extract + gamma) - subpass 0
-	RENDER_PASS_POST_BLOOM_2D,  // Post-bloom 2D subpass (subpass 3 for bloom, subpass 2 for gamma-only)
+	RENDER_PASS_POST_SCENE_2D,  // Post-bloom 2D subpass (subpass 3 for bloom, subpass 2 for gamma-only)
 	RENDER_PASS_COUNT
 } renderPass_t;
 
@@ -300,7 +300,7 @@ void vk_begin_main_render_pass( void );
 void vk_begin_hud_render_pass( qboolean clear );
 void vk_end_hud_render_pass( void );
 void vk_finish_subpass_post( void );
-void vk_end_post_bloom_subpass( void );
+void vk_end_post_scene_subpass( void );
 qboolean vk_create_hud_buffer( void );
 void vk_shutdown_xr_resources( void );  // Cleanup XR-related resources
 
@@ -791,7 +791,6 @@ typedef struct {
 		VkCommandBuffer commandBuffer;
 		qboolean inRenderPass;
 		renderPass_t renderPassIndex;
-		qboolean inPostBloom2DSubpass;
 		uint32_t renderWidth, renderHeight;
 		float renderScaleX, renderScaleY;
 	} hudSaved;
@@ -801,9 +800,7 @@ typedef struct {
 	// Subpass optimization: track when HUD rendering completes the combined pass
 	// When using combined subpass render pass, if HUD rendering is requested,
 	// we first complete the subpass pass (bloom extract + gamma), then proceed with HUD.
-	// These flags indicate that vk_finish_subpass_post() was already called.
 	qboolean subpassPostDone;			// true when vk_finish_subpass_post() already ran this frame
-	qboolean inPostBloom2DSubpass;		// true when in post-bloom/post-gamma 2D subpass
 
 	uint32_t screenMapWidth;
 	uint32_t screenMapHeight;
@@ -882,4 +879,8 @@ typedef struct {
 } Vk_World;
 
 extern Vk_Instance	vk;				// shouldn't be cleared during ref re-init
+
+// True while the frame's render pass is open and advanced into its final 2D
+// subpass. Both fields are required: a closed pass leaves the index behind.
+#define VK_IN_POST_SCENE_2D()	( vk.inRenderPass && vk.renderPassIndex == RENDER_PASS_POST_SCENE_2D )
 extern Vk_World		vk_world;		// this data is cleared during ref re-init

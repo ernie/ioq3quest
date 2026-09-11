@@ -2244,8 +2244,7 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 	// VR functions
 	re.HUDBufferStart = RE_HUDBufferStart;
 	re.HUDBufferEnd = RE_HUDBufferEnd;
-	re.BeginPostBloom2D = RE_BeginPostBloom2D;
-	re.EndPostBloom2D = RE_EndPostBloom2D;
+	re.SceneComplete = RE_SceneComplete;
 	re.SetVRHeadsetParms = RE_SetVRHeadsetParms;
 	re.InitXRResources = RE_InitXRResources;
 	re.SetFoveation = RE_SetFoveation;

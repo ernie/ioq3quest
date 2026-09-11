@@ -1179,7 +1179,7 @@ static const void *RB_SetColor( const void *data ) {
 	//   hud sprite that samples it is drawn.
 	// - Post-bloom 2D (including HUD mode 2): the fragment shader applies gamma
 	//   itself, so pre-compensating here would apply it twice.
-	if ( cmd->fullBrightness ) {
+	if ( cmd->postScene ) {
 		// gamma is applied downstream in the fragment shader: use colors as-is
 		backEnd.color2D.rgba[0] = cmd->color[0] * 255;
 		backEnd.color2D.rgba[1] = cmd->color[1] * 255;
@@ -1833,15 +1833,15 @@ static const void* RB_HUDBuffer( const void* data ) {
 
 /*
 ====================
-RB_BeginPostBloom2D
+RB_SceneComplete
 
-Transitions from scene rendering through bloom/gamma subpasses into the
-post-bloom 2D subpass. Called after scene rendering is complete.
-All 2D content rendered after this point will NOT go through bloom extraction.
+Everything that samples the finished scene happens here: the bloom/gamma
+subpasses are crossed, then the draws deferred out of the scene are replayed
+so each sees it complete.
 ====================
 */
-static const void* RB_BeginPostBloom2D( const void* data ) {
-	const beginPostBloom2DCommand_t *cmd = data;
+static const void* RB_SceneComplete( const void* data ) {
+	const sceneCompleteCommand_t *cmd = data;
 
 	// Finish any pending 2D drawing first
 	if ( tess.numIndexes ) {
@@ -1855,7 +1855,7 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 	if ( vk.renderPassIndex == RENDER_PASS_MAIN_WITH_POST && vk.inRenderPass ) {
 		// Transition through bloom extract/composite (or gamma) to post-bloom 2D subpass
 		vk_finish_subpass_post();
-		// Now in post-bloom/post-gamma 2D subpass: vk.inPostBloom2DSubpass is set
+		// Now in the final 2D subpass
 
 		// 3D->2D boundary: draw the deferred main-view coronas now, after the
 		// bloom bright-pass has already sampled the scene, so they aren't
@@ -1873,33 +1873,6 @@ static const void* RB_BeginPostBloom2D( const void* data ) {
 		RB_RenderDeferredFlares();
 		RB_DrawDeferredHud();
 	}
-
-	return (const void*)(cmd + 1);
-}
-
-
-/*
-====================
-RB_EndPostBloom2D
-
-Called after cgame's post-scene 2D rendering is finished.
-This does NOT end the render pass: the pass stays active for any additional
-2D drawing that may happen later in the frame (like menus on the virtual screen).
-The render pass will be properly ended by vk_end_frame() when the frame ends.
-====================
-*/
-static const void* RB_EndPostBloom2D( const void* data ) {
-	const endPostBloom2DCommand_t *cmd = data;
-
-	// Finish any pending 2D drawing first
-	if ( tess.numIndexes ) {
-		RB_EndSurface();
-		tess.shader = NULL;
-	}
-
-	// Don't end the render pass here: keep it active for any menu/UI drawing
-	// that may happen later in the frame (e.g., virtual screen menu).
-	// vk_end_frame() will handle ending the render pass properly.
 
 	return (const void*)(cmd + 1);
 }
@@ -1945,11 +1918,8 @@ void RB_ExecuteRenderCommands( const void *data ) {
 		case RC_HUD_BUFFER:
 			data = RB_HUDBuffer(data);
 			break;
-		case RC_BEGIN_POST_BLOOM_2D:
-			data = RB_BeginPostBloom2D(data);
-			break;
-		case RC_END_POST_BLOOM_2D:
-			data = RB_EndPostBloom2D(data);
+		case RC_SCENE_COMPLETE:
+			data = RB_SceneComplete(data);
 			break;
 		case RC_END_OF_LIST:
 		default:

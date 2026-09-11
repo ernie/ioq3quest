@@ -1345,10 +1345,10 @@ typedef struct {
 
 	qboolean				vertexLightingAllowed;
 
-	// Frontend flag set when queueing commands after RE_BeginPostBloom2D.
+	// Frontend flag set when queueing commands after RE_SceneComplete.
 	// Used to tell RE_SetColor that colors should not be pre-dimmed since
 	// they will bypass the gamma pass.
-	qboolean				postBloom2D;
+	qboolean				sceneComplete;
 } trGlobals_t;
 
 
@@ -1987,7 +1987,7 @@ typedef struct {
 typedef struct {
 	int		commandId;
 	float	color[4];
-	qboolean fullBrightness; // set when color queued during post-bloom 2D (skip pre-dimming)
+	qboolean postScene; // set when color queued during post-bloom 2D (skip pre-dimming)
 } setColorCommand_t;
 
 typedef struct {
@@ -2009,11 +2009,7 @@ typedef struct {
 
 typedef struct {
 	int		commandId;
-} beginPostBloom2DCommand_t;
-
-typedef struct {
-	int		commandId;
-} endPostBloom2DCommand_t;
+} sceneCompleteCommand_t;
 
 typedef struct {
 	int		commandId;
@@ -2066,8 +2062,7 @@ typedef enum {
 	RC_CLEARDEPTH,
 	RC_CLEARCOLOR,
 	RC_HUD_BUFFER,
-	RC_BEGIN_POST_BLOOM_2D,
-	RC_END_POST_BLOOM_2D
+	RC_SCENE_COMPLETE
 } renderCommand_t;
 
 
@@ -2134,8 +2129,7 @@ void RE_VertexLighting( qboolean allowed );
 // VR Functions
 void RE_HUDBufferStart( qboolean clear );
 void RE_HUDBufferEnd( void );
-void RE_BeginPostBloom2D( void );
-void RE_EndPostBloom2D( void );
+void RE_SceneComplete( void );
 void RE_SetVRHeadsetParms( const float projectionMatrix[16],
 						   const float nonVRProjectionMatrix[16],
 						   int renderBuffer,
